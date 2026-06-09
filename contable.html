@@ -911,7 +911,7 @@
 
 <script>
 // ===== CONFIG =====
-const BRIDGE_URL_C = 'https://uncooked-sprung-unpinned.ngrok-free.dev';
+const BRIDGE_URL_C?_C = 'https://uncooked-sprung-unpinned.ngrok-free.dev';
 const AGORA_TOKEN_C = 'api_1YkA9AsADgToXP5UQTANycxD2acj0BG92mpa6nJ3qpFt9CmNVFF6DPdBtpPvNbhG';
 const SERIES_FACTURAS_C = ['APPF', 'F', 'FD'];
 const SERIES_ALBARANES_C = ['APP', 'A'];
@@ -936,7 +936,7 @@ async function doLoginContable() {
 
   btn.disabled = true; btn.textContent = 'Verificando...';
   try {
-    const resp = await fetch(BRIDGE_URL_C + '/api/export-master/?filter=Users', {
+    const resp = await fetch(BRIDGE_URL_C?_C + '/api/export-master/?filter=Users', {
       headers: { 'Authorization': AGORA_TOKEN_C, 'ngrok-skip-browser-warning': 'true' }
     });
     const data = await resp.json();
@@ -995,7 +995,7 @@ async function checkConexion() {
   try {
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), 12000);
-    const r = await fetch(BRIDGE_URL_C + '/api/export-master/?filter=Series', {
+    const r = await fetch(BRIDGE_URL_C?_C + '/api/export-master/?filter=Series', {
       headers: { 'Authorization': AGORA_TOKEN_C, 'ngrok-skip-browser-warning': 'true' },
       signal: ctrl.signal
     });
@@ -1071,7 +1071,7 @@ async function agoraGetDiaC(d) {
 }
 
 async function agoraGetC(path) {
-  const r = await fetch(BRIDGE_URL_C + path, {
+  const r = await fetch(BRIDGE_URL_C?_C + path, {
     headers: { 'Authorization': AGORA_TOKEN_C, 'ngrok-skip-browser-warning': 'true' }
   });
   if (!r.ok) throw new Error('Error ' + r.status);
@@ -1115,7 +1115,7 @@ async function cargarDatos() {
     // 1) El bridge sincroniza su caché de Ágora (incremental: la primera vez tarda, después son segundos)
     let quedan = 1, vueltas = 0;
     while (quedan > 0 && vueltas < 40) {
-      const rS = await fetch(BRIDGE_URL_C + '/agora/sync', {
+      const rS = await fetch(BRIDGE_URL_C?_C + '/agora/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
         body: JSON.stringify({ desde: desde, hasta: hasta })
@@ -1132,7 +1132,7 @@ async function cargarDatos() {
     }
     // 2) Todo el período de golpe desde la caché
     mostrarSplash('Cargando datos contables...');
-    const rT = await fetch(BRIDGE_URL_C + '/agora/facturas?desde=' + desde + '&hasta=' + hasta,
+    const rT = await fetch(BRIDGE_URL_C?_C + '/agora/facturas?desde=' + desde + '&hasta=' + hasta,
       { headers: { 'ngrok-skip-browser-warning': 'true' } });
     const docs = (await rT.json()).documentos || [];
     docs.forEach(doc => {
@@ -1251,7 +1251,7 @@ function bkClavesDeConciliado(lista) {
 let bkCobradasBanco = null;
 async function cargarCobradasBanco() {
   try {
-    const r = await fetch(BRIDGE_URL_C + '/banco/movimientos?estado=conciliado', { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const r = await fetch(BRIDGE_URL_C?_C + '/banco/movimientos?estado=conciliado', { headers: { 'ngrok-skip-browser-warning': 'true' } });
     const movs = (await r.json()).movimientos || [];
     const cobradas = new Set(), devueltas = new Set(), detalle = {};
     movs.forEach(m => bkClavesDeConciliado(m.conciliado).forEach(([k, f]) => {
@@ -1280,7 +1280,7 @@ async function refrescarEstadosCobro() {
 // (el fichero de presentación del Sabadell la daba por cobrada — esto lo corrige)
 async function bkMarcarDevueltaEnOrigen(clave, importe, deudor) {
   try {
-    const r = await fetch(BRIDGE_URL_C + '/banco/movimientos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const r = await fetch(BRIDGE_URL_C?_C + '/banco/movimientos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
     const movs = (await r.json()).movimientos || [];
     const origen = movs.find(mm => mm.importe > 0 && (mm.conciliado || []).length &&
       bkClavesDeConciliado(mm.conciliado).some(([k, f]) => k === clave && (f.situacion || 'abonado') !== 'devuelto'));
@@ -1303,7 +1303,7 @@ async function bkMarcarDevueltaEnOrigen(clave, importe, deudor) {
         nuevoConc.push(Object.assign({}, e, { situacion: 'devuelto' }));
       } else nuevoConc.push(e);
     });
-    await fetch(BRIDGE_URL_C + '/banco/conciliar', {
+    await fetch(BRIDGE_URL_C?_C + '/banco/conciliar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
       body: JSON.stringify({ id: origen.id, facturas: nuevoConc })
@@ -1358,7 +1358,7 @@ async function bkMarcarDevueltaPorImporte(m, movs, c) {
     return ne;
   });
   try {
-    await fetch(BRIDGE_URL_C + '/banco/conciliar', {
+    await fetch(BRIDGE_URL_C?_C + '/banco/conciliar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
       body: JSON.stringify({ id: hit.mov.id, facturas: nuevo })
@@ -1680,7 +1680,7 @@ async function quitarImputacion(movId, idx) {
   const clave = bkNormClave(f.Serie + '-' + f.Number);
   if (!confirm('¿Quitar ' + f.Serie + '-' + f.Number + ' de este movimiento?\nEl resto del desglose del movimiento se conserva; la factura vuelve a pendiente (o a su otro cobro si lo tiene).')) return;
   try {
-    const r = await fetch(BRIDGE_URL_C + '/banco/movimientos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const r = await fetch(BRIDGE_URL_C?_C + '/banco/movimientos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
     const movs = (await r.json()).movimientos || [];
     const m = movs.find(x => x.id === movId);
     if (!m) { alert('No encuentro el movimiento.'); return; }
@@ -1694,7 +1694,7 @@ async function quitarImputacion(movId, idx) {
       return;
     }
     const nueva = (m.conciliado || []).filter(x => !bkClavesDeConciliado([x]).some(([k]) => k === clave));
-    const r2 = await fetch(BRIDGE_URL_C + '/banco/conciliar', {
+    const r2 = await fetch(BRIDGE_URL_C?_C + '/banco/conciliar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
       body: JSON.stringify({ id: movId, facturas: nueva })
@@ -1719,7 +1719,7 @@ async function conciliarDesdeFactura(idx) {
   const num = f.Serie + '-' + f.Number;
   let movs = [];
   try {
-    const r = await fetch(BRIDGE_URL_C + '/banco/movimientos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const r = await fetch(BRIDGE_URL_C?_C + '/banco/movimientos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
     movs = (await r.json()).movimientos || [];
   } catch(e) { alert('✗ Error consultando el banco: ' + e.message); return; }
   cdfMovs = {};
@@ -1805,7 +1805,7 @@ async function cdfAsignarEnRemesa(movId, idx, hueco) {
   const modal = document.getElementById('cdf-modal');
   if (modal) modal.remove();
   try {
-    const r = await fetch(BRIDGE_URL_C + '/banco/conciliar', {
+    const r = await fetch(BRIDGE_URL_C?_C + '/banco/conciliar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
       body: JSON.stringify({ id: movId, facturas: nuevo })
@@ -1826,7 +1826,7 @@ async function cdfConciliar(movId, idx) {
     const previo = ((cdfMovs[movId] || {}).conciliado) || [];
     const entradaCdf = { serie: f.Serie, numero: f.Number,
       importe: f.Totals.GrossAmount, cliente: f.Customer ? (f.Customer.BusinessName || f.Customer.FiscalName || '') : '' };
-    const r = await fetch(BRIDGE_URL_C + '/banco/conciliar', {
+    const r = await fetch(BRIDGE_URL_C?_C + '/banco/conciliar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
       body: JSON.stringify({ id: movId, facturas: previo.concat([entradaCdf]) })
@@ -2048,7 +2048,7 @@ async function subirCajasFaltantes() {
   setStatusC(statusEl, 'Comprobando qué falta en CAJAS...', 'loading');
   let existentes = {};
   try {
-    const r = await fetch(BRIDGE_URL_C + '/cajas/existentes?desde=' + desde + '&hasta=' + hasta,
+    const r = await fetch(BRIDGE_URL_C?_C + '/cajas/existentes?desde=' + desde + '&hasta=' + hasta,
       { headers: { 'ngrok-skip-browser-warning': 'true' } });
     existentes = (await r.json()).existentes || {};
   } catch(e) {
@@ -2086,7 +2086,7 @@ async function subirCajasFaltantes() {
     setStatusC(statusEl, 'Subiendo a CAJAS... ' + (i + 1) + '/' + faltan.length + ' (' + nombre + ')', 'loading');
     try {
       const blob = await generarPDFBlobC(f);
-      const r = await fetch(BRIDGE_URL_C + '/cajas/subir', {
+      const r = await fetch(BRIDGE_URL_C?_C + '/cajas/subir', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
         body: JSON.stringify({ fecha: f.Date.split('T')[0], nombre, pdf_base64: await blobABase64C(blob) })
@@ -2106,7 +2106,7 @@ async function subirCajasFaltantes() {
   for (const fecha of diasXls) {
     try {
       const delDia = facts.filter(f => f.Date.split('T')[0] === fecha);
-      const r = await fetch(BRIDGE_URL_C + '/cajas/subir_xls', {
+      const r = await fetch(BRIDGE_URL_C?_C + '/cajas/subir_xls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
         body: JSON.stringify({ fecha: fecha, html: generarXlsDiaC(fecha, delDia) })
@@ -2350,7 +2350,7 @@ async function auditarCartera() {
   document.body.appendChild(div);
   let d;
   try {
-    const r = await fetch(BRIDGE_URL_C + '/banco/auditoria_cartera?anio=' + new Date().getFullYear(),
+    const r = await fetch(BRIDGE_URL_C?_C + '/banco/auditoria_cartera?anio=' + new Date().getFullYear(),
       { headers: { 'ngrok-skip-browser-warning': 'true' } });
     d = await r.json();
   } catch(e) {
@@ -2550,14 +2550,14 @@ let carteraGruposIdx = [];    // grupos por cliente del último render (para mov
 
 async function cargarCarteraDestinos() {
   try {
-    const r = await fetch(BRIDGE_URL_C + '/cartera/destinos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const r = await fetch(BRIDGE_URL_C?_C + '/cartera/destinos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
     carteraDestinos = (await r.json()).destinos || {};
   } catch(e) { carteraDestinos = {}; }
 }
 
 async function carteraMover(claves, destino) {
   try {
-    await fetch(BRIDGE_URL_C + '/cartera/destino', {
+    await fetch(BRIDGE_URL_C?_C + '/cartera/destino', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
       body: JSON.stringify({ claves: claves, destino: destino })
@@ -3043,7 +3043,7 @@ function generarHTMLFactura_ANTIGUA_v1(f) {  // ← SUSTITUIDA por la réplica e
 // SEMÁFORO: Carga y renderiza el estado 🟢/🟡/🔴
 async function cargarSemaforo(tipo) {
   try {
-    const res = await fetch(`${BRIDGE_URL}/contabilidad/semaforo?anio=2026&tipo=${tipo}&nocache=${Date.now()}`);
+    const res = await fetch(`${BRIDGE_URL_C?_C}/contabilidad/semaforo?anio=2026&tipo=${tipo}&nocache=${Date.now()}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const datos = await res.json();
     renderSemaforo(datos.semaforo);
@@ -3059,22 +3059,4 @@ function renderSemaforo(items) {
     '<th style="padding:8px;text-align:left;font-weight:600">Entidad</th>' +
     '<th style="padding:8px;text-align:right;font-weight:600">Facturado</th>' +
     '<th style="padding:8px;text-align:right;font-weight:600">Pagado</th>' +
-    '<th style="padding:8px;text-align:right;font-weight:600">Saldo</th>' +
-    '<th style="padding:8px;text-align:left;font-weight:600">Mensaje</th>' +
-    '</tr></thead><tbody>';
-  
-  items.forEach(it => {
-    const bgColor = it.estado === 'ok' ? '#f0fdf4' : it.estado === 'falta' ? '#fffbeb' : '#fef2f2';
-    html += `<tr style="border-bottom:1px solid #eee;background:${bgColor}">
-      <td style="padding:8px;font-size:24px;text-align:center">${it.color}</td>
-      <td style="padding:8px">${it.entidad}</td>
-      <td style="padding:8px;text-align:right;font-family:monospace">${it.facturado.toFixed(2)}€</td>
-      <td style="padding:8px;text-align:right;font-family:monospace">${it.pagado.toFixed(2)}€</td>
-      <td style="padding:8px;text-align:right;font-family:monospace;font-weight:600">${it.saldo.toFixed(2)}€</td>
-      <td style="padding:8px;color:${it.estado === 'ok' ? '#16a34a' : it.estado === 'falta' ? '#d97706' : '#dc2626'}">${it.mensaje}</td>
-    </tr>`;
-  });
-  
-  html += '</tbody></table>';
-  document.getElementById('semaforo-cont').innerHTML = html;
-}
+    '<th style="padding:8px;text-align:right;font-weig

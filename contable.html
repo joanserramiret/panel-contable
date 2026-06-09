@@ -3133,6 +3133,42 @@ async function ctaGuardar(tipo, entidad, cuenta) {
   } catch (e) { alert('No se pudo guardar la cuenta: ' + e.message); }
 }
 
+async function cargarSemaforo(tipo) {
+  try {
+    const res = await fetch(`${BRIDGE_URL_C}/contabilidad/semaforo?anio=2026&tipo=${tipo}&nocache=${Date.now()}`, {
+      headers: { 'ngrok-skip-browser-warning': 'true' }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const datos = await res.json();
+    renderSemaforo(datos.semaforo || []);
+  } catch(e) {
+    document.getElementById('semaforo-cont').innerHTML = `<div style="color:red;font-size:13px">Error: ${e.message}</div>`;
+  }
+}
+
+function renderSemaforo(items) {
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+    '<thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
+    '<th style="padding:8px;text-align:center;width:50px">Estado</th>' +
+    '<th style="padding:8px;text-align:left">Entidad</th>' +
+    '<th style="padding:8px;text-align:right">Facturado</th>' +
+    '<th style="padding:8px;text-align:right">Pagado</th>' +
+    '<th style="padding:8px;text-align:right">Saldo</th>' +
+    '</tr></thead><tbody>';
+  items.forEach((item, idx) => {
+    const bg = idx % 2 ? '#fafafa' : '#fff';
+    html += '<tr style="background:' + bg + ';border-bottom:1px solid #eee">' +
+      '<td style="padding:8px;text-align:center;font-size:16px">' + item.color + '</td>' +
+      '<td style="padding:8px">' + (item.entidad || '') + '</td>' +
+      '<td style="padding:8px;text-align:right">€' + (item.facturado || 0).toFixed(2) + '</td>' +
+      '<td style="padding:8px;text-align:right">€' + (item.pagado || 0).toFixed(2) + '</td>' +
+      '<td style="padding:8px;text-align:right;font-weight:bold">' + (item.saldo ? '€' + item.saldo.toFixed(2) : '—') + '</td>' +
+      '</tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('semaforo-cont').innerHTML = html;
+}
+
 function switchTabC(tab) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));

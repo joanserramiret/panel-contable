@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Documento JS Technology</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Verdana, Arial, sans-serif; font-size: 10px; color: #222; background: #fff; }
+.no-print { position: fixed; top: 10px; right: 10px; display: flex; gap: 8px; z-index: 999; }
+.btn-imprimir { background: #1a2e6e; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; cursor: pointer; font-family: Verdana, sans-serif; }
+.btn-cerrar { background: #888; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; cursor: pointer; font-family: Verdana, sans-serif; }
+@media print { .no-print { display: none !important; } }
+
+.page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 10mm 12mm; background: #fff; }
+
+/* HEADER */
+.hdr { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5mm; }
+.hdr-logos { display: flex; align-items: center; gap: 6mm; }
+.hdr-logos .logo-js { height: 16mm; border-radius: 3px; }
+.hdr-logos .logo-ag { height: 10mm; }
+.hdr-info { text-align: right; line-height: 1.6; }
+.hdr-info .empresa { font-size: 12px; font-weight: bold; color: #1a2e6e; }
+.hdr-info .sub { font-size: 8.5px; color: #444; }
+
+/* TITULO */
+.titulo { text-align: center; font-size: 16px; font-weight: bold; letter-spacing: 3px; padding: 3mm 0; border-top: 2px solid #1a2e6e; border-bottom: 1px solid #bbb; margin-bottom: 3mm; }
+
+/* CABECERA DOC */
+.cab { border: 1px solid #bbb; margin-bottom: 3mm; }
+.cab table { width: 100%; border-collapse: collapse; }
+.cab td { padding: 2px 5px; border-right: 1px solid #ddd; vertical-align: top; }
+.cab td:last-child { border-right: none; }
+.cab .lbl { font-size: 8.5px; color: #666; }
+.cab .val { font-size: 10px; font-weight: bold; }
+.cab tr { border-bottom: 1px solid #ddd; }
+.cab tr:last-child { border-bottom: none; }
+
+/* LINEAS */
+.lineas { width: 100%; border-collapse: collapse; margin-bottom: 5mm; }
+.lineas thead tr { background: #1a2e6e; }
+.lineas thead th { color: #fff; padding: 3px 5px; font-size: 10px; font-weight: bold; text-align: left; }
+.lineas thead th.r { text-align: right; }
+.lineas tbody td { padding: 3px 5px; border-bottom: 1px solid #eee; font-size: 10px; vertical-align: top; }
+.lineas tbody td.r { text-align: right; }
+.lineas tbody tr:nth-child(even) { background: #f5f5f5; }
+.notas-linea { font-size: 8.5px; color: #666; font-style: italic; margin-top: 1px; }
+.lineas tfoot td { padding: 3px 5px; font-size: 10px; border-top: 1px solid #bbb; }
+
+/* TOTALES Y IVA */
+.totales-area { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 3mm; gap: 5mm; }
+
+.iva-table { border-collapse: collapse; font-size: 10px; }
+.iva-table th { background: #eee; border: 1px solid #bbb; padding: 2px 7px; font-weight: bold; }
+.iva-table td { border: 1px solid #bbb; padding: 2px 7px; }
+.iva-table td.r { text-align: right; }
+.iva-table tfoot td { font-weight: bold; background: #f5f5f5; }
+
+.totales-box { min-width: 80mm; border: 1px solid #bbb; }
+.totales-hdr { background: #1a2e6e; color: #fff; padding: 3px 8px; font-size: 9px; text-align: center; font-weight: bold; }
+.totales-box table { width: 100%; border-collapse: collapse; }
+.totales-box td { padding: 2px 7px; font-size: 10px; border-bottom: 1px solid #eee; }
+.totales-box td.r { text-align: right; font-weight: bold; }
+.totales-box .tfinal td { font-size: 12px; font-weight: bold; border-top: 2px solid #1a2e6e; border-bottom: none; color: #1a2e6e; padding-top: 3px; }
+.totales-box .tpend td { color: #e87e1a; font-weight: bold; border-bottom: none; font-size: 11px; }
+
+/* OBS */
+.obs { font-size: 10px; margin-bottom: 3mm; padding: 2mm 4mm; background: #f9f9f9; border-left: 3px solid #1a2e6e; }
+
+/* PAGOS */
+.pagos-realizados { margin-bottom: 3mm; }
+.pagos-realizados table { border-collapse: collapse; font-size: 10px; }
+.pagos-realizados th { background: #eee; border: 1px solid #bbb; padding: 2px 7px; font-weight: bold; }
+.pagos-realizados td { border: 1px solid #bbb; padding: 2px 7px; }
+.pagos-realizados td.r { text-align: right; }
+
+/* IBAN */
+.iban-box { border: 1px solid #1a2e6e; padding: 3mm 5mm; text-align: center; margin-bottom: 3mm; font-size: 10px; background: #f0f4fb; }
+.iban-box strong { font-size: 11px; color: #1a2e6e; letter-spacing: 1px; }
+
+/* PIE */
+.pie { font-size: 7.5px; color: #777; line-height: 1.5; border-top: 1px solid #bbb; padding-top: 3mm; margin-top: auto; }
+</style>
+</head>
+<body>
+
+<div class="no-print">
+  <button class="btn-imprimir" onclick="window.print()">Imprimir / Guardar PDF</button>
+  <button class="btn-cerrar" onclick="window.close()">Cerrar</button>
+</div>
+
+<div class="page">
+
+  <!-- CABECERA OFICIAL: bitmap real extraído del PDF de Ágora (identidad de marca). NO sustituir por logos sueltos. -->
+  <img src="https://joanserramiret.github.io/panel-contable/cabecera_factura.png" style="display:block;width:191.6mm;height:39.4mm;margin:0 auto 3mm" alt="JS Technology Menorca SL"/>
+  </div>
+
+  <div class="titulo" id="doc-titulo">ALBARAN</div>
+
+  <div class="cab">
+    <table>
+      <tr>
+        <td style="width:35%"><div class="lbl">N Dp.:</div><div class="val" id="doc-num">—</div></td>
+        <td style="width:35%"><div class="lbl">Atendido por:</div><div class="val" id="doc-user">—</div></td>
+        <td><div class="lbl">Punto de Venta:</div><div class="val">TPV 1</div></td>
+      </tr>
+      <tr>
+        <td><div class="lbl">Fecha:</div><div class="val" id="doc-fecha">—</div></td>
+        <td><div class="lbl">Mesa:</div><div class="val" id="doc-mesa">ProformasAPP / Tarifa</div></td>
+        <td><div class="lbl">Pagina:</div><div class="val">1/1</div></td>
+      </tr>
+      <tr>
+        <td colspan="2"><div class="lbl">Cliente:</div><div class="val" id="doc-cliente">—</div><div id="doc-cif" style="font-size:8.5px;color:#666"></div></td>
+        <td><div class="lbl">Telefono:</div><div class="val" id="doc-tel">—</div></td>
+      </tr>
+    </table>
+  </div>
+
+  <table class="lineas">
+    <thead>
+      <tr>
+        <th style="width:13%">Cantidad</th>
+        <th>Producto</th>
+        <th class="r" style="width:17%">Precio</th>
+        <th class="r" style="width:17%">Importe</th>
+      </tr>
+    </thead>
+    <tbody id="lineas-body"></tbody>
+  </table>
+
+  <div class="totales-area">
+    <div>
+      <table class="iva-table">
+        <thead><tr><th>Impuesto</th><th class="r" style="min-width:55px">Base</th><th class="r" style="min-width:45px">Cuota</th><th class="r" style="min-width:55px">Total</th></tr></thead>
+        <tbody id="iva-body"></tbody>
+        <tfoot><tr><td><strong>Total:</strong></td><td class="r" id="iva-base">—</td><td class="r" id="iva-cuota">—</td><td class="r" id="iva-total">—</td></tr></tfoot>
+      </table>
+    </div>
+    <div>
+      <div class="totales-box">
+        <div class="totales-hdr" id="totales-hdr">Total (Impuestos Incl.) — € &nbsp; Pendiente: — €</div>
+        <table>
+          <tbody id="pagos-body"></tbody>
+          <tr class="tfinal"><td>Total con IVA:</td><td class="r" id="total-final">—</td></tr>
+          <tr class="tpend"><td>Pendiente:</td><td class="r" id="total-pend">—</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="obs" id="obs-wrap" style="display:none">
+    <strong>Observaciones: </strong><span id="obs-texto"></span>
+  </div>
+
+  <div class="pagos-realizados" id="pagos-wrap" style="display:none">
+    <table>
+      <thead><tr><th>Forma de pago</th><th class="r">Importe</th></tr></thead>
+      <tbody id="pagos-tabla"></tbody>
+    </table>
+  </div>
+
+  <div class="iban-box">
+    Puede realizar el pago mediante transferencia bancaria al siguiente numero de cuenta IBAN:<br>
+    <strong>ES3500810232340001434454</strong>
+  </div>
+
+  <div class="pie">
+    De conformidad con la Ley Organica 15/1999, le informamos que sus datos se hallan incorporados a un fichero titularidad de JS Technology Menorca, SL con la finalidad de prestar sus servicios profesionales. Puede solicitar informacion para poder ejercer los derechos de acceso, modificacion, cancelacion y oposicion relativos a dicha Ley a traves de la direccion: C/Sant Jordi, 8C - Es Castell 07720 - Mao - En caso de que el adquirente de los productos incluidos en la presente factura actue como consumidor final, tiene derecho a exigir a la empresa vendedora una copia del albaran o recibo acreditativo con el numero de compensacion que corresponda.
+  </div>
+
+</div>
+
+<script>
+function fm(n) { return parseFloat(n||0).toFixed(2).replace('.', ',') + ' €'; }
+function fd(s) {
+  if (!s) return '—';
+  const d = new Date(s);
+  return d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+}
+
+function renderDoc(doc, tipo) {
+  document.getElementById('doc-titulo').textContent = tipo === 'factura' ? 'FACTURA' : 'ALBARAN';
+  document.getElementById('doc-num').textContent = (doc.Serie||'') + '-' + (doc.Number||'');
+  document.getElementById('doc-fecha').textContent = fd(doc.Date);
+  document.getElementById('doc-user').textContent = doc.User ? doc.User.Name : '—';
+
+  const c = doc.Customer || {};
+  document.getElementById('doc-cliente').textContent = c.BusinessName || c.FiscalName || '—';
+  document.getElementById('doc-cif').textContent = c.Cif ? 'NIF/CIF: ' + c.Cif : '';
+  document.getElementById('doc-tel').textContent = c.Telephone || '—';
+
+  const notas = doc.Notes || '';
+  const centroM = notas.match(/Centro: *([^|]+)/i);
+  const centro = centroM ? centroM[1].trim() : '';
+  const desc = notas.replace(/Centro: *[^|]+[|]?\s*/i,'').trim();
+  if (centro||desc) {
+    document.getElementById('obs-wrap').style.display='block';
+    document.getElementById('obs-texto').textContent = [centro?'Centro: '+centro:'',desc].filter(Boolean).join(' | ');
+  }
+
+  let lineas = [];
+  if (tipo==='factura' && doc.InvoiceItems) {
+    doc.InvoiceItems.forEach(it => { lineas = lineas.concat(it.Lines||[]); });
+  } else {
+    lineas = doc.Lines || [];
+  }
+
+  const tbody = document.getElementById('lineas-body');
+  let base = 0;
+  let vatRate = 0.21;
+  lineas.forEach(l => {
+    const imp = parseFloat(l.TotalAmount || (l.Quantity * l.UnitPrice));
+    base += imp;
+    if (l.VatRate) vatRate = l.VatRate;
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + parseFloat(l.Quantity||0).toFixed(2) + '</td>' +
+      '<td>' + (l.ProductName||l.SaleFormatName||'—') + (l.Notes?'<div class="notas-linea">'+l.Notes+'</div>':'') + '</td>' +
+      '<td class="r">' + fm(l.UnitPrice) + '</td>' +
+      '<td class="r">' + fm(imp) + '</td>';
+    tbody.appendChild(tr);
+  });
+
+  const cuota = base * vatRate;
+  const total = base + cuota;
+
+  document.getElementById('iva-body').innerHTML =
+    '<tr><td>' + Math.round(vatRate*100) + ',00%</td><td class="r">' + fm(base) + '</td><td class="r">' + fm(cuota) + '</td><td class="r">' + fm(total) + '</td></tr>';
+  document.getElementById('iva-base').textContent = fm(base);
+  document.getElementById('iva-cuota').textContent = fm(cuota);
+  document.getElementById('iva-total').textContent = fm(total);
+
+  const pagos = doc.Payments || [];
+  let pagado = 0;
+  if (pagos.length) {
+    document.getElementById('pagos-wrap').style.display='block';
+    const pt = document.getElementById('pagos-tabla');
+    pagos.forEach(p => {
+      pagado += p.Amount||0;
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+(p.MethodName||'—')+'</td><td class="r">'+fm(p.Amount)+'</td>';
+      pt.appendChild(tr);
+    });
+  }
+
+  const pend = Math.max(0, total - pagado);
+  document.getElementById('total-final').textContent = fm(total);
+  document.getElementById('total-pend').textContent = fm(pend);
+  document.getElementById('totales-hdr').textContent = 'Total (Impuestos Incl.) ' + fm(total) + '   Pendiente: ' + fm(pend);
+}
+
+window.addEventListener('message', e => {
+  if (e.data && e.data.doc) renderDoc(e.data.doc, e.data.tipo||'albaran');
+});
+const p = new URLSearchParams(window.location.search);
+if (p.get('data')) { try { renderDoc(JSON.parse(decodeURIComponent(p.get('data'))), p.get('tipo')||'albaran'); } catch(e){} }
+</script>
+</body>
+</html>

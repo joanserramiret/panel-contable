@@ -470,7 +470,6 @@
     <div class="nav-tab" onclick="switchTabC('remesas')" id="ctab-remesas">🧩 Remesas y efectos</div>
     <div class="nav-tab" onclick="switchTabC('ctaprov')" id="ctab-ctaprov">📒 Proveedores</div>
     <div class="nav-tab" onclick="switchTabC('ctacli')" id="ctab-ctacli">📗 Clientes</div>
-    <div class="nav-tab" onclick="switchTabC('semaforo')" id="ctab-semaforo">🎯 Semáforo</div>
     <!-- Podadas a petición de Joan (2026-06): Calendario e Impuestos·IVA — SisConta es la fuente oficial del IVA.
          Para recuperarlas, restaurar estas dos líneas:
     <div class="nav-tab" onclick="switchTabC('calendario')" id="ctab-calendario">📅 Calendario</div>
@@ -795,20 +794,6 @@
       </div>
     </div>
 
-    <!-- SEMÁFORO TAB -->
-    <div class="tab-content" id="ctc-semaforo">
-      <div class="card">
-        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-          <span>🎯 Semáforo · Estado de proveedores y clientes</span>
-          <span style="display:flex;gap:8px;align-items:center">
-            <button onclick="cargarSemaforo('prov')" style="padding:6px 10px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12px">⟳ Proveedores</button>
-            <button onclick="cargarSemaforo('cli')" style="padding:6px 10px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12px">⟳ Clientes</button>
-          </span>
-        </div>
-        <div id="semaforo-cont"><div style="color:var(--texto-suave);font-size:13px">Pulsa ⟳ para cargar.</div></div>
-      </div>
-    </div>
-
     <!-- PROVEEDORES TAB -->
     <div class="tab-content" id="ctc-proveedores">
       <div class="card">
@@ -908,6 +893,7 @@
 
   </main>
 </div>
+
 <script>
 // ===== CONFIG =====
 const BRIDGE_URL_C = 'https://uncooked-sprung-unpinned.ngrok-free.dev';
@@ -3038,46 +3024,4 @@ function generarHTMLFactura_ANTIGUA_v1(f) {  // ← SUSTITUIDA por la réplica e
     '</div></td></tr></table></div>'+
     '<table class="lineas"><thead><tr>'+
     '<th style="width:11%">Cantidad</th><th>Producto</th>'+
-    '</thead></table></div></div>';
-  return html;
-}
-
-// SEMÁFORO: Carga y renderiza el estado 🟢/🟡/🔴
-async function cargarSemaforo(tipo) {
-  try {
-    const res = await fetch(`${BRIDGE_URL_C}/contabilidad/semaforo?anio=2026&tipo=${tipo}&nocache=${Date.now()}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const datos = await res.json();
-    renderSemaforo(datos.semaforo);
-  } catch(e) {
-    document.getElementById('semaforo-cont').innerHTML = `<div style="color:red;font-size:13px">Error al cargar: ${e.message}</div>`;
-  }
-}
-
-function renderSemaforo(items) {
-  let html = '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
-    '<thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
-    '<th style="padding:8px;text-align:left;font-weight:600">Estado</th>' +
-    '<th style="padding:8px;text-align:left;font-weight:600">Entidad</th>' +
-    '<th style="padding:8px;text-align:right;font-weight:600">Facturado</th>' +
-    '<th style="padding:8px;text-align:right;font-weight:600">Pagado</th>' +
-    '<th style="padding:8px;text-align:right;font-weight:600">Saldo</th>' +
-    '<th style="padding:8px;text-align:left;font-weight:600">Mensaje</th>' +
-    '</tr></thead><tbody>';
-  items.forEach(item => {
-    const color = item.color === '🟢' ? '#4caf50' : item.color === '🟡' ? '#ff9800' : '#f44336';
-    html += '<tr style="border-bottom:1px solid #eee;background:' + (items.indexOf(item) % 2 ? '#fafafa' : '#fff') + '">' +
-      '<td style="padding:8px;text-align:center;font-size:20px">' + item.color + '</td>' +
-      '<td style="padding:8px;font-weight:600">' + (item.entidad || '') + '</td>' +
-      '<td style="padding:8px;text-align:right">' + (item.facturado ? '€' + item.facturado.toFixed(2) : '—') + '</td>' +
-      '<td style="padding:8px;text-align:right">' + (item.pagado ? '€' + item.pagado.toFixed(2) : '—') + '</td>' +
-      '<td style="padding:8px;text-align:right;font-weight:bold;color:' + color + '">' + (item.saldo ? '€' + item.saldo.toFixed(2) : '—') + '</td>' +
-      '<td style="padding:8px;color:#666;font-size:12px">' + (item.mensaje || '') + '</td>' +
-      '</tr>';
-  });
-  html += '</tbody></table>';
-  document.getElementById('semaforo-cont').innerHTML = html;
-}
-</script>
-</body>
-</html>
+   

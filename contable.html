@@ -3037,7 +3037,10 @@ function generarHTMLFactura_ANTIGUA_v1(f) {  // ← SUSTITUIDA por la réplica e
     '</div></td></tr></table></div>'+
     '<table class="lineas"><thead><tr>'+
     '<th style="width:11%">Cantidad</th><th>Producto</th>'+
-   
+    '</thead></table></div></div>';
+  return html;
+}
+
 // SEMÁFORO: Carga y renderiza el estado 🟢/🟡/🔴
 async function cargarSemaforo(tipo) {
   try {

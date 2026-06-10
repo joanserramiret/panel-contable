@@ -3127,7 +3127,7 @@ function cliPendRender() {
       '<td style="padding:7px">' + (x.serie||'') + '-' + (x.numero||'') + '</td>' +
       '<td style="padding:7px">' + (x.fecha||'') + '</td>' +
       '<td style="padding:7px;text-align:right">€' + (Number(x.importe)||0).toFixed(2) + '</td>' +
-      '<td style="padding:7px"><button onclick="cliConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
+      '<td style="padding:7px;white-space:nowrap"><button onclick="cliVerDoc(\'' + (x.serie||'') + '\',\'' + encodeURIComponent(x.numero||'') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="cliConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
   });
   html += '</tbody></table>';
   if (q) html += '<div style="font-size:11px;color:#999;margin-top:5px">Mostrando ' + f.length + ' de ' + _cliPend.length + '</div>';
@@ -3227,7 +3227,7 @@ function provPendRender() {
       '<td style="padding:7px">' + (x.nombre||'') + '</td>' +
       '<td style="padding:7px">' + (x.fecha||'') + '</td>' +
       '<td style="padding:7px;text-align:right">€' + (Number(x.importe)||0).toFixed(2) + '</td>' +
-      '<td style="padding:7px"><button onclick="provConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
+      '<td style="padding:7px;white-space:nowrap"><button onclick="provVerDoc(\'' + encodeURIComponent(x.ruta||'') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="provConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
   });
   html += '</tbody></table>';
   if (q) html += '<div style="font-size:11px;color:#999;margin-top:5px">Mostrando ' + f.length + ' de ' + _provPend.length + '</div>';
@@ -3293,6 +3293,41 @@ async function provConciliarTodos() {
   }
   alert('Hecho ✅\n\n⚖️ Conciliadas (1 cargo exacto): ' + ok + '\n🟡 Con varios cargos (revísalas): ' + varias + '\n⬜ Sin cargo en banco: ' + ninguna);
   provPendientes();
+}
+
+function provVerDoc(rutaEnc) {
+  const ruta = decodeURIComponent(rutaEnc);
+  if (!ruta) { alert('Esta factura no tiene documento asociado.'); return; }
+  const anio = ruta.split('/')[0];
+  const rel = ruta.slice(anio.length + 1);
+  window.open(BRIDGE_URL_C + '/proveedores/abrir?anio=' + encodeURIComponent(anio) + '&ruta=' + encodeURIComponent(rel) + '&ngrok-skip-browser-warning=true', '_blank');
+}
+
+async function cliVerDoc(serie, numeroEnc) {
+  const numero = decodeURIComponent(numeroEnc);
+  try {
+    const res = await fetch(`${BRIDGE_URL_C}/agora/factura_detalle?serie=${encodeURIComponent(serie)}&numero=${encodeURIComponent(numero)}&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const d = await res.json();
+    const old = document.getElementById('doc-ov'); if (old) old.remove();
+    const ov = document.createElement('div'); ov.id = 'doc-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:center;justify-content:center';
+    let html = '<div style="background:#fff;border-radius:10px;max-width:560px;width:92%;max-height:80vh;overflow:auto;padding:18px;font-size:13px">';
+    if (!d.ok) { html += '<div style="color:#c00">Factura no encontrada.</div>'; }
+    else {
+      html += '<div style="font-weight:700;font-size:15px;margin-bottom:2px">' + serie + '-' + numero + '</div>';
+      html += '<div style="color:#444">' + (d.cliente||'') + (d.nif ? ' · ' + d.nif : '') + '</div>';
+      html += '<div style="color:#777;margin:4px 0 10px">' + (d.fecha||'') + ' · Total <b>€' + (Number(d.total)||0).toFixed(2) + '</b></div>';
+      if (d.lineas && d.lineas.length) {
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>';
+        d.lineas.forEach(l => { html += '<tr style="border-bottom:1px solid #eee"><td style="padding:4px">' + (l.desc||'') + '</td><td style="padding:4px;text-align:right;white-space:nowrap">€' + (Number(l.importe)||0).toFixed(2) + '</td></tr>'; });
+        html += '</tbody></table>';
+      }
+    }
+    html += '<div style="text-align:right;margin-top:12px"><button onclick="document.getElementById(\'doc-ov\').remove()" style="padding:6px 14px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer">Cerrar</button></div></div>';
+    ov.innerHTML = html;
+    ov.onclick = (ev) => { if (ev.target === ov) ov.remove(); };
+    document.body.appendChild(ov);
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 function ctaRender(tipo) {

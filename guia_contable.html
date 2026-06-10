@@ -81,4 +81,48 @@
 <div class="card">
   <p style="margin-top:0">El extracto solo trae el <b>total</b> de cada remesa. Para el desglose real recibo a recibo:</p>
   <div class="paso"><b class="n">1</b><div>Descarga del banco el detalle: en <b>Bankinter</b> el PDF "listado de adeudos de la remesa"; en <b>Sabadell</b> el fichero TXT de la remesa (el SEPA que se presentó).</div></div>
-  <div class="paso"><b class="n">2</b><div>Pestaña Remesas → <span class="btn">📎 Documento del banco (PDF/TXT/foto)</span> → selecciona el archivo (o varios a la vez). Vale también una <b>foto o pantallazo</b> del justificante: se transcribe con OCR y se procesa igual.</
+  <div class="paso"><b class="n">2</b><div>Pestaña Remesas → <span class="btn">📎 Documento del banco (PDF/TXT/foto)</span> → selecciona el archivo (o varios a la vez). Vale también una <b>foto o pantallazo</b> del justificante: se transcribe con OCR y se procesa igual.</div></div>
+  <div class="paso"><b class="n">3</b><div><b>NUEVO · remesa en XML (SEPA):</b> también puedes subir el fichero <code>.xml</code> de la remesa (el SEPA <b>pain.008 «Rulebook 2023»</b>). El panel lo desglosa solo: lee cada recibo (cliente, importe, nº de factura) y la fecha de cobro.</div></div>
+</div>
+
+<h2>💳 Compras con tarjeta</h2>
+<div class="card">
+  <p style="margin-top:0">Pestaña <b>💳 Compras tarjeta</b>: cada compra pagada con la tarjeta de crédito, con su semáforo de factura.</p>
+  <table>
+    <tr><th>Color</th><th>Significa</th></tr>
+    <tr><td><span class="ok">🟢</span></td><td>Tiene su factura enlazada — perfecto.</td></tr>
+    <tr><td><span class="ambar">🟡</span></td><td>Falta la factura — hay que conseguirla y enlazarla.</td></tr>
+    <tr><td>🚫</td><td>Marcada como gasto no deducible (no ensucia proveedores).</td></tr>
+  </table>
+  <p>Etiquetas: <b>⏳ aplazado</b> (pago aplazado de la tarjeta, aún sin liquidar) · <b>💳 1/3, 2/3…</b> (pago fraccionado tipo Klarna: la misma factura en varios plazos).</p>
+  <p style="margin-bottom:4px"><b>Botones de cada línea 🟡:</b></p>
+  <div class="paso"><b class="n">1</b><div><span class="btn">🔎 Buscar</span> — busca facturas <b>ya archivadas</b> en el Dropbox que coincidan con ese importe; eliges y la enlaza → pasa a 🟢. (Si es un pago fraccionado, te pregunta el plazo "1/3"…)</div></div>
+  <div class="paso"><b class="n">2</b><div><span class="btn">📎 Subir</span> — subir un PDF nuevo: lo guarda en el <b>PDTE CONTABILIZAR</b> del mes (tu cola) y la pone 🟢.</div></div>
+  <div class="paso"><b class="n">3</b><div><span class="btn">🚫 No deducible</span> — sacarla de proveedores. Se deshace con <span class="btn">↩️ Recuperar</span>.</div></div>
+  <div class="paso"><b class="n">4</b><div>Arriba hay un <b>filtro</b> (comercio, importe, fecha) y <span class="btn">🔎 Buscar todos</span>, que engancha de golpe las visibles que tengan una única coincidencia exacta.</div></div>
+</div>
+
+<h2>⚖️ Conciliar desde el panel</h2>
+<div class="aviso"><b>Color violeta ⚖️ = conciliar.</b> Siempre que veas un botón <b>violeta con ⚖️</b> es una acción de conciliación (enlazar una factura con su cobro o pago). Mismo color y mismo sitio en todas las pestañas, para que no haya pérdida ni equivocación.</div>
+<div class="card">
+  <p style="margin-top:0"><b>Clientes</b> (pestaña 📗 Clientes):</p>
+  <div class="paso"><b class="n">1</b><div><span class="btn" style="background:#ede9fe;color:#6d28d9;border-color:#c4b5fd">⚖️ Facturas pendientes</span> → lista todas las facturas de venta <b>sin cobrar</b> (con filtro y total).</div></div>
+  <div class="paso"><b class="n">2</b><div><span class="btn" style="background:#ede9fe;color:#6d28d9;border-color:#c4b5fd">⚖️ Conciliar</span> en una factura → te muestra los <b>ingresos del banco</b> de ese importe; eliges el que la paga → <b>Enlazar</b> → la factura se cobra y el saldo del cliente baja.</div></div>
+  <div class="paso"><b class="n">3</b><div><span class="btn" style="background:#ede9fe;color:#6d28d9;border-color:#c4b5fd">⚖️ Conciliar todos</span> → engancha de golpe las que tengan <b>un único cobro exacto</b>; las dudosas las deja para que las revises.</div></div>
+  <p style="margin-bottom:0"><b>Saldos a 0:</b> cuando una factura (de cliente o de proveedor, incluida la de tarjeta) queda enlazada con su cobro/pago, el saldo de esa cuenta <b>cuadra a 0</b> solo. Ese es el objetivo: dejar todas las cuentas a 0.</p>
+</div>
+
+<h2>📨 De dónde salen las facturas (automático y manual)</h2>
+<div class="card">
+  <div class="paso"><b class="n">1</b><div><b>Automático (cada día a las 21:00):</b> el ordenador barre el correo (<code>info@</code>, <code>jasp@</code>, <code>jsm@js-tech.es</code>) y archiva en el <b>PDTE CONTABILIZAR</b> del mes las facturas que han llegado por email. Entran así Depau, IGT, Pista Cero, Energema, Contamo y Movistar. Sin tocar nada.</div></div>
+  <div class="paso"><b class="n">2</b><div><b>Lo que NO llega por email</b> (Amazon, o proveedores solo con app como GM Cash): se sube a mano al <b>cajón desastre IA</b> del Dropbox, o se reenvía desde la app del proveedor por email a <code>info@js-tech.es</code> y la rutina lo recoge igual.</div></div>
+  <div class="paso"><b class="n">3</b><div>Tu trabajo sigue igual: desde <b>PDTE CONTABILIZAR</b> clasificas la factura a su carpeta de proveedor y la picas en <b>SisConta</b>. El panel solo te lo deja todo listo y ordenado.</div></div>
+</div>
+
+<div class="aviso" style="background:#eef7ff;border-color:#aacdf0">
+  <b>Si algo no responde:</b> el ordenador de la oficina debe estar encendido y el «bridge» arrancado. Suele ser que se está reiniciando — espera 10 segundos y recarga con <b>Ctrl+Shift+R</b>. Si sigue, avisa a Joan.
+</div>
+
+</main>
+</body>
+</html>

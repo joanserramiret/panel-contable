@@ -789,10 +789,12 @@
           <span>📗 Clientes · saldos y cuenta contable <span style="font-weight:400;font-size:12px;color:var(--texto-suave)">(facturado vs cobrado en banco · para SisConta)</span></span>
           <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <input type="text" id="cc-buscar" oninput="ctaRender('cli')" placeholder="🔎 Buscar cliente..." style="padding:6px 10px;border:1.5px solid #dde;border-radius:8px;font-size:12px;width:220px"/>
+            <button onclick="cliPendientes()" style="padding:6px 12px;background:#6d28d9;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">⚖️ Facturas pendientes</button>
             <button onclick="ctaCargar('cli')" style="padding:6px 10px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12px">⟳</button>
           </span>
         </div>
         <div id="cta-cli-cont"><div style="color:var(--texto-suave);font-size:13px">Pulsa ⟳ para cargar.</div></div>
+        <div id="cta-cli-pend"></div>
       </div>
     </div>
 
@@ -3089,6 +3091,106 @@ async function ctaCargar(tipo) {
   } catch (e) {
     cont.innerHTML = '<div style="color:#c0392b;font-size:13px">Error al cargar: ' + e.message + '</div>';
   }
+}
+
+let _cliPend = [];
+async function cliPendientes() {
+  const cont = document.getElementById('cta-cli-pend');
+  cont.innerHTML = '<div style="color:var(--texto-suave);font-size:13px;margin-top:12px">Cargando facturas pendientes…</div>';
+  try {
+    const res = await fetch(`${BRIDGE_URL_C}/contabilidad/clientes_pendientes?anio=2026&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const d = await res.json();
+    _cliPend = d.facturas || [];
+    let html = '<div style="margin:16px 0 8px;font-weight:700;font-size:14px;color:#6d28d9">⚖️ Facturas pendientes de cobro: ' + (d.n||0) + ' &nbsp;·&nbsp; €' + (d.total||0).toFixed(2) + '</div>';
+    html += '<input id="cli-pend-buscar" oninput="cliPendRender()" placeholder="🔎 Filtrar por cliente, nº de factura, importe o fecha…" style="width:100%;max-width:420px;padding:7px 10px;margin-bottom:8px;border:1.5px solid #dde;border-radius:8px;font-size:12px"/>';
+    html += ' <button onclick="cliConciliarTodos()" style="padding:7px 13px;margin:0 0 8px 6px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-size:12px;font-weight:600;vertical-align:top">⚖️ Conciliar todos (visibles)</button>';
+    html += '<div id="cli-pend-tabla"></div>';
+    cont.innerHTML = html;
+    cliPendRender();
+  } catch(e) { cont.innerHTML = '<div style="color:red;font-size:13px">Error: ' + e.message + '</div>'; }
+}
+
+function cliPendRender() {
+  const q = (document.getElementById('cli-pend-buscar') ? document.getElementById('cli-pend-buscar').value : '').trim().toLowerCase();
+  let f = _cliPend;
+  if (q) f = f.filter(x => ((x.cliente||'') + ' ' + x.serie + '-' + x.numero + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha||'')).toLowerCase().includes(q));
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
+    '<th style="padding:7px;text-align:left">Cliente</th><th style="padding:7px;text-align:left">Factura</th>' +
+    '<th style="padding:7px;text-align:left">Fecha</th><th style="padding:7px;text-align:right">Importe</th>' +
+    '<th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
+  f.forEach(x => {
+    const args = "'" + (x.serie||'') + "'," + (Number(x.importe)||0) + ",'" + encodeURIComponent(x.numero||'') + "','" + encodeURIComponent(x.cliente||'') + "'";
+    html += '<tr style="border-bottom:1px solid #eee">' +
+      '<td style="padding:7px">' + (x.cliente||'') + '</td>' +
+      '<td style="padding:7px">' + (x.serie||'') + '-' + (x.numero||'') + '</td>' +
+      '<td style="padding:7px">' + (x.fecha||'') + '</td>' +
+      '<td style="padding:7px;text-align:right">€' + (Number(x.importe)||0).toFixed(2) + '</td>' +
+      '<td style="padding:7px"><button onclick="cliConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
+  });
+  html += '</tbody></table>';
+  if (q) html += '<div style="font-size:11px;color:#999;margin-top:5px">Mostrando ' + f.length + ' de ' + _cliPend.length + '</div>';
+  document.getElementById('cli-pend-tabla').innerHTML = html;
+}
+
+async function cliConciliar(serie, importe, numeroEnc, clienteEnc) {
+  const numero = decodeURIComponent(numeroEnc), cliente = decodeURIComponent(clienteEnc);
+  try {
+    const res = await fetch(`${BRIDGE_URL_C}/banco/cobros_candidatos?importe=${importe}&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const d = await res.json();
+    const lista = d.movimientos || [];
+    const old = document.getElementById('cli-ov'); if (old) old.remove();
+    const ov = document.createElement('div'); ov.id = 'cli-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:center;justify-content:center';
+    let html = '<div style="background:#fff;border-radius:10px;max-width:640px;width:92%;max-height:80vh;overflow:auto;padding:18px;font-size:13px">';
+    html += '<div style="font-weight:700;margin-bottom:4px;color:#6d28d9">⚖️ Conciliar ' + serie + '-' + numero + ' · ' + cliente + ' · €' + Number(importe).toFixed(2) + '</div>';
+    html += '<div style="font-size:12px;color:#777;margin-bottom:10px">Elige el cobro del banco que paga esta factura:</div>';
+    if (!lista.length) html += '<div style="color:#c00">No hay ingresos en el banco con ese importe libre. Quizá llegó en una remesa (desglósala) o aún no ha entrado.</div>';
+    lista.forEach(m => {
+      const c = encodeURIComponent(cliente), n = encodeURIComponent(numero);
+      html += '<div style="border-bottom:1px solid #eee;padding:7px 0;display:flex;justify-content:space-between;align-items:center;gap:10px">' +
+        '<div><b>€' + Number(m.importe).toFixed(2) + '</b>' + (m.conciliado ? ' <span style="color:#999">(libre €' + Number(m.libre).toFixed(2) + ')</span>' : '') + ' · ' + (m.fecha||'') + '<br><span style="color:#999;font-size:11px">' + (m.concepto||'') + '</span></div>' +
+        '<button onclick="cliLinkCobro(' + m.id + ',\'' + serie + '\',\'' + n + '\',' + importe + ',\'' + c + '\')" style="padding:5px 11px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap">Enlazar ⚖️</button></div>';
+    });
+    html += '<div style="text-align:right;margin-top:12px"><button onclick="document.getElementById(\'cli-ov\').remove()" style="padding:6px 14px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer">Cerrar</button></div></div>';
+    ov.innerHTML = html;
+    ov.onclick = (ev) => { if (ev.target === ov) ov.remove(); };
+    document.body.appendChild(ov);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function cliLinkCobro(mov, serie, numeroEnc, importe, clienteEnc) {
+  const numero = decodeURIComponent(numeroEnc), cliente = decodeURIComponent(clienteEnc);
+  try {
+    const url = `${BRIDGE_URL_C}/banco/conciliar_factura?mov=${mov}&serie=${encodeURIComponent(serie)}&numero=${encodeURIComponent(numero)}&importe=${importe}&cliente=${encodeURIComponent(cliente)}&confirmar=1&nocache=${Date.now()}`;
+    const res = await fetch(url, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const d = await res.json();
+    if (!d.ok) throw new Error(d.error || 'error');
+    const ov = document.getElementById('cli-ov'); if (ov) ov.remove();
+    cliPendientes();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function cliConciliarTodos() {
+  const q = (document.getElementById('cli-pend-buscar') ? document.getElementById('cli-pend-buscar').value : '').trim().toLowerCase();
+  let f = _cliPend;
+  if (q) f = f.filter(x => ((x.cliente||'') + ' ' + x.serie + '-' + x.numero + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha||'')).toLowerCase().includes(q));
+  if (!f.length) { alert('No hay facturas pendientes en pantalla.'); return; }
+  if (!confirm('Voy a conciliar automáticamente las facturas pendientes visibles que tengan UN ÚNICO cobro en banco con ese importe. Las ambiguas o sin cobro las dejo para revisar.\n\n¿Seguir? (' + f.length + ' facturas)')) return;
+  let ok = 0, varias = 0, ninguna = 0;
+  for (const x of f) {
+    try {
+      const res = await fetch(`${BRIDGE_URL_C}/banco/cobros_candidatos?importe=${x.importe}&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+      const d = await res.json();
+      const lista = d.movimientos || [];
+      if (lista.length === 1) {
+        await fetch(`${BRIDGE_URL_C}/banco/conciliar_factura?mov=${lista[0].id}&serie=${encodeURIComponent(x.serie)}&numero=${encodeURIComponent(x.numero)}&importe=${x.importe}&cliente=${encodeURIComponent(x.cliente||'')}&confirmar=1&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+        ok++;
+      } else if (lista.length > 1) { varias++; }
+      else { ninguna++; }
+    } catch(e) {}
+  }
+  alert('Hecho ✅\n\n⚖️ Conciliadas (1 cobro exacto): ' + ok + '\n🟡 Con varios cobros (revísalas): ' + varias + '\n⬜ Sin cobro en banco: ' + ninguna);
+  cliPendientes();
 }
 
 function ctaRender(tipo) {

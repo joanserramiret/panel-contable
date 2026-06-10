@@ -3195,6 +3195,106 @@ async function cliConciliarTodos() {
   cliPendientes();
 }
 
+let _provPend = [];
+async function provPendientes() {
+  const cont = document.getElementById('cta-prov-pend');
+  cont.innerHTML = '<div style="color:var(--texto-suave);font-size:13px;margin-top:12px">Cargando facturas pendientes…</div>';
+  try {
+    const res = await fetch(`${BRIDGE_URL_C}/contabilidad/proveedores_pendientes?anio=2026&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const d = await res.json();
+    _provPend = d.facturas || [];
+    let html = '<div style="margin:16px 0 8px;font-weight:700;font-size:14px;color:#6d28d9">⚖️ Facturas de proveedor pendientes de pago: ' + (d.n||0) + ' &nbsp;·&nbsp; €' + (d.total||0).toFixed(2) + '</div>';
+    html += '<input id="prov-pend-buscar" oninput="provPendRender()" placeholder="🔎 Filtrar por proveedor, factura, importe o fecha…" style="width:100%;max-width:420px;padding:7px 10px;margin-bottom:8px;border:1.5px solid #dde;border-radius:8px;font-size:12px"/>';
+    html += ' <button onclick="provConciliarTodos()" style="padding:7px 13px;margin:0 0 8px 6px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-size:12px;font-weight:600;vertical-align:top">⚖️ Conciliar todos (visibles)</button>';
+    html += '<div id="prov-pend-tabla"></div>';
+    cont.innerHTML = html;
+    provPendRender();
+  } catch(e) { cont.innerHTML = '<div style="color:red;font-size:13px">Error: ' + e.message + '</div>'; }
+}
+
+function provPendRender() {
+  const q = (document.getElementById('prov-pend-buscar') ? document.getElementById('prov-pend-buscar').value : '').trim().toLowerCase();
+  let f = _provPend;
+  if (q) f = f.filter(x => ((x.proveedor||'') + ' ' + (x.nombre||'') + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha||'')).toLowerCase().includes(q));
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
+    '<th style="padding:7px;text-align:left">Proveedor</th><th style="padding:7px;text-align:left">Factura</th>' +
+    '<th style="padding:7px;text-align:left">Fecha</th><th style="padding:7px;text-align:right">Importe</th>' +
+    '<th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
+  f.forEach(x => {
+    const args = (Number(x.importe)||0) + ",'" + encodeURIComponent(x.proveedor||'') + "','" + encodeURIComponent(x.nombre||'') + "','" + encodeURIComponent(x.ruta||'') + "'";
+    html += '<tr style="border-bottom:1px solid #eee">' +
+      '<td style="padding:7px">' + (x.proveedor||'') + '</td>' +
+      '<td style="padding:7px">' + (x.nombre||'') + '</td>' +
+      '<td style="padding:7px">' + (x.fecha||'') + '</td>' +
+      '<td style="padding:7px;text-align:right">€' + (Number(x.importe)||0).toFixed(2) + '</td>' +
+      '<td style="padding:7px"><button onclick="provConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
+  });
+  html += '</tbody></table>';
+  if (q) html += '<div style="font-size:11px;color:#999;margin-top:5px">Mostrando ' + f.length + ' de ' + _provPend.length + '</div>';
+  document.getElementById('prov-pend-tabla').innerHTML = html;
+}
+
+async function provConciliar(importe, provEnc, nombreEnc, rutaEnc) {
+  const proveedor = decodeURIComponent(provEnc), nombre = decodeURIComponent(nombreEnc), ruta = decodeURIComponent(rutaEnc);
+  try {
+    const res = await fetch(`${BRIDGE_URL_C}/banco/cargos_candidatos?importe=${importe}&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const d = await res.json();
+    const lista = d.movimientos || [];
+    const old = document.getElementById('prov-ov'); if (old) old.remove();
+    const ov = document.createElement('div'); ov.id = 'prov-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:center;justify-content:center';
+    let html = '<div style="background:#fff;border-radius:10px;max-width:660px;width:92%;max-height:80vh;overflow:auto;padding:18px;font-size:13px">';
+    html += '<div style="font-weight:700;margin-bottom:4px;color:#6d28d9">⚖️ Conciliar ' + proveedor + ' · ' + nombre + ' · €' + Number(importe).toFixed(2) + '</div>';
+    html += '<div style="font-size:12px;color:#777;margin-bottom:10px">Elige el cargo del banco que paga esta factura:</div>';
+    if (!lista.length) html += '<div style="color:#c00">No hay cargos en el banco con ese importe libre. Quizá se pagó con tarjeta (pestaña 💳) o dentro de un recibo agrupado.</div>';
+    lista.forEach(m => {
+      const p = encodeURIComponent(proveedor), n = encodeURIComponent(nombre), r = encodeURIComponent(ruta);
+      html += '<div style="border-bottom:1px solid #eee;padding:7px 0;display:flex;justify-content:space-between;align-items:center;gap:10px">' +
+        '<div><b>€' + Number(Math.abs(m.importe)).toFixed(2) + '</b>' + (m.conciliado ? ' <span style="color:#999">(libre €' + Number(m.libre).toFixed(2) + ')</span>' : '') + ' · ' + (m.fecha||'') + '<br><span style="color:#999;font-size:11px">' + (m.concepto||'') + '</span></div>' +
+        '<button onclick="provLinkCargo(' + m.id + ',\'' + p + '\',\'' + n + '\',\'' + r + '\',' + importe + ')" style="padding:5px 11px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap">Enlazar ⚖️</button></div>';
+    });
+    html += '<div style="text-align:right;margin-top:12px"><button onclick="document.getElementById(\'prov-ov\').remove()" style="padding:6px 14px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer">Cerrar</button></div></div>';
+    ov.innerHTML = html;
+    ov.onclick = (ev) => { if (ev.target === ov) ov.remove(); };
+    document.body.appendChild(ov);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function provLinkCargo(mov, provEnc, nombreEnc, rutaEnc, importe) {
+  const proveedor = decodeURIComponent(provEnc), nombre = decodeURIComponent(nombreEnc), ruta = decodeURIComponent(rutaEnc);
+  try {
+    const url = `${BRIDGE_URL_C}/banco/conciliar_factura?mov=${mov}&serie=PROV&numero=${encodeURIComponent(nombre)}&importe=${importe}&cliente=${encodeURIComponent(proveedor)}&ruta=${encodeURIComponent(ruta)}&confirmar=1&nocache=${Date.now()}`;
+    const res = await fetch(url, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const d = await res.json();
+    if (!d.ok) throw new Error(d.error || 'error');
+    const ov = document.getElementById('prov-ov'); if (ov) ov.remove();
+    provPendientes();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function provConciliarTodos() {
+  const q = (document.getElementById('prov-pend-buscar') ? document.getElementById('prov-pend-buscar').value : '').trim().toLowerCase();
+  let f = _provPend;
+  if (q) f = f.filter(x => ((x.proveedor||'') + ' ' + (x.nombre||'') + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha||'')).toLowerCase().includes(q));
+  if (!f.length) { alert('No hay facturas pendientes en pantalla.'); return; }
+  if (!confirm('Voy a conciliar automáticamente las facturas pendientes visibles que tengan UN ÚNICO cargo en banco con ese importe. Las ambiguas o sin cargo las dejo para revisar.\n\n¿Seguir? (' + f.length + ' facturas)')) return;
+  let ok = 0, varias = 0, ninguna = 0;
+  for (const x of f) {
+    try {
+      const res = await fetch(`${BRIDGE_URL_C}/banco/cargos_candidatos?importe=${x.importe}&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+      const d = await res.json();
+      const lista = d.movimientos || [];
+      if (lista.length === 1) {
+        await fetch(`${BRIDGE_URL_C}/banco/conciliar_factura?mov=${lista[0].id}&serie=PROV&numero=${encodeURIComponent(x.nombre)}&importe=${x.importe}&cliente=${encodeURIComponent(x.proveedor||'')}&ruta=${encodeURIComponent(x.ruta||'')}&confirmar=1&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+        ok++;
+      } else if (lista.length > 1) { varias++; }
+      else { ninguna++; }
+    } catch(e) {}
+  }
+  alert('Hecho ✅\n\n⚖️ Conciliadas (1 cargo exacto): ' + ok + '\n🟡 Con varios cargos (revísalas): ' + varias + '\n⬜ Sin cargo en banco: ' + ninguna);
+  provPendientes();
+}
+
 function ctaRender(tipo) {
   const cont = document.getElementById(tipo === 'prov' ? 'cta-prov-cont' : 'cta-cli-cont');
   const filas = ctaData[tipo]; if (!filas) return;

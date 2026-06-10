@@ -471,6 +471,7 @@
     <div class="nav-tab" onclick="switchTabC('ctaprov')" id="ctab-ctaprov">📒 Proveedores</div>
     <div class="nav-tab" onclick="switchTabC('ctacli')" id="ctab-ctacli">📗 Clientes</div>
     <div class="nav-tab" onclick="switchTabC('semaforo')" id="ctab-semaforo">🎯 Semáforo</div>
+    <div class="nav-tab" onclick="switchTabC('tarjeta')" id="ctab-tarjeta">💳 Compras tarjeta</div>
     <!-- Podadas a petición de Joan (2026-06): Calendario e Impuestos·IVA — SisConta es la fuente oficial del IVA.
          Para recuperarlas, restaurar estas dos líneas:
     <div class="nav-tab" onclick="switchTabC('calendario')" id="ctab-calendario">📅 Calendario</div>
@@ -873,6 +874,13 @@
         <button onclick="cargarSemaforo('cli')" style="padding:10px 16px;background:#1a2e6e;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">📗 Clientes</button>
       </div>
       <div id="semaforo-cont" style="padding:16px"><div style="color:var(--texto-suave);font-size:13px">Pulsa un botón para cargar.</div></div>
+    </div>
+
+    <div class="tab-content" id="ctc-tarjeta">
+      <div style="padding:16px">
+        <div style="font-size:13px;color:var(--texto-suave);margin-bottom:10px">Compras pagadas con la tarjeta de crédito (se concilian con el cargo mensual). 🟢 con factura · 🟡 falta factura · 🚫 gasto no deducible.</div>
+        <div id="tarjeta-cont"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div>
+      </div>
     </div>
 
     <div class="tab-content" id="ctc-iva">
@@ -3169,6 +3177,80 @@ function renderSemaforo(items) {
   document.getElementById('semaforo-cont').innerHTML = html;
 }
 
+async function cargarTarjeta() {
+  const cont = document.getElementById('tarjeta-cont');
+  cont.innerHTML = '<div style="color:var(--texto-suave);font-size:13px">Cargando…</div>';
+  try {
+    const res = await fetch(`${BRIDGE_URL_C}/contabilidad/tarjeta?anio=2026&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    renderTarjeta(await res.json());
+  } catch(e) {
+    cont.innerHTML = `<div style="color:red;font-size:13px">Error: ${e.message}</div>`;
+  }
+}
+
+function renderTarjeta(d) {
+  const items = d.compras || [];
+  let html = '<div style="margin-bottom:12px;font-size:13px">🟢 <b>' + (d.n_ok||0) + '</b> con factura &nbsp;·&nbsp; 🟡 <b>' + (d.n_pendiente||0) + '</b> pendientes &nbsp;·&nbsp; 🚫 <b>' + (d.n_gasto||0) + '</b> no deducibles &nbsp;·&nbsp; total <b>€' + (d.total||0).toFixed(2) + '</b></div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
+    '<th style="padding:8px;width:40px">Estado</th><th style="padding:8px;text-align:left">Comercio</th>' +
+    '<th style="padding:8px;text-align:right">Importe</th><th style="padding:8px;text-align:left">Factura</th>' +
+    '<th style="padding:8px;text-align:left">Acciones</th></tr></thead><tbody>';
+  items.forEach((it) => {
+    const bg = it.estado === 'pendiente' ? '#fffbe6' : (it.estado === 'gasto' ? '#f0f0f0' : '#f1fbf2');
+    const fac = it.factura ? it.factura.split('/').pop() : '<span style="color:#c00">— sin factura —</span>';
+    let acc = '';
+    if (it.estado !== 'gasto') {
+      acc += '<button onclick="tarjAsignar(' + it.mov + ',' + it.idx + ')" style="padding:4px 8px;margin:1px;border:none;border-radius:6px;background:#1a2e6e;color:#fff;cursor:pointer;font-size:11px">📎 ' + (it.estado==='ok'?'Cambiar':'Asignar') + '</button>';
+      acc += '<button onclick="tarjGasto(' + it.mov + ',' + it.idx + ',1)" style="padding:4px 8px;margin:1px;border:none;border-radius:6px;background:#777;color:#fff;cursor:pointer;font-size:11px">🚫 No deducible</button>';
+    } else {
+      acc += '<button onclick="tarjGasto(' + it.mov + ',' + it.idx + ',0)" style="padding:4px 8px;margin:1px;border:none;border-radius:6px;background:#1a7e2e;color:#fff;cursor:pointer;font-size:11px">↩️ Recuperar</button>';
+    }
+    html += '<tr style="background:' + bg + ';border-bottom:1px solid #eee">' +
+      '<td style="padding:8px;text-align:center;font-size:15px">' + it.color + '</td>' +
+      '<td style="padding:8px">' + (it.comercio||'') + '<br><span style="color:#999;font-size:10px">' + (it.fecha||'') + '</span></td>' +
+      '<td style="padding:8px;text-align:right">€' + (it.importe||0).toFixed(2) + '</td>' +
+      '<td style="padding:8px;font-size:11px">' + fac + '</td>' +
+      '<td style="padding:8px;white-space:nowrap">' + acc + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('tarjeta-cont').innerHTML = html;
+}
+
+function tarjAsignar(mov, idx) {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.pdf,.png,.jpg,.jpeg';
+  inp.onchange = async () => {
+    const file = inp.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('mov', mov);
+    fd.append('idx', idx);
+    try {
+      const res = await fetch(`${BRIDGE_URL_C}/contabilidad/tarjeta/subir`, {
+        method: 'POST', headers: { 'ngrok-skip-browser-warning': 'true' }, body: fd
+      });
+      const d = await res.json();
+      if (!d.ok) throw new Error(d.error || 'error');
+      alert('✅ Factura guardada en:\n' + d.carpeta + '\n(' + d.archivo + ')\n\nRaquel la verá en su cola de PDTE CONTABILIZAR.');
+      cargarTarjeta();
+    } catch(e) { alert('Error: ' + e.message); }
+  };
+  inp.click();
+}
+
+async function tarjGasto(mov, idx, valor) {
+  if (valor && !confirm('¿Mandar esta compra a GASTOS NO DEDUCIBLES? Saldrá del panel de proveedores.')) return;
+  try {
+    const res = await fetch(`${BRIDGE_URL_C}/contabilidad/tarjeta/gasto?mov=${mov}&idx=${idx}&valor=${valor}&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const d = await res.json();
+    if (!d.ok) throw new Error(d.error || 'error');
+    cargarTarjeta();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
 function switchTabC(tab) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -3181,6 +3263,7 @@ function switchTabC(tab) {
   if (tab === 'proveedores' && !pvArchivos.length) pvCargar();
   if (tab === 'ctaprov' && !ctaData.prov) ctaCargar('prov');
   if (tab === 'ctacli' && !ctaData.cli) ctaCargar('cli');
+  if (tab === 'tarjeta') cargarTarjeta();
 }
 
 // Init date inputs on load

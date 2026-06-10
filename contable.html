@@ -3194,6 +3194,7 @@ function renderTarjeta(d) {
   _tarjD = d;
   let html = '<div style="margin-bottom:10px;font-size:13px">🟢 <b>' + (d.n_ok||0) + '</b> con factura &nbsp;·&nbsp; 🟡 <b>' + (d.n_pendiente||0) + '</b> pendientes &nbsp;·&nbsp; 🚫 <b>' + (d.n_gasto||0) + '</b> no deducibles &nbsp;·&nbsp; total <b>€' + (d.total||0).toFixed(2) + '</b></div>';
   html += '<input id="tarj-buscar" oninput="tarjRender()" placeholder="🔎 Filtrar por comercio, importe, fecha o factura…" style="width:100%;max-width:440px;padding:8px 11px;margin-bottom:10px;border:1.5px solid #c0cbea;border-radius:8px;font-size:13px;font-family:inherit"/>';
+  html += ' <button onclick="tarjBuscarTodos()" style="padding:8px 14px;margin:0 0 10px 6px;border:none;border-radius:8px;background:#0a7d34;color:#fff;cursor:pointer;font-size:13px;font-weight:600;vertical-align:top">🔎 Buscar todos (visibles)</button>';
   html += '<div id="tarj-tabla"></div>';
   document.getElementById('tarjeta-cont').innerHTML = html;
   tarjRender();
@@ -3307,6 +3308,34 @@ async function tarjLink(mov, idx, rutaEnc) {
     const ov = document.getElementById('tarj-ov'); if (ov) ov.remove();
     cargarTarjeta();
   } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function tarjBuscarTodos() {
+  const d = _tarjD; if (!d) return;
+  const q = (document.getElementById('tarj-buscar') ? document.getElementById('tarj-buscar').value : '').trim().toLowerCase();
+  let items = d.compras || [];
+  if (q) items = items.filter(it => {
+    const hay = ((it.comercio||'') + ' ' + it.importe + ' ' + String(it.importe).replace('.', ',') + ' ' + (it.fecha||'') + ' ' + (it.factura||'')).toLowerCase();
+    return hay.includes(q);
+  });
+  const pend = items.filter(it => it.estado === 'pendiente');
+  if (!pend.length) { alert('No hay líneas pendientes en pantalla.'); return; }
+  if (!confirm('Voy a enlazar automáticamente las facturas archivadas que coincidan EXACTO (1 sola opción) en las ' + pend.length + ' líneas pendientes visibles.\n\nLas que tengan varias opciones o ninguna las dejo para revisar a mano. ¿Seguir?')) return;
+  let ok = 0, varias = 0, ninguna = 0;
+  for (const it of pend) {
+    try {
+      const res = await fetch(`${BRIDGE_URL_C}/contabilidad/facturas_archivadas?importe=${it.importe}&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+      const r = await res.json();
+      const lista = r.facturas || [];
+      if (lista.length === 1) {
+        await fetch(`${BRIDGE_URL_C}/contabilidad/tarjeta/asignar?mov=${it.mov}&idx=${it.idx}&ruta=${encodeURIComponent(lista[0].ruta)}&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+        ok++;
+      } else if (lista.length > 1) { varias++; }
+      else { ninguna++; }
+    } catch(e) { /* continúa con la siguiente */ }
+  }
+  alert('Hecho ✅\n\n🟢 Enlazadas (1 coincidencia exacta): ' + ok + '\n🟡 Con varias opciones (revísalas con 🔎): ' + varias + '\n⬜ Sin factura archivada: ' + ninguna);
+  cargarTarjeta();
 }
 
 function switchTabC(tab) {

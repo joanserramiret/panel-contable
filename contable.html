@@ -4729,7 +4729,8 @@ async function bkRemesas() {
               '<button onclick="remesaQuitarRecibo(' + m.id + ',' + fi + ')" title="Quitar SOLO este recibo del desglose (la factura queda libre; el resto del desglose no se toca)" style="padding:1px 7px;background:#fde8e8;border:1px solid #e0b0b0;color:#c0392b;border-radius:5px;font-size:10.5px;cursor:pointer">✕</button></td></tr>';
           }).join('') + '</table>' +
           '<div style="text-align:right;margin-top:6px">' +
-          (Math.abs(resto) >= 0.01 ? '<button onclick="remesaExplicarDescuadre(' + m.id + ')" title="Anotar el motivo de los ' + bkFmt(resto) + ' sin explicar (gastos, cliente desaparecido, error...): la remesa quedará cuadrada y el porqué escrito para la contable" style="padding:4px 10px;background:#fff3e0;border:1.5px solid #e8b27a;color:#b45309;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">⚖ Explicar descuadre</button>' : '') +
+          (Math.abs(resto) >= 0.01 ? '<button onclick="remesaGastosDevolucion(' + m.id + ')" title="El cobro trae de más los gastos de devolución que repercutiste al cliente (recibo devuelto que se vuelve a girar + comisión del banco). Anota los ' + bkFmt(resto) + ' como línea de GASTOS y la remesa cuadra al céntimo — sin marcarlo como descuadre." style="padding:4px 10px;background:#fff8e1;border:1.5px solid #e8c97a;color:#7c5c10;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">💸 Gastos de devolución (' + bkFmt(resto) + ')</button>' : '') +
+          (Math.abs(resto) >= 0.01 ? '<button onclick="remesaExplicarDescuadre(' + m.id + ')" title="Anotar el motivo de los ' + bkFmt(resto) + ' sin explicar (cliente desaparecido, error de tecleo, redondeo...): la remesa quedará cuadrada y el porqué escrito para la contable" style="padding:4px 10px;background:#fff3e0;border:1.5px solid #e8b27a;color:#b45309;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">⚖ Otro motivo</button>' : '') +
           '<button onclick="remesaAsignarManual(' + m.id + ',-1)" title="Añadir factura(s) del listado a este desglose (una o varias a la vez, contra lo que quede sin explicar)" style="padding:4px 10px;background:#1a7a3f;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">➕ Añadir facturas</button>' +
           (facts.some(x => x.serie === '—') ? '<button onclick="remesaDeducir(' + m.id + ')" title="Deducir las facturas de los recibos sin localizar, por cliente e importes" style="padding:4px 10px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">🪄 Deducir facturas</button>' : '') +
           (esPropuesta ? '<button onclick="remesaEditarCuadre(' + m.id + ')" title="Editar el cuadre manual: añadir o quitar facturas" style="padding:4px 10px;background:#fff3e0;border:1px solid #e8b27a;color:#b45309;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">✏ Editar cuadre</button>' : '') +
@@ -5231,6 +5232,35 @@ async function remesaExplicarDescuadre(movId) {
   const res = await bkPedirDescuadre(resto, '', {});
   if (!res || res === 'sin') return;
   const nuevo = m.conciliado.concat([Object.assign(res, { situacion: 'abonado' })]);
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/banco/conciliar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ id: movId, facturas: nuevo })
+    });
+    if ((await r.json()).ok) {
+      refrescarEstadosCobro();
+      bkRemesas();
+    } else alert('✗ No se pudo guardar');
+  } catch(err) { alert('✗ ' + err.message); }
+}
+
+// 💸 GASTOS DE DEVOLUCIÓN repercutidos: cuando un cobro de la remesa trae de más los gastos
+// de un recibo devuelto (factura actual + factura devuelta re-girada + comisión del banco),
+// el resto que sobra son esos gastos que el cliente te reembolsa. Se anota como línea GASTOS
+// limpia (no como ⚖ descuadre) y la remesa cuadra al céntimo. Pasos típicos: ➕ Añadir las
+// facturas (la del mes y la devuelta que vuelve a Pendiente) y, al final, este botón con el resto.
+async function remesaGastosDevolucion(movId) {
+  const m = (bkRemesasDatos.remesas || []).find(x => x.id === movId);
+  if (!m || !m.conciliado || !m.conciliado.length) return;
+  const resto = Math.round((m.importe - m.conciliado.reduce((s, x) => s + (x.importe || 0), 0)) * 100) / 100;
+  if (Math.abs(resto) < 0.01) { alert('Esta remesa ya cuadra al céntimo.'); return; }
+  if (!confirm('💸 Anotar ' + bkFmt(resto) + ' como GASTOS DE DEVOLUCIÓN repercutidos al cliente.\n\n' +
+    'Úsalo cuando el cobro incluye, además de la factura del mes, una factura que se devolvió y se ' +
+    'vuelve a girar MÁS la comisión del banco. Antes de esto añade las facturas con ➕.\n\n' +
+    'La remesa quedará ✓ cuadrada y saldrá como línea de gastos (💸), no como descuadre. ¿Seguir?')) return;
+  const nuevo = m.conciliado.concat([{ serie: 'GASTOS', numero: 'gastos de devolución repercutidos',
+    importe: resto, cliente: '', situacion: 'abonado' }]);
   try {
     const r = await fetch(BRIDGE_URL_C + '/banco/conciliar', {
       method: 'POST',

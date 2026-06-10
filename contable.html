@@ -3189,10 +3189,25 @@ async function cargarTarjeta() {
   }
 }
 
+let _tarjD = null;
 function renderTarjeta(d) {
-  const items = d.compras || [];
-  let html = '<div style="margin-bottom:12px;font-size:13px">🟢 <b>' + (d.n_ok||0) + '</b> con factura &nbsp;·&nbsp; 🟡 <b>' + (d.n_pendiente||0) + '</b> pendientes &nbsp;·&nbsp; 🚫 <b>' + (d.n_gasto||0) + '</b> no deducibles &nbsp;·&nbsp; total <b>€' + (d.total||0).toFixed(2) + '</b></div>';
-  html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
+  _tarjD = d;
+  let html = '<div style="margin-bottom:10px;font-size:13px">🟢 <b>' + (d.n_ok||0) + '</b> con factura &nbsp;·&nbsp; 🟡 <b>' + (d.n_pendiente||0) + '</b> pendientes &nbsp;·&nbsp; 🚫 <b>' + (d.n_gasto||0) + '</b> no deducibles &nbsp;·&nbsp; total <b>€' + (d.total||0).toFixed(2) + '</b></div>';
+  html += '<input id="tarj-buscar" oninput="tarjRender()" placeholder="🔎 Filtrar por comercio, importe, fecha o factura…" style="width:100%;max-width:440px;padding:8px 11px;margin-bottom:10px;border:1.5px solid #c0cbea;border-radius:8px;font-size:13px;font-family:inherit"/>';
+  html += '<div id="tarj-tabla"></div>';
+  document.getElementById('tarjeta-cont').innerHTML = html;
+  tarjRender();
+}
+
+function tarjRender() {
+  const d = _tarjD; if (!d) return;
+  const q = (document.getElementById('tarj-buscar') ? document.getElementById('tarj-buscar').value : '').trim().toLowerCase();
+  let items = d.compras || [];
+  if (q) items = items.filter(it => {
+    const hay = ((it.comercio||'') + ' ' + it.importe + ' ' + String(it.importe).replace('.', ',') + ' ' + (it.fecha||'') + ' ' + (it.factura||'')).toLowerCase();
+    return hay.includes(q);
+  });
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
     '<th style="padding:8px;width:40px">Estado</th><th style="padding:8px;text-align:left">Comercio</th>' +
     '<th style="padding:8px;text-align:right">Importe</th><th style="padding:8px;text-align:left">Factura</th>' +
     '<th style="padding:8px;text-align:left">Acciones</th></tr></thead><tbody>';
@@ -3215,7 +3230,8 @@ function renderTarjeta(d) {
       '<td style="padding:8px;white-space:nowrap">' + acc + '</td></tr>';
   });
   html += '</tbody></table>';
-  document.getElementById('tarjeta-cont').innerHTML = html;
+  if (q) html += '<div style="font-size:11px;color:#999;margin-top:6px">Mostrando ' + items.length + ' de ' + (d.compras||[]).length + '</div>';
+  document.getElementById('tarj-tabla').innerHTML = html;
 }
 
 function tarjAsignar(mov, idx) {

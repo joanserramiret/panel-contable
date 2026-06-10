@@ -775,10 +775,12 @@
           <span>📒 Proveedores · saldos y cuenta contable <span style="font-weight:400;font-size:12px;color:var(--texto-suave)">(facturado vs pagado en banco · para SisConta)</span></span>
           <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <input type="text" id="cp-buscar" oninput="ctaRender('prov')" placeholder="🔎 Buscar proveedor..." style="padding:6px 10px;border:1.5px solid #dde;border-radius:8px;font-size:12px;width:220px"/>
+            <button onclick="provPendientes()" style="padding:6px 12px;background:#6d28d9;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">⚖️ Facturas pendientes</button>
             <button onclick="ctaCargar('prov')" style="padding:6px 10px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12px">⟳</button>
           </span>
         </div>
         <div id="cta-prov-cont"><div style="color:var(--texto-suave);font-size:13px">Pulsa ⟳ para cargar.</div></div>
+        <div id="cta-prov-pend"></div>
       </div>
     </div>
 

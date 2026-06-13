@@ -475,7 +475,7 @@
     <div class="nav-tab tab-clasico" onclick="switchTabC('ctacli')" id="ctab-ctacli">📗 Clientes</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('semaforo')" id="ctab-semaforo">🎯 Semáforo</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('tarjeta')" id="ctab-tarjeta">💳 Compras tarjeta</div>
-    <div class="nav-toggle" onclick="toggleModoClasico()" id="cnav-toggle" title="Cambia entre la vista SIMPLE (4 pestañas) y la CLÁSICA (todas). Es solo de visualización: no borra nada.">⚙ Modo clásico</div>
+    <div class="nav-toggle" onclick="toggleModoClasico()" id="cnav-toggle" title="Abre el DETALLE: bancos en tiempo real, remesas, proveedores… (lo que usa Raquel). Es solo de visualización: no borra nada.">🔧 Detalle · Raquel</div>
     <!-- Podadas a petición de Joan (2026-06): Calendario e Impuestos·IVA — SisConta es la fuente oficial del IVA.
          Para recuperarlas, restaurar estas dos líneas:
     <div class="nav-tab tab-clasico" onclick="switchTabC('calendario')" id="ctab-calendario">📅 Calendario</div>
@@ -531,7 +531,7 @@
         <div style="font-weight:800;font-size:17px;color:#1a2e6e;margin-top:8px">Cuadrar facturas con pagos</div>
         <div style="color:var(--texto-suave);font-size:13px;margin-top:8px;max-width:560px;margin-left:auto;margin-right:auto">
           Un único sitio para casar factura ↔ pago (banco, visa, remesa o transferencia) — incluidos los fraccionados.
-          De momento, esas acciones siguen en <b>Modo clásico</b> (Tesorería, Remesas, Proveedores…). Lo unifico aquí en el siguiente paso.
+          De momento, esas acciones siguen en <b>🔧 Detalle · Raquel</b> (Tesorería, Remesas, Proveedores…). Lo unifico aquí en el siguiente paso.
         </div>
       </div>
     </div>
@@ -3688,7 +3688,7 @@ function aplicarModoPanel() {
   try { modo = localStorage.getItem('panelModo') || 'simple'; } catch(e) {}
   nav.classList.toggle('modo-clasico', modo === 'clasico');
   nav.classList.toggle('modo-simple', modo !== 'clasico');
-  if (tog) tog.textContent = modo === 'clasico' ? '✓ Vista simple' : '⚙ Modo clásico';
+  if (tog) tog.textContent = modo === 'clasico' ? '← Vista simple' : '🔧 Detalle · Raquel';
   // Si en modo simple estabas en una pestaña clásica (ahora oculta), vuelve a Resumen
   if (modo !== 'clasico') {
     const act = document.querySelector('.nav-tab.active');

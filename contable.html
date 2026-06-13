@@ -921,7 +921,7 @@
 // ===== CONFIG =====
 const BRIDGE_URL_C = 'https://uncooked-sprung-unpinned.ngrok-free.dev';
 const AGORA_TOKEN_C = 'api_1YkA9AsADgToXP5UQTANycxD2acj0BG92mpa6nJ3qpFt9CmNVFF6DPdBtpPvNbhG';
-const SERIES_FACTURAS_C = ['APPF', 'F', 'FD'];
+const SERIES_FACTURAS_C = ['F', 'FD'];   // SOLO F/FD son documentos de venta [2026-06-14]
 const SERIES_ALBARANES_C = ['APP', 'A'];
 const SERIES_TICKETS_C = ['T', 'TD'];
 const SERIE_FACTURA_C = 'APPF'; // kept for compat
@@ -1115,7 +1115,7 @@ async function cargarDatos() {
   factPorDia = {};
   diasFallidosC = [];
 
-  const SERIES_FACTURAS = ['APPF','APPFD','F','FD','T','TD'];
+  const SERIES_FACTURAS = ['F','FD'];   // SOLO F/FD [2026-06-14]
   const SERIES_ALBARANES = ['A','APP'];
   let errores = 0;
 
@@ -1145,7 +1145,7 @@ async function cargarDatos() {
     const docs = (await rT.json()).documentos || [];
     docs.forEach(doc => {
       const dia = (doc.BusinessDay || doc.Date || '').slice(0, 10);
-      if (doc._tipo_cache === 'factura') {
+      if (doc._tipo_cache === 'factura' && ['F','FD'].includes((doc.Serie || '').toUpperCase())) {   // SOLO F/FD cuentan como factura de venta [2026-06-14]
         doc._tipo = 'factura';
         todasFacturasC.push(doc);
         factPorDia[dia] = (factPorDia[dia] || []).concat([doc]);
@@ -2283,7 +2283,7 @@ async function cargarMesCalendarioSiNecesario() {
     if (statusEl) statusEl.textContent = 'Cargando ' + new Date(calYear, calMonth).toLocaleString('es-ES',{month:'long',year:'numeric'}) + '...';
 
     const dates = getDatesC(primerDia, ultimoDiaStr);
-    const SERIES_FACTURAS = ['APPF','APPFD','F','FD','T','TD'];
+    const SERIES_FACTURAS = ['F','FD'];   // SOLO F/FD [2026-06-14]
     const SERIES_ALBARANES = ['A','APP'];
 
     try {
@@ -2296,7 +2296,7 @@ async function cargarMesCalendarioSiNecesario() {
         results.forEach((r, idx) => {
           const dia = batch[idx];
           if (r.Invoices && Array.isArray(r.Invoices)) {
-            const facts = r.Invoices.filter(f => f.Status !== 'Cancelled');  // todas las series
+            const facts = r.Invoices.filter(f => f.Status !== 'Cancelled' && ['F','FD'].includes((f.Serie || '').toUpperCase()));  // SOLO F/FD [2026-06-14]
             facts.forEach(f => { f._tipo = 'factura'; todasFacturasC.push(f); });
             if (facts.length) factPorDia[dia] = (factPorDia[dia] || []).concat(facts);
           }

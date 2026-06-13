@@ -513,14 +513,15 @@
 
     <!-- PAGOS TAB (nuevo · calendario de pagos a proveedores) -->
     <div class="tab-content" id="ctc-pagos">
-      <div class="card" style="text-align:center;padding:40px 20px">
-        <div style="font-size:34px">📅</div>
-        <div style="font-weight:800;font-size:17px;color:#1a2e6e;margin-top:8px">Calendario de pagos a proveedores</div>
-        <div style="color:var(--texto-suave);font-size:13px;margin-top:8px;max-width:560px;margin-left:auto;margin-right:auto">
-          Aquí saldrán las facturas de proveedor ordenadas por <b>vencimiento</b> (el del pie de la factura),
-          con ⚡ cargo automático los domiciliados y ✋ pago manual el resto. <b>Siguiente paso</b> — lo monto ahora.
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <div class="card-title" style="margin:0">📅 Calendario de pagos a proveedores</div>
+          <button onclick="cargarPagos()" style="padding:6px 12px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12px">⟳ Actualizar</button>
         </div>
+        <div id="pagos-resumen" style="font-size:12.5px;color:var(--texto-suave);margin-top:6px"></div>
+        <div style="font-size:11px;color:var(--texto-suave);margin-top:4px">⚡ auto = domiciliado (te lo cargan solo) · ✋ manual = lo pagas tú · <b>~</b> = vencimiento estimado, revísalo con ✎</div>
       </div>
+      <div class="card"><div id="pagos-lista"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div></div>
     </div>
 
     <!-- CUADRAR TAB (nuevo · casar facturas ↔ pagos) -->
@@ -3624,6 +3625,60 @@ async function tarjBuscarTodos() {
   cargarTarjeta();
 }
 
+// ===== 📅 PAGOS (calendario de pagos a proveedores) =====
+let pagosDatos = { pagos: [] };
+function fechaES2(iso) { if (!iso) return '—'; const p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '-' + p[1] + '-' + p[0] : iso; }
+async function cargarPagos() {
+  const cont = document.getElementById('pagos-lista');
+  if (cont) cont.innerHTML = '<div style="color:var(--texto-suave);font-size:13px;padding:10px">Cargando…</div>';
+  const anio = (document.getElementById('c-desde').value || '').slice(0, 4) || ('' + new Date().getFullYear());
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/contabilidad/pagos?anio=' + anio, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    pagosDatos = await r.json();
+    renderPagos();
+  } catch (e) { if (cont) cont.innerHTML = '<div style="color:#c0392b;padding:10px">✗ ' + e.message + '</div>'; }
+}
+function renderPagos() {
+  const cont = document.getElementById('pagos-lista');
+  const res = document.getElementById('pagos-resumen');
+  const pend = pagosDatos.pagos || [];
+  if (res) res.innerHTML = '<b>' + pend.length + '</b> facturas pendientes de pagar · Total <b style="color:#c0392b">' + bkFmt(pagosDatos.tot_pendiente || 0) + '</b> · de ellas ⚡ domiciliado <b>' + bkFmt(pagosDatos.tot_domiciliado || 0) + '</b>';
+  if (!pend.length) { cont.innerHTML = '<div style="color:#1b7a3d;font-size:13px;padding:10px">✓ Nada pendiente de pagar en este año.</div>'; return; }
+  const hoy = new Date().toISOString().slice(0, 10);
+  cont.innerHTML = '<table style="width:100%;font-size:12.5px;border-collapse:collapse">' +
+    '<tr style="color:var(--texto-suave);text-align:left"><th style="padding:4px">Vence</th><th>Proveedor</th><th>Factura</th><th style="text-align:right">Pendiente</th><th></th></tr>' +
+    pend.map(p => {
+      const vencido = p.vencimiento && p.vencimiento < hoy;
+      const venc = fechaES2(p.vencimiento) + (p.fuente_venc === 'estimado' ? ' <span title="No encontré el vencimiento en el pie; estimado (fecha+30). Revísalo con ✎" style="color:#c96a10;font-weight:700">~</span>' : '');
+      const metodo = p.domiciliado ? '<span title="Domiciliado: te lo cargan automáticamente" style="color:#0e7490;font-weight:700;font-size:11px">⚡ auto</span>' : '<span title="Pago manual: lo lanzas tú" style="color:#b45309;font-weight:700;font-size:11px">✋ manual</span>';
+      const est = p.estado === 'parcial' ? ' <span style="color:#c96a10;font-weight:700;font-size:11px" title="Pagado ' + bkFmt(p.pagado) + ' de ' + bkFmt(p.total) + '">🟡 parcial</span>' : '';
+      const re = encodeURIComponent(p.ruta || '');
+      return '<tr style="border-top:1px solid var(--borde)' + (vencido ? ';background:#fdeeee' : '') + '">' +
+        '<td style="padding:5px 4px;white-space:nowrap' + (vencido ? ';color:#c0392b;font-weight:700' : '') + '">' + venc + (vencido ? ' ⚠' : '') + '</td>' +
+        '<td>' + (p.proveedor || '—') + ' ' + metodo + est + '</td>' +
+        '<td style="color:var(--texto-suave)">' + (p.nombre || '') + '</td>' +
+        '<td style="text-align:right;font-weight:700">' + bkFmt(p.pendiente) + '</td>' +
+        '<td style="white-space:nowrap">' +
+          '<button onclick="provVerDoc(\'' + re + '\')" title="Ver la factura" style="padding:2px 7px;background:#475569;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">👁</button> ' +
+          '<button onclick="pagosEditar(\'' + re + '\')" title="Corregir vencimiento / domiciliación" style="padding:2px 7px;background:#6d28d9;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">✎</button>' +
+        '</td></tr>';
+    }).join('') + '</table>';
+}
+async function pagosEditar(rutaEnc) {
+  const ruta = decodeURIComponent(rutaEnc);
+  const p = (pagosDatos.pagos || []).find(x => x.ruta === ruta) || {};
+  const venc = prompt('Vencimiento (AAAA-MM-DD). Déjalo vacío para volver al automático del pie:', p.vencimiento || '');
+  if (venc === null) return;
+  const domic = confirm('¿Es DOMICILIADO (te lo cargan automáticamente)?\n\nAceptar = ⚡ domiciliado · Cancelar = ✋ pago manual');
+  try {
+    await fetch(BRIDGE_URL_C + '/contabilidad/pagos/venc', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ ruta: ruta, vencimiento: (venc || '').trim(), domiciliado: domic })
+    });
+    cargarPagos();
+  } catch (e) { alert('✗ ' + e.message); }
+}
+
 // ⚙ Modo simple (4 pestañas) ↔ clásico (todas). Solo visualización; reversible y no borra nada.
 function aplicarModoPanel() {
   const nav = document.getElementById('cnav');
@@ -3662,6 +3717,7 @@ function switchTabC(tab) {
   if (tab === 'ctacli' && !ctaData.cli) ctaCargar('cli');
   if (tab === 'tarjeta') cargarTarjeta();
   if (tab === 'semaforo') cargarSemaforo('prov');
+  if (tab === 'pagos') cargarPagos();
 }
 
 // Init date inputs on load
@@ -6373,81 +6429,4 @@ function pvCambiarTipo(ruta, actual) {
   if (viejo) viejo.remove();
 
   const botones = Object.entries(base).map(([t, nombre]) =>
-    '<button onclick="pvGuardarTipo(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + t + '\')" style="display:block;width:100%;text-align:left;padding:10px 14px;margin-bottom:6px;border:2px solid ' + (t === actual ? '#e87e1a' : '#dde') + ';border-radius:8px;background:' + (t === actual ? '#fff3e0' : '#fff') + ';font-size:14px;cursor:pointer;font-family:inherit">' + nombre + (t === actual ? ' · <b>actual</b>' : '') + '</button>').join('') +
-    extras.map(t =>
-    '<button onclick="pvGuardarTipo(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + t.replace(/'/g, "\\'") + '\')" style="display:block;width:100%;text-align:left;padding:10px 14px;margin-bottom:6px;border:2px solid ' + (t === actual ? '#e87e1a' : '#dde') + ';border-radius:8px;background:' + (t === actual ? '#fff3e0' : '#fff') + ';font-size:14px;cursor:pointer;font-family:inherit">🏷 ' + t + (t === actual ? ' · <b>actual</b>' : '') + '</button>').join('');
-
-  const div = document.createElement('div');
-  div.id = 'pv-tipo-modal';
-  div.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(15,31,92,.5);display:flex;align-items:center;justify-content:center';
-  div.innerHTML = '<div style="background:#fff;border-radius:14px;padding:22px;width:340px;max-height:80vh;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.3)">' +
-    '<div style="font-weight:800;font-size:15px;color:#1a2e6e;margin-bottom:12px">¿Qué tipo de documento es?</div>' + botones +
-    '<div style="display:flex;gap:6px;margin-top:10px">' +
-      '<input id="pv-tipo-nuevo" placeholder="o crea un tipo nuevo..." style="flex:1;padding:9px 12px;border:1.5px solid #dde;border-radius:8px;font-size:13px;font-family:inherit" onkeydown="if(event.key===\'Enter\')pvGuardarTipoNuevo(\'' + ruta.replace(/'/g, "\\'") + '\')"/>' +
-      '<button onclick="pvGuardarTipoNuevo(\'' + ruta.replace(/'/g, "\\'") + '\')" style="padding:9px 14px;background:#1a2e6e;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">Crear</button>' +
-    '</div>' +
-    '<div style="font-size:11px;color:#888;margin-top:8px">Los tipos que no sean "factura" quedan fuera de contabilidad, conciliación e IVA. Tu elección manda sobre el clasificador para siempre.</div>' +
-    '<button onclick="document.getElementById(\'pv-tipo-modal\').remove()" style="margin-top:12px;width:100%;padding:8px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;font-size:13px;cursor:pointer">Cancelar</button>' +
-  '</div>';
-  div.onclick = e => { if (e.target === div) div.remove(); };
-  document.body.appendChild(div);
-}
-
-function pvGuardarTipoNuevo(ruta) {
-  const v = (document.getElementById('pv-tipo-nuevo').value || '').trim().toLowerCase();
-  if (!v) return;
-  if (v.length > 30) { alert('Nombre demasiado largo (máx. 30).'); return; }
-  pvGuardarTipo(ruta, v);
-}
-
-async function pvGuardarTipo(ruta, tipo) {
-  const modal = document.getElementById('pv-tipo-modal');
-  if (modal) modal.remove();
-  try {
-    const r = await fetch(BRIDGE_URL_C + '/proveedores/tipo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-      body: JSON.stringify({ ruta: ruta, tipo: tipo })
-    });
-    const d = await r.json();
-    if (d.ok) {
-      const anio = document.getElementById('pv-anio').value || new Date().getFullYear();
-      await pvCargarDatos(anio);
-      pvRender();
-    } else alert('✗ ' + (d.error || 'Error'));
-  } catch(e) { alert('✗ ' + e.message); }
-}
-
-// Aparta un PDF colado a la carpeta PARA BORRAR; opcionalmente aprende el patrón
-async function pvBorrar(ruta, nombre) {
-  if (!confirm('🗑 "' + nombre + '"\n\n¿Mover a la carpeta PARA BORRAR del Dropbox?\n(No se borra nada definitivamente — Raquel vacía esa carpeta cuando quiera.)')) return;
-  const recordar = confirm('¿Quieres que me acuerde?\n\nAceptar = los futuros archivos con nombre parecido ("' + nombre.replace(/\d+/g, '#') + '") se apartarán SOLOS al escanear o al ordenar el cajón.\nCancelar = solo este archivo.');
-  try {
-    const r = await fetch(BRIDGE_URL_C + '/proveedores/borrar', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-      body: JSON.stringify({ ruta: ruta, recordar: recordar })
-    });
-    const d = await r.json();
-    if (d.ok) {
-      pvCargar();
-      if (d.patron) console.log('[basura] regla aprendida:', d.patron);
-    } else alert('✗ ' + (d.error || 'Error'));
-  } catch(e) { alert('✗ ' + e.message); }
-}
-
-function bkCerrarModal() {
-  document.getElementById('bk-modal').style.display = 'none';
-  bkMovActual = null;
-  bkSeleccion = {};
-}
-
-// ── Saldos bancarios (dashboard) ──
-async function cargarSaldos() {
-  const el = document.getElementById('saldos-bancos');
-  if (!el) return;
-  try {
-    const r = await fetch(BRIDGE_URL_C + '/banco/eb/saldos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
-    const d = await r.json();
-    if (!d.saldos || !d.saldos.length) { el.textContent = d.error || 'Sin cuentas bancarias vinculadas.'; return; }
-    el.innerHTML = d.saldos
+    '<button onclick="pvGuardarTipo(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + t + '\')" style="display:block;width:100%;text-align:left;padding:10px 14px;margin-bottom:6px;border:2px solid ' + (t === actual ? '#e87e1a' : '#dde') + ';border-radius:8px;background:' + (t === actual ? '#fff3e0' : '#fff') + ';f

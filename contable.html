@@ -461,22 +461,32 @@
     </div>
   </header>
 
-  <nav>
-    <div class="nav-tab active" onclick="switchTabC('dashboard')" id="ctab-dashboard">📊 Resumen</div>
-    <div class="nav-tab" onclick="switchTabC('facturas')" id="ctab-facturas">🧾 Facturas emitidas</div>
-    <div class="nav-tab" onclick="switchTabC('cobros')" id="ctab-cobros">💶 Cartera de cobros</div>
-    <div class="nav-tab" onclick="switchTabC('proveedores')" id="ctab-proveedores">📥 Facturas recibidas</div>
-    <div class="nav-tab" onclick="switchTabC('banco')" id="ctab-banco">🏦 Tesorería</div>
-    <div class="nav-tab" onclick="switchTabC('remesas')" id="ctab-remesas">🧩 Remesas y efectos</div>
-    <div class="nav-tab" onclick="switchTabC('ctaprov')" id="ctab-ctaprov">📒 Proveedores</div>
-    <div class="nav-tab" onclick="switchTabC('ctacli')" id="ctab-ctacli">📗 Clientes</div>
-    <div class="nav-tab" onclick="switchTabC('semaforo')" id="ctab-semaforo">🎯 Semáforo</div>
-    <div class="nav-tab" onclick="switchTabC('tarjeta')" id="ctab-tarjeta">💳 Compras tarjeta</div>
+  <nav id="cnav" class="modo-simple">
+    <div class="nav-tab active tab-simple" onclick="switchTabC('dashboard')" id="ctab-dashboard">📊 Resumen</div>
+    <div class="nav-tab tab-simple" onclick="switchTabC('cobros')" id="ctab-cobros">💶 Cobros</div>
+    <div class="nav-tab tab-simple" onclick="switchTabC('pagos')" id="ctab-pagos">📅 Pagos</div>
+    <div class="nav-tab tab-simple" onclick="switchTabC('cuadrar')" id="ctab-cuadrar">🔗 Cuadrar</div>
+    <div class="nav-tab tab-simple" onclick="switchTabC('buscar')" id="ctab-buscar">🔎 Buscar</div>
+    <div class="nav-tab tab-clasico" onclick="switchTabC('facturas')" id="ctab-facturas">🧾 Facturas emitidas</div>
+    <div class="nav-tab tab-clasico" onclick="switchTabC('proveedores')" id="ctab-proveedores">📥 Facturas recibidas</div>
+    <div class="nav-tab tab-clasico" onclick="switchTabC('banco')" id="ctab-banco">🏦 Tesorería</div>
+    <div class="nav-tab tab-clasico" onclick="switchTabC('remesas')" id="ctab-remesas">🧩 Remesas y efectos</div>
+    <div class="nav-tab tab-clasico" onclick="switchTabC('ctaprov')" id="ctab-ctaprov">📒 Proveedores</div>
+    <div class="nav-tab tab-clasico" onclick="switchTabC('ctacli')" id="ctab-ctacli">📗 Clientes</div>
+    <div class="nav-tab tab-clasico" onclick="switchTabC('semaforo')" id="ctab-semaforo">🎯 Semáforo</div>
+    <div class="nav-tab tab-clasico" onclick="switchTabC('tarjeta')" id="ctab-tarjeta">💳 Compras tarjeta</div>
+    <div class="nav-toggle" onclick="toggleModoClasico()" id="cnav-toggle" title="Cambia entre la vista SIMPLE (4 pestañas) y la CLÁSICA (todas). Es solo de visualización: no borra nada.">⚙ Modo clásico</div>
     <!-- Podadas a petición de Joan (2026-06): Calendario e Impuestos·IVA — SisConta es la fuente oficial del IVA.
          Para recuperarlas, restaurar estas dos líneas:
-    <div class="nav-tab" onclick="switchTabC('calendario')" id="ctab-calendario">📅 Calendario</div>
-    <div class="nav-tab" onclick="switchTabC('iva')" id="ctab-iva">📋 Impuestos · IVA</div> -->
+    <div class="nav-tab tab-clasico" onclick="switchTabC('calendario')" id="ctab-calendario">📅 Calendario</div>
+    <div class="nav-tab tab-clasico" onclick="switchTabC('iva')" id="ctab-iva">📋 Impuestos · IVA</div> -->
   </nav>
+  <style>
+    #cnav.modo-simple .tab-clasico { display: none; }
+    #cnav-toggle { cursor: pointer; padding: 8px 14px; border-radius: 8px; font-size: 12.5px;
+      font-weight: 700; color: #6d28d9; background: #ede9fe; border: 1px solid #c4b5fd; margin-left: auto; align-self: center; }
+    #cnav.modo-clasico #cnav-toggle { color: #fff; background: #6d28d9; }
+  </style>
 
   <main>
 
@@ -499,6 +509,42 @@
       </div>
       <button class="btn-primary" onclick="cargarDatos()"><span id="btn-cargar-txt">🔍 Cargar datos</span></button>
       <div id="c-status" style="font-size:12px;color:var(--texto-suave);margin-left:8px"></div>
+    </div>
+
+    <!-- PAGOS TAB (nuevo · calendario de pagos a proveedores) -->
+    <div class="tab-content" id="ctc-pagos">
+      <div class="card" style="text-align:center;padding:40px 20px">
+        <div style="font-size:34px">📅</div>
+        <div style="font-weight:800;font-size:17px;color:#1a2e6e;margin-top:8px">Calendario de pagos a proveedores</div>
+        <div style="color:var(--texto-suave);font-size:13px;margin-top:8px;max-width:560px;margin-left:auto;margin-right:auto">
+          Aquí saldrán las facturas de proveedor ordenadas por <b>vencimiento</b> (el del pie de la factura),
+          con ⚡ cargo automático los domiciliados y ✋ pago manual el resto. <b>Siguiente paso</b> — lo monto ahora.
+        </div>
+      </div>
+    </div>
+
+    <!-- CUADRAR TAB (nuevo · casar facturas ↔ pagos) -->
+    <div class="tab-content" id="ctc-cuadrar">
+      <div class="card" style="text-align:center;padding:40px 20px">
+        <div style="font-size:34px">🔗</div>
+        <div style="font-weight:800;font-size:17px;color:#1a2e6e;margin-top:8px">Cuadrar facturas con pagos</div>
+        <div style="color:var(--texto-suave);font-size:13px;margin-top:8px;max-width:560px;margin-left:auto;margin-right:auto">
+          Un único sitio para casar factura ↔ pago (banco, visa, remesa o transferencia) — incluidos los fraccionados.
+          De momento, esas acciones siguen en <b>Modo clásico</b> (Tesorería, Remesas, Proveedores…). Lo unifico aquí en el siguiente paso.
+        </div>
+      </div>
+    </div>
+
+    <!-- BUSCAR TAB (nuevo · buscador universal) -->
+    <div class="tab-content" id="ctc-buscar">
+      <div class="card" style="text-align:center;padding:40px 20px">
+        <div style="font-size:34px">🔎</div>
+        <div style="font-weight:800;font-size:17px;color:#1a2e6e;margin-top:8px">Buscador universal</div>
+        <div style="color:var(--texto-suave);font-size:13px;margin-top:8px;max-width:560px;margin-left:auto;margin-right:auto">
+          Escribe nombre, nº, importe o fecha y encuentra cualquier factura (emitida o recibida) y cualquier movimiento del banco,
+          con su estado y dónde está imputado. <b>Lo monto en el siguiente paso.</b>
+        </div>
+      </div>
     </div>
 
     <!-- DASHBOARD TAB -->
@@ -3578,6 +3624,30 @@ async function tarjBuscarTodos() {
   cargarTarjeta();
 }
 
+// ⚙ Modo simple (4 pestañas) ↔ clásico (todas). Solo visualización; reversible y no borra nada.
+function aplicarModoPanel() {
+  const nav = document.getElementById('cnav');
+  const tog = document.getElementById('cnav-toggle');
+  if (!nav) return;
+  let modo = 'simple';
+  try { modo = localStorage.getItem('panelModo') || 'simple'; } catch(e) {}
+  nav.classList.toggle('modo-clasico', modo === 'clasico');
+  nav.classList.toggle('modo-simple', modo !== 'clasico');
+  if (tog) tog.textContent = modo === 'clasico' ? '✓ Vista simple' : '⚙ Modo clásico';
+  // Si en modo simple estabas en una pestaña clásica (ahora oculta), vuelve a Resumen
+  if (modo !== 'clasico') {
+    const act = document.querySelector('.nav-tab.active');
+    if (act && act.classList.contains('tab-clasico')) switchTabC('dashboard');
+  }
+}
+function toggleModoClasico() {
+  let modo = 'simple';
+  try { modo = localStorage.getItem('panelModo') || 'simple'; } catch(e) {}
+  const nuevo = modo === 'clasico' ? 'simple' : 'clasico';
+  try { localStorage.setItem('panelModo', nuevo); } catch(e) {}
+  aplicarModoPanel();
+}
+
 function switchTabC(tab) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -3600,6 +3670,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('c-desde').value = hoy.getFullYear() + '-01-01';
   document.getElementById('c-hasta').value = hoy.toISOString().split('T')[0];
   document.getElementById('login-pass').focus();
+  aplicarModoPanel();
 });
 </script>
 <div id="splash-carga" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(15,31,92,0.93);flex-direction:column;align-items:center;justify-content:center;gap:18px">
@@ -6379,101 +6450,4 @@ async function cargarSaldos() {
     const r = await fetch(BRIDGE_URL_C + '/banco/eb/saldos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
     const d = await r.json();
     if (!d.saldos || !d.saldos.length) { el.textContent = d.error || 'Sin cuentas bancarias vinculadas.'; return; }
-    el.innerHTML = d.saldos.map(s => {
-      if (s.saldo === null)
-        return '<span><b style="color:#1a2e6e">' + s.banco + '</b> · <span style="color:#c0392b;font-size:12px">' + (s.error || 'error') + '</span></span>';
-      const sello = s.actualizado
-        ? ' <span style="font-size:11px;color:var(--texto-suave)" title="Último dato bueno del banco">' +
-          s.actualizado.replace('T', ' ') + (s.cacheado ? ' ⏱' : '') + '</span>'
-        : '';
-      return '<span><b style="color:#1a2e6e">' + s.banco + '</b> ·' + s.iban + ' → <b style="font-size:17px;color:' + (s.saldo >= 0 ? '#1a7a3f' : '#c0392b') + '">' + bkFmt(s.saldo) + '</b>' + sello + '</span>';
-    }).join('');
-  } catch(e) { el.textContent = 'No se pudieron cargar los saldos: ' + e.message; }
-}
-
-// ── Enable Banking ──
-let bkGcBancosCargados = false;
-
-async function bkGcEstado() {
-  const el = document.getElementById('bk-gc-estado');
-  try {
-    const r = await fetch(BRIDGE_URL_C + '/banco/eb/estado', { headers: { 'ngrok-skip-browser-warning': 'true' } });
-    const d = await r.json();
-    if (!d.configurado) {
-      el.innerHTML = '⚠ ' + (d.detalle || 'Sin configurar.');
-      return;
-    }
-    if (!d.conexiones.length) {
-      el.innerHTML = '✅ Configurado. Ningún banco conectado todavía — elige uno y pulsa Conectar.';
-    } else {
-      el.innerHTML = d.conexiones.map(c =>
-        (c.valida ? '🟢' : '🔴') + ' <b>' + c.banco + '</b> · ' + c.iban +
-        (c.valida ? ' — autorizado hasta ' + c.valid_until : ' — ⚠ autorización caducada, reconecta')
-      ).join('<br>');
-    }
-    if (!bkGcBancosCargados) bkGcCargarBancos();
-  } catch(e) {
-    el.textContent = 'No se pudo consultar el estado: ' + e.message;
-  }
-}
-
-async function bkGcCargarBancos() {
-  try {
-    const r = await fetch(BRIDGE_URL_C + '/banco/eb/bancos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
-    const d = await r.json();
-    if (!d.bancos) return;
-    const sel = document.getElementById('bk-gc-banco');
-    const favoritos = d.bancos.filter(b => /bankinter|sabadell/i.test(b.nombre));
-    const resto = d.bancos.filter(b => !/bankinter|sabadell/i.test(b.nombre))
-                          .sort((x, y) => x.nombre.localeCompare(y.nombre));
-    sel.innerHTML = '<option value="">— Elige tu banco —</option>' +
-      favoritos.map(b => '<option value="' + b.nombre + '">⭐ ' + b.nombre + '</option>').join('') +
-      resto.map(b => '<option value="' + b.nombre + '">' + b.nombre + '</option>').join('');
-    bkGcBancosCargados = true;
-  } catch(e) { /* sin configurar aún */ }
-}
-
-async function bkGcConectar() {
-  const nombre = document.getElementById('bk-gc-banco').value;
-  const tipo = document.getElementById('bk-eb-tipo').value;
-  const st = document.getElementById('bk-gc-status');
-  if (!nombre) { st.textContent = 'Elige un banco primero.'; return; }
-  st.textContent = 'Creando autorización...';
-  try {
-    const r = await fetch(BRIDGE_URL_C + '/banco/eb/conectar', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-      body: JSON.stringify({ nombre: nombre, pais: 'ES', psu_type: tipo })
-    });
-    const d = await r.json();
-    if (!d.ok) { st.textContent = '✗ ' + (d.error || 'Error'); return; }
-    st.textContent = 'Se ha abierto la autorización del banco en otra pestaña.';
-    window.open(d.link, '_blank');
-  } catch(e) { st.textContent = '✗ ' + e.message; }
-}
-
-async function bkGcSincronizar() {
-  const st = document.getElementById('bk-gc-status');
-  const btn = document.getElementById('bk-gc-sync');
-  btn.disabled = true; st.textContent = 'Sincronizando con el banco...';
-  try {
-    const desde = document.getElementById('bk-eb-desde').value;
-    const r = await fetch(BRIDGE_URL_C + '/banco/eb/sincronizar', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-      body: JSON.stringify(desde ? { desde: desde } : {})
-    });
-    const d = await r.json();
-    if (d.ok) {
-      st.textContent = '✓ ' + d.nuevos + ' movimientos nuevos, ' + d.duplicados + ' ya existían' +
-        (d.errores && d.errores.length ? ' · ⚠ ' + d.errores.join(' | ') : '');
-      bkCargar();
-    } else {
-      st.textContent = '✗ ' + (d.error || 'Error');
-    }
-  } catch(e) { st.textContent = '✗ ' + e.message; }
-  btn.disabled = false;
-}
-</script>
-</body>
-</html>
+    el.innerHTML = d.saldos

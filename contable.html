@@ -526,26 +526,31 @@
 
     <!-- CUADRAR TAB (nuevo · casar facturas ↔ pagos) -->
     <div class="tab-content" id="ctc-cuadrar">
-      <div class="card" style="text-align:center;padding:40px 20px">
-        <div style="font-size:34px">🔗</div>
-        <div style="font-weight:800;font-size:17px;color:#1a2e6e;margin-top:8px">Cuadrar facturas con pagos</div>
-        <div style="color:var(--texto-suave);font-size:13px;margin-top:8px;max-width:560px;margin-left:auto;margin-right:auto">
-          Un único sitio para casar factura ↔ pago (banco, visa, remesa o transferencia) — incluidos los fraccionados.
-          De momento, esas acciones siguen en <b>🔧 Detalle · Raquel</b> (Tesorería, Remesas, Proveedores…). Lo unifico aquí en el siguiente paso.
+      <div class="card" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <div class="card-title" style="margin:0">🔗 Cuadrar facturas con pagos</div>
+          <button onclick="cuadrarCargar()" style="padding:6px 12px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12px">⟳ Actualizar</button>
         </div>
+        <div style="font-size:12px;color:var(--texto-suave);margin-top:6px">Empareja <b>factura ↔ pago</b> venga por banco, visa, remesa o transferencia (el método es solo una etiqueta). <b>⚖️ Conciliar</b> te abre los movimientos del banco con ese importe para enlazarlos.</div>
+      </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title">💶 Cobros pendientes — lo que nos deben los clientes</div>
+        <div id="cuad-cli"><div style="color:var(--texto-suave);font-size:13px">Pulsa ⟳ o entra en la pestaña.</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">📅 Pagos pendientes — lo que debemos a proveedores</div>
+        <div id="cuad-prov"><div style="color:var(--texto-suave);font-size:13px">Pulsa ⟳ o entra en la pestaña.</div></div>
       </div>
     </div>
 
     <!-- BUSCAR TAB (nuevo · buscador universal) -->
     <div class="tab-content" id="ctc-buscar">
-      <div class="card" style="text-align:center;padding:40px 20px">
-        <div style="font-size:34px">🔎</div>
-        <div style="font-weight:800;font-size:17px;color:#1a2e6e;margin-top:8px">Buscador universal</div>
-        <div style="color:var(--texto-suave);font-size:13px;margin-top:8px;max-width:560px;margin-left:auto;margin-right:auto">
-          Escribe nombre, nº, importe o fecha y encuentra cualquier factura (emitida o recibida) y cualquier movimiento del banco,
-          con su estado y dónde está imputado. <b>Lo monto en el siguiente paso.</b>
-        </div>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title" style="margin:0 0 8px">🔎 Buscador universal</div>
+        <input id="busc-q" oninput="buscarUniversal()" placeholder="Escribe nombre, nº de factura, importe o fecha…" style="width:100%;max-width:520px;padding:9px 12px;border:1.5px solid #c0cbea;border-radius:9px;font-size:14px"/>
+        <div style="font-size:11px;color:var(--texto-suave);margin-top:6px">Busca a la vez en facturas <b>emitidas (F/FD)</b>, <b>recibidas</b> (Dropbox) y <b>movimientos del banco</b>.</div>
       </div>
+      <div id="busc-res"><div style="color:var(--texto-suave);font-size:13px">Escribe arriba para buscar (mínimo 2 caracteres).</div></div>
     </div>
 
     <!-- DASHBOARD TAB -->
@@ -3144,6 +3149,126 @@ async function ctaCargar(tipo) {
 }
 
 let _cliPend = [];
+// ===== 🔎 BUSCAR (buscador universal: emitidas F/FD + recibidas Dropbox + movimientos banco) =====
+let _buscarCache = { emitidas: null, banco: null };
+async function buscarCargarCache() {
+  if (!_buscarCache.emitidas) {
+    try {
+      const hoy = new Date().toISOString().slice(0, 10);
+      const d = await (await fetch(`${BRIDGE_URL_C}/agora/facturas?desde=2026-01-01&hasta=${hoy}&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } })).json();
+      _buscarCache.emitidas = (d.documentos || []).filter(x => ['F', 'FD'].includes((x.Serie || '').toUpperCase()));
+    } catch (e) { _buscarCache.emitidas = []; }
+  }
+  if (!_buscarCache.banco) {
+    try {
+      const d = await (await fetch(`${BRIDGE_URL_C}/banco/movimientos?nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } })).json();
+      _buscarCache.banco = d.movimientos || [];
+    } catch (e) { _buscarCache.banco = []; }
+  }
+}
+let _buscTimer = null;
+function buscarUniversal() { clearTimeout(_buscTimer); _buscTimer = setTimeout(buscarEjecutar, 300); }
+async function buscarEjecutar() {
+  const q = (((document.getElementById('busc-q') || {}).value) || '').trim().toLowerCase();
+  const cont = document.getElementById('busc-res');
+  if (!cont) return;
+  if (q.length < 2) { cont.innerHTML = '<div style="color:var(--texto-suave);font-size:13px">Escribe al menos 2 caracteres…</div>'; return; }
+  cont.innerHTML = '<div style="color:var(--texto-suave);font-size:13px">Buscando…</div>';
+  await buscarCargarCache();
+  const em = (_buscarCache.emitidas || []).filter(x => {
+    const cli = x.Customer ? (x.Customer.BusinessName || x.Customer.FiscalName || '') : '';
+    const t = x.Totals ? (x.Totals.GrossAmount || 0) : 0;
+    return ((x.Serie + '-' + x.Number) + ' ' + cli + ' ' + t + ' ' + String(t).replace('.', ',') + ' ' + (x.Date || '').slice(0, 10)).toLowerCase().includes(q);
+  }).slice(0, 60);
+  const bk = (_buscarCache.banco || []).filter(m => ((m.concepto || '') + ' ' + m.importe + ' ' + String(m.importe).replace('.', ',') + ' ' + (m.fecha || '') + ' ' + (m.banco || '')).toLowerCase().includes(q)).slice(0, 60);
+  let rec = [];
+  try { const d = await (await fetch(`${BRIDGE_URL_C}/proveedores/buscar?anio=2026&q=${encodeURIComponent(q)}&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } })).json(); rec = (d.rutas || []).slice(0, 60); } catch (e) { }
+  let html = '';
+  html += '<div class="card" style="margin-bottom:10px"><div class="card-title">🧾 Emitidas (F/FD) — ' + em.length + '</div>';
+  if (!em.length) html += '<div style="color:var(--texto-suave);font-size:12px">—</div>';
+  else html += '<table style="width:100%;font-size:12px;border-collapse:collapse">' + em.map(x => {
+    const cli = x.Customer ? (x.Customer.BusinessName || x.Customer.FiscalName || '') : '';
+    const t = x.Totals ? (x.Totals.GrossAmount || 0) : 0;
+    return '<tr style="border-bottom:1px solid #eee"><td style="padding:5px"><b>' + (x.Serie || '') + '-' + (x.Number || '') + '</b></td><td style="padding:5px">' + cli + '</td><td style="padding:5px">' + (x.Date || '').slice(0, 10) + '</td><td style="padding:5px;text-align:right">€' + Number(t).toFixed(2) + '</td></tr>';
+  }).join('') + '</table>';
+  html += '</div>';
+  html += '<div class="card" style="margin-bottom:10px"><div class="card-title">📥 Recibidas (Dropbox) — ' + rec.length + '</div>';
+  if (!rec.length) html += '<div style="color:var(--texto-suave);font-size:12px">—</div>';
+  else html += '<table style="width:100%;font-size:12px;border-collapse:collapse">' + rec.map(ruta => {
+    const parts = ruta.split('/'); const prov = parts.length >= 3 ? parts[2] : ''; const nom = parts[parts.length - 1];
+    return '<tr style="border-bottom:1px solid #eee"><td style="padding:5px">' + prov + '</td><td style="padding:5px;color:#555">' + nom + '</td><td style="padding:5px;text-align:right"><button onclick="provVerDoc(\'' + encodeURIComponent(ruta) + '\')" style="padding:3px 8px;border:none;border-radius:5px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button></td></tr>';
+  }).join('') + '</table>';
+  html += '</div>';
+  html += '<div class="card"><div class="card-title">🏦 Movimientos del banco — ' + bk.length + '</div>';
+  if (!bk.length) html += '<div style="color:var(--texto-suave);font-size:12px">—</div>';
+  else html += '<table style="width:100%;font-size:12px;border-collapse:collapse">' + bk.map(m => {
+    const conc = m.conciliado && m.conciliado.length ? '<span style="color:#1b7a3d">✓ conciliado</span>' : '<span style="color:#c96a10">⏳ sin conciliar</span>';
+    return '<tr style="border-bottom:1px solid #eee"><td style="padding:5px;white-space:nowrap">' + (m.fecha || '') + '</td><td style="padding:5px;text-align:right;white-space:nowrap"><b>€' + Number(m.importe).toFixed(2) + '</b></td><td style="padding:5px;color:#555">' + (m.concepto || '') + '</td><td style="padding:5px;white-space:nowrap">' + conc + '</td></tr>';
+  }).join('') + '</table>';
+  html += '</div>';
+  cont.innerHTML = html;
+}
+
+// ===== 🔗 CUADRAR (cobros pendientes de cliente + pagos pendientes de proveedor, en un sitio) =====
+// Reutiliza los endpoints de pendientes y las acciones ⚖️ (cliConciliar/provConciliar) ya existentes.
+function refrescarPend(tipo) {
+  const activo = (document.querySelector('.nav-tab.active') || {}).id;
+  if (activo === 'ctab-cuadrar') { cuadrarCargar(); return; }
+  if (tipo === 'cli') cliPendientes(); else provPendientes();
+}
+async function cuadrarCargar() {
+  const cCli = document.getElementById('cuad-cli');
+  const cProv = document.getElementById('cuad-prov');
+  if (cCli) cCli.innerHTML = '<div style="color:var(--texto-suave);font-size:13px">Cargando…</div>';
+  if (cProv) cProv.innerHTML = '<div style="color:var(--texto-suave);font-size:13px">Cargando…</div>';
+  try {
+    const d = await (await fetch(`${BRIDGE_URL_C}/contabilidad/clientes_pendientes?anio=2026&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } })).json();
+    _cliPend = d.facturas || [];
+    if (cCli) cCli.innerHTML = '<div style="margin-bottom:6px;font-size:12.5px;color:#6d28d9;font-weight:700">' + (d.n || 0) + ' facturas · €' + (d.total || 0).toFixed(2) + '</div>' +
+      '<input id="cuad-cli-buscar" oninput="cuadrarRenderCli()" placeholder="🔎 Filtrar cliente / nº / importe / fecha…" style="width:100%;max-width:420px;padding:7px 10px;margin-bottom:8px;border:1.5px solid #dde;border-radius:8px;font-size:12px"/>' +
+      ' <button onclick="cliConciliarTodos()" style="padding:6px 12px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-size:12px;font-weight:600;vertical-align:top">⚖️ Conciliar todos</button>' +
+      '<div id="cuad-cli-tabla"></div>';
+    cuadrarRenderCli();
+  } catch (e) { if (cCli) cCli.innerHTML = '<div style="color:#c0392b;font-size:13px">✗ ' + e.message + '</div>'; }
+  try {
+    const d = await (await fetch(`${BRIDGE_URL_C}/contabilidad/proveedores_pendientes?anio=2026&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } })).json();
+    _provPend = d.facturas || [];
+    if (cProv) cProv.innerHTML = '<div style="margin-bottom:6px;font-size:12.5px;color:#6d28d9;font-weight:700">' + (d.n || 0) + ' facturas · €' + (d.total || 0).toFixed(2) + '</div>' +
+      '<input id="cuad-prov-buscar" oninput="cuadrarRenderProv()" placeholder="🔎 Filtrar proveedor / nº / importe / fecha…" style="width:100%;max-width:420px;padding:7px 10px;margin-bottom:8px;border:1.5px solid #dde;border-radius:8px;font-size:12px"/>' +
+      ' <button onclick="provConciliarTodos()" style="padding:6px 12px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-size:12px;font-weight:600;vertical-align:top">⚖️ Conciliar todos</button>' +
+      '<div id="cuad-prov-tabla"></div>';
+    cuadrarRenderProv();
+  } catch (e) { if (cProv) cProv.innerHTML = '<div style="color:#c0392b;font-size:13px">✗ ' + e.message + '</div>'; }
+}
+function cuadrarRenderCli() {
+  const q = (document.getElementById('cuad-cli-buscar') ? document.getElementById('cuad-cli-buscar').value : '').trim().toLowerCase();
+  let f = _cliPend;
+  if (q) f = f.filter(x => ((x.cliente || '') + ' ' + x.serie + '-' + x.numero + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha || '')).toLowerCase().includes(q));
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd"><th style="padding:7px;text-align:left">Cliente</th><th style="padding:7px;text-align:left">Factura</th><th style="padding:7px;text-align:left">Fecha</th><th style="padding:7px;text-align:right">Importe</th><th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
+  f.forEach(x => {
+    const args = "'" + (x.serie || '') + "'," + (Number(x.importe) || 0) + ",'" + encodeURIComponent(x.numero || '') + "','" + encodeURIComponent(x.cliente || '') + "'";
+    html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px">' + (x.cliente || '') + '</td><td style="padding:7px">' + (x.serie || '') + '-' + (x.numero || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="cliVerDoc(\'' + (x.serie || '') + '\',\'' + encodeURIComponent(x.numero || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="cliConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
+  });
+  html += '</tbody></table>';
+  if (!f.length) html = '<div style="color:#1b7a3d;font-size:13px;padding:6px">✓ Nada pendiente de cobro.</div>';
+  else if (q) html += '<div style="font-size:11px;color:#999;margin-top:5px">Mostrando ' + f.length + ' de ' + _cliPend.length + '</div>';
+  const t = document.getElementById('cuad-cli-tabla'); if (t) t.innerHTML = html;
+}
+function cuadrarRenderProv() {
+  const q = (document.getElementById('cuad-prov-buscar') ? document.getElementById('cuad-prov-buscar').value : '').trim().toLowerCase();
+  let f = _provPend;
+  if (q) f = f.filter(x => ((x.proveedor || '') + ' ' + (x.nombre || '') + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha || '')).toLowerCase().includes(q));
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd"><th style="padding:7px;text-align:left">Proveedor</th><th style="padding:7px;text-align:left">Factura</th><th style="padding:7px;text-align:left">Fecha</th><th style="padding:7px;text-align:right">Importe</th><th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
+  f.forEach(x => {
+    const args = (Number(x.importe) || 0) + ",'" + encodeURIComponent(x.proveedor || '') + "','" + encodeURIComponent(x.nombre || '') + "','" + encodeURIComponent(x.ruta || '') + "'";
+    html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px">' + (x.proveedor || '') + '</td><td style="padding:7px">' + (x.nombre || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="provVerDoc(\'' + encodeURIComponent(x.ruta || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="provConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
+  });
+  html += '</tbody></table>';
+  if (!f.length) html = '<div style="color:#1b7a3d;font-size:13px;padding:6px">✓ Nada pendiente de pago.</div>';
+  else if (q) html += '<div style="font-size:11px;color:#999;margin-top:5px">Mostrando ' + f.length + ' de ' + _provPend.length + '</div>';
+  const t = document.getElementById('cuad-prov-tabla'); if (t) t.innerHTML = html;
+}
+
 async function cliPendientes() {
   const cont = document.getElementById('cta-cli-pend');
   cont.innerHTML = '<div style="color:var(--texto-suave);font-size:13px;margin-top:12px">Cargando facturas pendientes…</div>';
@@ -3216,7 +3341,7 @@ async function cliLinkCobro(mov, serie, numeroEnc, importe, clienteEnc) {
     const d = await res.json();
     if (!d.ok) throw new Error(d.error || 'error');
     const ov = document.getElementById('cli-ov'); if (ov) ov.remove();
-    cliPendientes();
+    refrescarPend('cli');
   } catch(e) { alert('Error: ' + e.message); }
 }
 
@@ -3240,7 +3365,7 @@ async function cliConciliarTodos() {
     } catch(e) {}
   }
   alert('Hecho ✅\n\n⚖️ Conciliadas (1 cobro exacto): ' + ok + '\n🟡 Con varios cobros (revísalas): ' + varias + '\n⬜ Sin cobro en banco: ' + ninguna);
-  cliPendientes();
+  refrescarPend('cli');
 }
 
 let _provPend = [];
@@ -3316,7 +3441,7 @@ async function provLinkCargo(mov, provEnc, nombreEnc, rutaEnc, importe) {
     const d = await res.json();
     if (!d.ok) throw new Error(d.error || 'error');
     const ov = document.getElementById('prov-ov'); if (ov) ov.remove();
-    provPendientes();
+    refrescarPend('prov');
   } catch(e) { alert('Error: ' + e.message); }
 }
 
@@ -3340,7 +3465,7 @@ async function provConciliarTodos() {
     } catch(e) {}
   }
   alert('Hecho ✅\n\n⚖️ Conciliadas (1 cargo exacto): ' + ok + '\n🟡 Con varios cargos (revísalas): ' + varias + '\n⬜ Sin cargo en banco: ' + ninguna);
-  provPendientes();
+  refrescarPend('prov');
 }
 
 function provVerDoc(rutaEnc) {
@@ -3718,6 +3843,8 @@ function switchTabC(tab) {
   if (tab === 'tarjeta') cargarTarjeta();
   if (tab === 'semaforo') cargarSemaforo('prov');
   if (tab === 'pagos') cargarPagos();
+  if (tab === 'cuadrar') cuadrarCargar();
+  if (tab === 'buscar') { const bq = document.getElementById('busc-q'); if (bq) bq.focus(); }
 }
 
 // Init date inputs on load

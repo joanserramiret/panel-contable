@@ -1149,11 +1149,8 @@ async function cargarDatos() {
         doc._tipo = 'factura';
         todasFacturasC.push(doc);
         factPorDia[dia] = (factPorDia[dia] || []).concat([doc]);
-      } else if (SERIES_ALBARANES.includes(doc.Serie) && doc.Status !== 'Cancelled' && doc.Status !== 'Processed' && doc.Status !== 'Invoiced') {
-        doc._tipo = 'albaran';
-        todasFacturasC.push(doc);
-        factPorDia[dia] = (factPorDia[dia] || []).concat([doc]);
       }
+      // Albaranes (A/APP) y cualquier otra serie NO entran al panel — solo F/FD [2026-06-14]
     });
 
     todasFacturasC.sort((a,b) => new Date(b.Date) - new Date(a.Date));
@@ -1170,7 +1167,7 @@ async function cargarDatos() {
       statusEl.textContent = '⚠ OJO: ' + diasFallidosC.length + ' día(s) sin respuesta tras 3 intentos (' +
         diasFallidosC.slice(0, 5).join(', ') + (diasFallidosC.length > 5 ? '...' : '') +
         ') — sus facturas NO están cargadas. Vuelve a pulsar Cargar.';
-    } else statusEl.textContent = '✓ ' + nFact + ' facturas y ' + nAlb + ' albaranes' + (errores ? ' (' + errores + ' días sin respuesta)' : '');
+    } else statusEl.textContent = '✓ ' + nFact + ' facturas (F/FD)' + (errores ? ' (' + errores + ' días sin respuesta)' : '');
 
     btn.textContent = '🔍 Cargar datos';
 
@@ -2300,11 +2297,7 @@ async function cargarMesCalendarioSiNecesario() {
             facts.forEach(f => { f._tipo = 'factura'; todasFacturasC.push(f); });
             if (facts.length) factPorDia[dia] = (factPorDia[dia] || []).concat(facts);
           }
-          if (r.DeliveryNotes && Array.isArray(r.DeliveryNotes)) {
-            const albs = r.DeliveryNotes.filter(a => SERIES_ALBARANES.includes(a.Serie) && a.Status !== 'Cancelled' && a.Status !== 'Processed' && a.Status !== 'Invoiced');
-            albs.forEach(a => { a._tipo = 'albaran'; todasFacturasC.push(a); });
-            if (albs.length) factPorDia[dia] = (factPorDia[dia] || []).concat(albs);
-          }
+          // Albaranes (A/APP) y demás series NO entran al panel — solo F/FD [2026-06-14]
         });
       }
     } catch(e) {}

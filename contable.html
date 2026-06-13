@@ -6429,4 +6429,178 @@ function pvCambiarTipo(ruta, actual) {
   if (viejo) viejo.remove();
 
   const botones = Object.entries(base).map(([t, nombre]) =>
-    '<button onclick="pvGuardarTipo(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + t + '\')" style="display:block;width:100%;text-align:left;padding:10px 14px;margin-bottom:6px;border:2px solid ' + (t === actual ? '#e87e1a' : '#dde') + ';border-radius:8px;background:' + (t === actual ? '#fff3e0' : '#fff') + ';f
+    '<button onclick="pvGuardarTipo(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + t + '\')" style="display:block;width:100%;text-align:left;padding:10px 14px;margin-bottom:6px;border:2px solid ' + (t === actual ? '#e87e1a' : '#dde') + ';border-radius:8px;background:' + (t === actual ? '#fff3e0' : '#fff') + ';font-size:14px;cursor:pointer;font-family:inherit">' + nombre + (t === actual ? ' · <b>actual</b>' : '') + '</button>').join('') +
+    extras.map(t =>
+    '<button onclick="pvGuardarTipo(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + t.replace(/'/g, "\\'") + '\')" style="display:block;width:100%;text-align:left;padding:10px 14px;margin-bottom:6px;border:2px solid ' + (t === actual ? '#e87e1a' : '#dde') + ';border-radius:8px;background:' + (t === actual ? '#fff3e0' : '#fff') + ';font-size:14px;cursor:pointer;font-family:inherit">🏷 ' + t + (t === actual ? ' · <b>actual</b>' : '') + '</button>').join('');
+
+  const div = document.createElement('div');
+  div.id = 'pv-tipo-modal';
+  div.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(15,31,92,.5);display:flex;align-items:center;justify-content:center';
+  div.innerHTML = '<div style="background:#fff;border-radius:14px;padding:22px;width:340px;max-height:80vh;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.3)">' +
+    '<div style="font-weight:800;font-size:15px;color:#1a2e6e;margin-bottom:12px">¿Qué tipo de documento es?</div>' + botones +
+    '<div style="display:flex;gap:6px;margin-top:10px">' +
+      '<input id="pv-tipo-nuevo" placeholder="o crea un tipo nuevo..." style="flex:1;padding:9px 12px;border:1.5px solid #dde;border-radius:8px;font-size:13px;font-family:inherit" onkeydown="if(event.key===\'Enter\')pvGuardarTipoNuevo(\'' + ruta.replace(/'/g, "\\'") + '\')"/>' +
+      '<button onclick="pvGuardarTipoNuevo(\'' + ruta.replace(/'/g, "\\'") + '\')" style="padding:9px 14px;background:#1a2e6e;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">Crear</button>' +
+    '</div>' +
+    '<div style="font-size:11px;color:#888;margin-top:8px">Los tipos que no sean "factura" quedan fuera de contabilidad, conciliación e IVA. Tu elección manda sobre el clasificador para siempre.</div>' +
+    '<button onclick="document.getElementById(\'pv-tipo-modal\').remove()" style="margin-top:12px;width:100%;padding:8px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;font-size:13px;cursor:pointer">Cancelar</button>' +
+  '</div>';
+  div.onclick = e => { if (e.target === div) div.remove(); };
+  document.body.appendChild(div);
+}
+
+function pvGuardarTipoNuevo(ruta) {
+  const v = (document.getElementById('pv-tipo-nuevo').value || '').trim().toLowerCase();
+  if (!v) return;
+  if (v.length > 30) { alert('Nombre demasiado largo (máx. 30).'); return; }
+  pvGuardarTipo(ruta, v);
+}
+
+async function pvGuardarTipo(ruta, tipo) {
+  const modal = document.getElementById('pv-tipo-modal');
+  if (modal) modal.remove();
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/proveedores/tipo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ ruta: ruta, tipo: tipo })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const anio = document.getElementById('pv-anio').value || new Date().getFullYear();
+      await pvCargarDatos(anio);
+      pvRender();
+    } else alert('✗ ' + (d.error || 'Error'));
+  } catch(e) { alert('✗ ' + e.message); }
+}
+
+// Aparta un PDF colado a la carpeta PARA BORRAR; opcionalmente aprende el patrón
+async function pvBorrar(ruta, nombre) {
+  if (!confirm('🗑 "' + nombre + '"\n\n¿Mover a la carpeta PARA BORRAR del Dropbox?\n(No se borra nada definitivamente — Raquel vacía esa carpeta cuando quiera.)')) return;
+  const recordar = confirm('¿Quieres que me acuerde?\n\nAceptar = los futuros archivos con nombre parecido ("' + nombre.replace(/\d+/g, '#') + '") se apartarán SOLOS al escanear o al ordenar el cajón.\nCancelar = solo este archivo.');
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/proveedores/borrar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ ruta: ruta, recordar: recordar })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      pvCargar();
+      if (d.patron) console.log('[basura] regla aprendida:', d.patron);
+    } else alert('✗ ' + (d.error || 'Error'));
+  } catch(e) { alert('✗ ' + e.message); }
+}
+
+function bkCerrarModal() {
+  document.getElementById('bk-modal').style.display = 'none';
+  bkMovActual = null;
+  bkSeleccion = {};
+}
+
+// ── Saldos bancarios (dashboard) ──
+async function cargarSaldos() {
+  const el = document.getElementById('saldos-bancos');
+  if (!el) return;
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/banco/eb/saldos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const d = await r.json();
+    if (!d.saldos || !d.saldos.length) { el.textContent = d.error || 'Sin cuentas bancarias vinculadas.'; return; }
+    el.innerHTML = d.saldos.map(s => {
+      if (s.saldo === null)
+        return '<span><b style="color:#1a2e6e">' + s.banco + '</b> · <span style="color:#c0392b;font-size:12px">' + (s.error || 'error') + '</span></span>';
+      const sello = s.actualizado
+        ? ' <span style="font-size:11px;color:var(--texto-suave)" title="Último dato bueno del banco">' +
+          s.actualizado.replace('T', ' ') + (s.cacheado ? ' ⏱' : '') + '</span>'
+        : '';
+      return '<span><b style="color:#1a2e6e">' + s.banco + '</b> ·' + s.iban + ' → <b style="font-size:17px;color:' + (s.saldo >= 0 ? '#1a7a3f' : '#c0392b') + '">' + bkFmt(s.saldo) + '</b>' + sello + '</span>';
+    }).join('');
+  } catch(e) { el.textContent = 'No se pudieron cargar los saldos: ' + e.message; }
+}
+
+// ── Enable Banking ──
+let bkGcBancosCargados = false;
+
+async function bkGcEstado() {
+  const el = document.getElementById('bk-gc-estado');
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/banco/eb/estado', { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const d = await r.json();
+    if (!d.configurado) {
+      el.innerHTML = '⚠ ' + (d.detalle || 'Sin configurar.');
+      return;
+    }
+    if (!d.conexiones.length) {
+      el.innerHTML = '✅ Configurado. Ningún banco conectado todavía — elige uno y pulsa Conectar.';
+    } else {
+      el.innerHTML = d.conexiones.map(c =>
+        (c.valida ? '🟢' : '🔴') + ' <b>' + c.banco + '</b> · ' + c.iban +
+        (c.valida ? ' — autorizado hasta ' + c.valid_until : ' — ⚠ autorización caducada, reconecta')
+      ).join('<br>');
+    }
+    if (!bkGcBancosCargados) bkGcCargarBancos();
+  } catch(e) {
+    el.textContent = 'No se pudo consultar el estado: ' + e.message;
+  }
+}
+
+async function bkGcCargarBancos() {
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/banco/eb/bancos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const d = await r.json();
+    if (!d.bancos) return;
+    const sel = document.getElementById('bk-gc-banco');
+    const favoritos = d.bancos.filter(b => /bankinter|sabadell/i.test(b.nombre));
+    const resto = d.bancos.filter(b => !/bankinter|sabadell/i.test(b.nombre))
+                          .sort((x, y) => x.nombre.localeCompare(y.nombre));
+    sel.innerHTML = '<option value="">— Elige tu banco —</option>' +
+      favoritos.map(b => '<option value="' + b.nombre + '">⭐ ' + b.nombre + '</option>').join('') +
+      resto.map(b => '<option value="' + b.nombre + '">' + b.nombre + '</option>').join('');
+    bkGcBancosCargados = true;
+  } catch(e) { /* sin configurar aún */ }
+}
+
+async function bkGcConectar() {
+  const nombre = document.getElementById('bk-gc-banco').value;
+  const tipo = document.getElementById('bk-eb-tipo').value;
+  const st = document.getElementById('bk-gc-status');
+  if (!nombre) { st.textContent = 'Elige un banco primero.'; return; }
+  st.textContent = 'Creando autorización...';
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/banco/eb/conectar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ nombre: nombre, pais: 'ES', psu_type: tipo })
+    });
+    const d = await r.json();
+    if (!d.ok) { st.textContent = '✗ ' + (d.error || 'Error'); return; }
+    st.textContent = 'Se ha abierto la autorización del banco en otra pestaña.';
+    window.open(d.link, '_blank');
+  } catch(e) { st.textContent = '✗ ' + e.message; }
+}
+
+async function bkGcSincronizar() {
+  const st = document.getElementById('bk-gc-status');
+  const btn = document.getElementById('bk-gc-sync');
+  btn.disabled = true; st.textContent = 'Sincronizando con el banco...';
+  try {
+    const desde = document.getElementById('bk-eb-desde').value;
+    const r = await fetch(BRIDGE_URL_C + '/banco/eb/sincronizar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify(desde ? { desde: desde } : {})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      st.textContent = '✓ ' + d.nuevos + ' movimientos nuevos, ' + d.duplicados + ' ya existían' +
+        (d.errores && d.errores.length ? ' · ⚠ ' + d.errores.join(' | ') : '');
+      bkCargar();
+    } else {
+      st.textContent = '✗ ' + (d.error || 'Error');
+    }
+  } catch(e) { st.textContent = '✗ ' + e.message; }
+  btn.disabled = false;
+}
+</script>
+</body>
+</html>

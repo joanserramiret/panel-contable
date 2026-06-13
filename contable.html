@@ -2796,7 +2796,7 @@ function generarHTMLFactura(f) {
                  ((c.ZipCode || c.PostalCode || '') + (c.City ? ' ' + c.City : '')).trim(),
                  (c.Region || c.Province || '') ].filter(Boolean).join(' - ');
   var telCli = c.Phone || c.MobilePhone || c.Telephone || '';
-  var tipoDoc = (f.Serie || '').indexOf('FD') === 0 || (f.Totals && f.Totals.GrossAmount < 0) ? 'FACTURA RECTIFICATIVA' : 'FACTURA';
+  var tipoDoc = (f.Serie || '').indexOf('FD') === 0 || (f.Totals && f.Totals.GrossAmount < 0) ? 'FACTURA ABONO' : 'FACTURA';
 
   // ── Líneas e IVAs (agrupados por tipo, como Ágora) ──
   var grupos = {};   // rate% → gross

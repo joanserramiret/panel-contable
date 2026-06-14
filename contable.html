@@ -703,6 +703,7 @@
             <span>Facturas pendientes de cobro</span>
             <button onclick="auditarCartera()" title="Para cada factura pendiente, busca la pista de dónde puede estar su cobro: remesa sin importar, abono sin conciliar, anulación..." style="padding:5px 12px;background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🩺 Auditar cartera</button>
           </div>
+          <div id="cob-resumen-banco" style="margin:6px 0 10px"></div>
           <div id="cobros-pendientes"><div style="color:var(--texto-suave);font-size:13px">Carga los datos primero.</div></div>
         </div>
       </div>
@@ -2521,6 +2522,28 @@ function actualizarCobros() {
     if (f.Status && (f.Status === 'Closed' || f.Status === 'Processed' || f.Status.toLowerCase().includes('paid'))) return false;
     return sumPagos < t - 0.01;
   }).sort((a,b) => new Date(a.Date) - new Date(b.Date));
+
+  // Resumen visible: cuánto se ha COBRADO vía banco/remesas vs lo que queda PENDIENTE (mismo período).
+  // Así las remesas cuadradas por factura quedan "computadas y a la vista", no solo descontadas en silencio.
+  let _cobBanco = 0, _nCobBanco = 0;
+  if (banco) {
+    todasFacturasC.forEach(f => {
+      if (f._tipo !== 'factura' || !enPeriodo(f)) return;
+      if (/^(T|TD|D)$/i.test(f.Serie || '')) return;
+      const t = f.Totals ? f.Totals.GrossAmount : 0;
+      if (t <= 0) return;
+      if (fcAnuladas.has(bkNormClave(f.Serie + '-' + f.Number))) return;
+      if (banco.cobradas.has(bkNormClave(f.Serie + '-' + f.Number))) { _cobBanco += t; _nCobBanco++; }
+    });
+  }
+  const _totPend = pendientes.reduce((s,f) => s + (f.Totals ? f.Totals.GrossAmount : 0), 0);
+  const _rb = document.getElementById('cob-resumen-banco');
+  if (_rb) _rb.innerHTML = banco
+    ? '<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:13px">' +
+        '<span style="background:#e8f7ef;border:1px solid #a7d7b8;border-radius:8px;padding:6px 12px;font-weight:700;color:#1b7a3d">✓ Cobrado (banco + remesas): ' + bkFmt(_cobBanco) + ' <span style="font-weight:400;color:#6b8b76">· ' + _nCobBanco + ' fra.</span></span>' +
+        '<span style="background:#fff3e0;border:1px solid #e8b27a;border-radius:8px;padding:6px 12px;font-weight:700;color:#b45309">⏳ Pendiente: ' + bkFmt(_totPend) + ' <span style="font-weight:400;color:#a07a4a">· ' + pendientes.length + ' fra.</span></span>' +
+      '</div>'
+    : '';
 
   // SEGUIMIENTO DE COBRO: antigüedad de saldos + agrupado por cliente (los que más deben, arriba)
   const el = document.getElementById('cobros-pendientes');

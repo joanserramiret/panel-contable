@@ -516,7 +516,10 @@
       <div class="card" style="margin-bottom:14px">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
           <div class="card-title" style="margin:0">📅 Calendario de pagos a proveedores</div>
-          <button onclick="cargarPagos()" style="padding:6px 12px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12px">⟳ Actualizar</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button onclick="pagosAutocasar()" title="Busca el pago de cada factura pendiente entre los cargos del banco (incluidos los ya conciliados sin enlazar), por proveedor + importe, desempatando por vencimiento. Enlaza las que cuadran exactas → pasan a pagadas y bajan del rojo." style="padding:6px 12px;background:#6d28d9;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">⚖️ Casar automático</button>
+            <button onclick="cargarPagos()" style="padding:6px 12px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12px">⟳ Actualizar</button>
+          </div>
         </div>
         <div id="pagos-resumen" style="font-size:12.5px;color:var(--texto-suave);margin-top:6px"></div>
         <div style="font-size:11px;color:var(--texto-suave);margin-top:4px">⚡ auto = domiciliado (te lo cargan solo) · ✋ manual = lo pagas tú · <b>~</b> = vencimiento estimado, revísalo con ✎</div>
@@ -3890,6 +3893,25 @@ async function pagosEditar(rutaEnc) {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
       body: JSON.stringify({ ruta: ruta, vencimiento: (venc || '').trim(), domiciliado: domic })
     });
+    cargarPagos();
+  } catch (e) { alert('✗ ' + e.message); }
+}
+
+// ⚖️ Casa cada factura pendiente con su pago en el banco (incluidos los PROV ya conciliados SIN
+// enlazar), por proveedor + importe, desempatando por vencimiento. Simula → enseña → aplica.
+async function pagosAutocasar() {
+  const H = { 'ngrok-skip-browser-warning': 'true' };
+  try {
+    const d = await (await fetch(BRIDGE_URL_C + '/contabilidad/pagos/autocasar?anio=2026&nc=' + Date.now(), { headers: H })).json();
+    if (!d.ok) throw new Error(d.error || 'error');
+    const msg = 'Simulación del casador por vencimiento:\n\n' +
+      '🟢 ' + d.verde + ' facturas se enlazarían a su pago (' + bkFmt(d.suma_verde) + ') → pasan a PAGADAS\n' +
+      '🟡 ' + d.amarillo + ' con varios cargos candidatos → a revisar a mano\n' +
+      '🔴 ' + d.rojo + ' sin pago localizado → pendientes de verdad\n\n' +
+      '¿Aplico el enlace de las 🟢? (es reversible: solo escribe la factura en el pago ya hecho)';
+    if (!confirm(msg)) return;
+    const r = await (await fetch(BRIDGE_URL_C + '/contabilidad/pagos/autocasar?anio=2026&confirmar=1&nc=' + Date.now(), { method: 'POST', headers: H })).json();
+    alert('✅ Enlazadas ' + (r.aplicados || 0) + ' facturas a su pago. El calendario de Pagos baja el rojo en consecuencia.');
     cargarPagos();
   } catch (e) { alert('✗ ' + e.message); }
 }

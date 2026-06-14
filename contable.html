@@ -2572,7 +2572,9 @@ function actualizarCobros() {
     const clave = bkNormClave(f.Serie + '-' + f.Number);
     const devuelta = !!(banco && banco.devueltas.has(clave));
     const recibo = (f.Payments || []).some(p => String(p.MethodName || '').toLowerCase().includes('recibo'));
-    const destino = carteraDestinos[clave] || (devuelta ? 'perseguir' : (recibo ? 'girar' : 'perseguir'));
+    let destino = carteraDestinos[clave] || (devuelta ? 'perseguir' : (recibo ? 'girar' : 'perseguir'));
+    if (destino === 'esperando') destino = 'girar';   // Cobros es 2 columnas; 'esperando' (ya girada, espera remesa) va al lado girar
+    if (!cols[destino]) destino = 'perseguir';          // cualquier valor inesperado → perseguir (a prueba de fallos)
     carteraFacts[clave] = { destino: destino };
     const g = cols[destino][cli] = cols[destino][cli] || { total: 0, maxDias: 0, facts: [], claves: [] };
     g.total += t;

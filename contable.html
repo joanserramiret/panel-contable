@@ -3874,7 +3874,7 @@ function renderPagos() {
   const res = document.getElementById('pagos-resumen');
   const todas = pagosDatos.pagos || [];
   const c = pagosDatos.cuenta || { pendiente: 0, parcial: 0, pagada: 0 };
-  // Cajón "por clasificar": flag del backend + cualquier grafía de CONTABILIZAR/CONTABILITZAR/VARIOS/sin clasificar
+  // Cajón "por clasificar" (NO es deuda a proveedor): flag backend + grafías de CONTABILIZAR/VARIOS/sin clasificar
   const _esClasif = p => !!p.clasificar || /contabili|\bvarios\b|sin\s*clasific|por\s*clasific/i.test(p.proveedor || '');
   let _tReal = 0, _nReal = 0, _tClas = 0, _nClas = 0, _tDom = 0;
   todas.filter(p => p.estado !== 'pagada').forEach(p => {

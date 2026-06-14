@@ -3267,7 +3267,7 @@ function _thSort(label, col, estado, fn, align) {
 function cuadSortCli(col) { _cuadCliSort = { col, dir: _cuadCliSort.col === col ? -_cuadCliSort.dir : 1 }; cuadrarRenderCli(); }
 function cuadSortProv(col) { _cuadProvSort = { col, dir: _cuadProvSort.col === col ? -_cuadProvSort.dir : 1 }; cuadrarRenderProv(); }
 // 🎯 Estado de gestión del cobro (qué hacer): girar / esperando remesa / perseguir. Durable en el bridge (carteraDestinos).
-let _cobFiltroEstado = '';
+let _cobFiltro = { girar: true, esperando: true, perseguir: true, sin: true };   // multi-toggle (cada color on/off)
 const _COB_EST = {
   girar:     { e: '⚡', lbl: 'A girar',          col: '#185fa5', bg: '#e6f1fb', bd: '#85b7eb', tip: 'Incluir en una remesa SEPA (volver a girar)' },
   esperando: { e: '📨', lbl: 'Esperando remesa', col: '#854f0b', bg: '#faeeda', bd: '#ef9f27', tip: 'Ya girada · pendiente de que entre la remesa / de importar el fichero' },
@@ -3291,7 +3291,8 @@ async function cobSetEstado(clave, k) {
     cuadrarRenderCli();
   } catch (e) { alert('✗ ' + e.message); }
 }
-function cobFiltrarEstado(k) { _cobFiltroEstado = (_cobFiltroEstado === k ? '' : k); cuadrarRenderCli(); }
+function cobFiltrarEstado(k) { _cobFiltro[k] = !_cobFiltro[k]; cuadrarRenderCli(); }
+function cobPreset(p) { const v = (p === 'todos'); _cobFiltro = { girar: v || p === 'pend', esperando: v || p === 'pend', perseguir: v || p === 'pend', sin: v || p === 'pend' }; cuadrarRenderCli(); }
 async function cuadrarCargar() {
   const cCli = document.getElementById('cuad-cli');
   const cProv = document.getElementById('cuad-prov');
@@ -3322,14 +3323,15 @@ function cuadrarRenderCli() {
   const q = (document.getElementById('cuad-cli-buscar') ? document.getElementById('cuad-cli-buscar').value : '').trim().toLowerCase();
   let f = _cliPend;
   if (q) f = f.filter(x => ((x.cliente || '') + ' ' + x.serie + '-' + x.numero + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha || '')).toLowerCase().includes(q));
-  if (_cobFiltroEstado) f = f.filter(x => ((carteraDestinos || {})[_cobClave(x)] || 'sin') === _cobFiltroEstado);
+  f = f.filter(x => _cobFiltro[(carteraDestinos || {})[_cobClave(x)] || 'sin']);
   f = _cuadCliSort.col ? _ordenarPorColumna(f, _GET_CLI[_cuadCliSort.col], _cuadCliSort.dir) : _ordenEstado(f, _cliEstado, x => (x.serie || '').toUpperCase() + '-' + x.numero);
   const cnt = { girar: 0, esperando: 0, perseguir: 0, sin: 0 };
   _cliPend.forEach(x => { const e = (carteraDestinos || {})[_cobClave(x)] || 'sin'; cnt[e] = (cnt[e] || 0) + 1; });
-  const chip = (k, lbl, n) => { const on = _cobFiltroEstado === k; const d = _COB_EST[k]; return '<button onclick="cobFiltrarEstado(\'' + k + '\')" style="padding:4px 10px;border-radius:7px;border:1px solid ' + (on ? (d ? d.bd : '#c8ccd0') : '#dde') + ';background:' + (on ? (d ? d.bg : '#eef0f2') : '#fff') + ';color:' + (on ? (d ? d.col : '#444') : '#666') + ';cursor:pointer;font-size:11.5px;font-weight:' + (on ? '700' : '500') + '">' + (d ? d.e + ' ' : '') + lbl + ' ' + n + '</button>'; };
-  const barra = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">' +
-    '<button onclick="cobFiltrarEstado(\'\')" style="padding:4px 10px;border-radius:7px;border:1px solid ' + (_cobFiltroEstado === '' ? '#c0cbea' : '#dde') + ';background:' + (_cobFiltroEstado === '' ? '#eef2fb' : '#fff') + ';color:#1a2e6e;cursor:pointer;font-size:11.5px;font-weight:' + (_cobFiltroEstado === '' ? '700' : '500') + '">Todos ' + _cliPend.length + '</button>' +
-    chip('girar', 'A girar', cnt.girar) + chip('esperando', 'Esperando remesa', cnt.esperando) + chip('perseguir', 'A perseguir', cnt.perseguir) + chip('sin', 'Sin clasificar', cnt.sin) + '</div>';
+  const chip = (k, lbl, n) => { const on = _cobFiltro[k]; const d = _COB_EST[k]; return '<button onclick="cobFiltrarEstado(\'' + k + '\')" style="padding:4px 10px;border-radius:7px;border:1px solid ' + (on ? (d ? d.bd : '#c8ccd0') : '#dde') + ';background:' + (on ? (d ? d.bg : '#eef0f2') : '#fff') + ';color:' + (on ? (d ? d.col : '#444') : '#999') + ';cursor:pointer;font-size:11.5px;font-weight:' + (on ? '700' : '500') + '">' + (d ? d.e + ' ' : '') + lbl + ' ' + n + '</button>'; };
+  const barra = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">' +
+    chip('girar', 'A girar', cnt.girar) + chip('esperando', 'Esperando remesa', cnt.esperando) + chip('perseguir', 'A perseguir', cnt.perseguir) + chip('sin', 'Sin clasificar', cnt.sin) +
+    '<span style="flex:1"></span>' +
+    '<button onclick="cobPreset(\'todos\')" title="Mostrar todos los estados" style="padding:4px 10px;border-radius:7px;border:1px solid #dde;background:#fff;color:#1a2e6e;cursor:pointer;font-size:11.5px">Ver todos (' + _cliPend.length + ')</button></div>';
   let html = barra + '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' + _thSort('Cliente', 'cliente', _cuadCliSort, 'cuadSortCli') + _thSort('Factura', 'factura', _cuadCliSort, 'cuadSortCli') + _thSort('Fecha', 'fecha', _cuadCliSort, 'cuadSortCli') + _thSort('Importe', 'importe', _cuadCliSort, 'cuadSortCli', 'right') + '<th style="padding:7px;text-align:left">Estado · qué hacer</th><th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
   f.forEach(x => {
     const args = "'" + (x.serie || '') + "'," + (Number(x.importe) || 0) + ",'" + encodeURIComponent(x.numero || '') + "','" + encodeURIComponent(x.cliente || '') + "'";
@@ -3337,7 +3339,7 @@ function cuadrarRenderCli() {
   });
   html += '</tbody></table>';
   if (!f.length) html = barra + '<div style="color:#1b7a3d;font-size:13px;padding:6px">✓ Nada en este filtro.</div>';
-  else if (q || _cobFiltroEstado) html += '<div style="font-size:11px;color:#999;margin-top:5px">Mostrando ' + f.length + ' de ' + _cliPend.length + '</div>';
+  else if (q || !(_cobFiltro.girar && _cobFiltro.esperando && _cobFiltro.perseguir && _cobFiltro.sin)) html += '<div style="font-size:11px;color:#999;margin-top:5px">Mostrando ' + f.length + ' de ' + _cliPend.length + '</div>';
   const t = document.getElementById('cuad-cli-tabla'); if (t) t.innerHTML = html;
 }
 function cuadrarRenderProv() {

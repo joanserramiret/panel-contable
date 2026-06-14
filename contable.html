@@ -3250,6 +3250,19 @@ function _ordenEstado(arr, mapa, claveFn) {
   const rank = e => e === 'varias' ? 2 : e === 'ninguna' ? 1 : 0;
   return arr.slice().sort((a, b) => rank(mapa[claveFn(b)]) - rank(mapa[claveFn(a)]));
 }
+// Orden por columna (clic en cabecera). Getters por columna para cobros (cli) y pagos (prov).
+let _cuadCliSort = { col: '', dir: 1 }, _cuadProvSort = { col: '', dir: 1 };
+const _GET_CLI = { cliente: x => (x.cliente || '').toLowerCase(), factura: x => (x.serie || '') + String(x.numero || '').padStart(10, '0'), fecha: x => (x.fecha || ''), importe: x => Number(x.importe) || 0 };
+const _GET_PROV = { proveedor: x => (x.proveedor || '').toLowerCase(), factura: x => (x.nombre || '').toLowerCase(), fecha: x => (x.fecha || ''), importe: x => Number(x.importe) || 0 };
+function _ordenarPorColumna(arr, getter, dir) {
+  return arr.slice().sort((a, b) => { const va = getter(a), vb = getter(b); return (va < vb ? -1 : va > vb ? 1 : 0) * dir; });
+}
+function _thSort(label, col, estado, fn, align) {
+  const flecha = estado.col === col ? (estado.dir > 0 ? ' ▲' : ' ▼') : '';
+  return '<th onclick="' + fn + '(\'' + col + '\')" style="padding:7px;text-align:' + (align || 'left') + ';cursor:pointer;user-select:none" title="Ordenar por ' + label + '">' + label + flecha + '</th>';
+}
+function cuadSortCli(col) { _cuadCliSort = { col, dir: _cuadCliSort.col === col ? -_cuadCliSort.dir : 1 }; cuadrarRenderCli(); }
+function cuadSortProv(col) { _cuadProvSort = { col, dir: _cuadProvSort.col === col ? -_cuadProvSort.dir : 1 }; cuadrarRenderProv(); }
 async function cuadrarCargar() {
   const cCli = document.getElementById('cuad-cli');
   const cProv = document.getElementById('cuad-prov');
@@ -3278,8 +3291,8 @@ function cuadrarRenderCli() {
   const q = (document.getElementById('cuad-cli-buscar') ? document.getElementById('cuad-cli-buscar').value : '').trim().toLowerCase();
   let f = _cliPend;
   if (q) f = f.filter(x => ((x.cliente || '') + ' ' + x.serie + '-' + x.numero + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha || '')).toLowerCase().includes(q));
-  f = _ordenEstado(f, _cliEstado, x => (x.serie || '').toUpperCase() + '-' + x.numero);
-  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd"><th style="padding:7px;text-align:left">Cliente</th><th style="padding:7px;text-align:left">Factura</th><th style="padding:7px;text-align:left">Fecha</th><th style="padding:7px;text-align:right">Importe</th><th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
+  f = _cuadCliSort.col ? _ordenarPorColumna(f, _GET_CLI[_cuadCliSort.col], _cuadCliSort.dir) : _ordenEstado(f, _cliEstado, x => (x.serie || '').toUpperCase() + '-' + x.numero);
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' + _thSort('Cliente', 'cliente', _cuadCliSort, 'cuadSortCli') + _thSort('Factura', 'factura', _cuadCliSort, 'cuadSortCli') + _thSort('Fecha', 'fecha', _cuadCliSort, 'cuadSortCli') + _thSort('Importe', 'importe', _cuadCliSort, 'cuadSortCli', 'right') + '<th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
   f.forEach(x => {
     const args = "'" + (x.serie || '') + "'," + (Number(x.importe) || 0) + ",'" + encodeURIComponent(x.numero || '') + "','" + encodeURIComponent(x.cliente || '') + "'";
     html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px">' + (x.cliente || '') + _estadoBadge(_cliEstado[(x.serie || '').toUpperCase() + '-' + x.numero]) + '</td><td style="padding:7px">' + (x.serie || '') + '-' + (x.numero || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="cliVerDoc(\'' + (x.serie || '') + '\',\'' + encodeURIComponent(x.numero || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="cliConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
@@ -3293,8 +3306,8 @@ function cuadrarRenderProv() {
   const q = (document.getElementById('cuad-prov-buscar') ? document.getElementById('cuad-prov-buscar').value : '').trim().toLowerCase();
   let f = _provPend;
   if (q) f = f.filter(x => ((x.proveedor || '') + ' ' + (x.nombre || '') + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha || '')).toLowerCase().includes(q));
-  f = _ordenEstado(f, _provEstado, x => x.ruta || '');
-  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd"><th style="padding:7px;text-align:left">Proveedor</th><th style="padding:7px;text-align:left">Factura</th><th style="padding:7px;text-align:left">Fecha</th><th style="padding:7px;text-align:right">Importe</th><th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
+  f = _cuadProvSort.col ? _ordenarPorColumna(f, _GET_PROV[_cuadProvSort.col], _cuadProvSort.dir) : _ordenEstado(f, _provEstado, x => x.ruta || '');
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' + _thSort('Proveedor', 'proveedor', _cuadProvSort, 'cuadSortProv') + _thSort('Factura', 'factura', _cuadProvSort, 'cuadSortProv') + _thSort('Fecha', 'fecha', _cuadProvSort, 'cuadSortProv') + _thSort('Importe', 'importe', _cuadProvSort, 'cuadSortProv', 'right') + '<th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
   f.forEach(x => {
     const args = (Number(x.importe) || 0) + ",'" + encodeURIComponent(x.proveedor || '') + "','" + encodeURIComponent(x.nombre || '') + "','" + encodeURIComponent(x.ruta || '') + "'";
     html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px">' + (x.proveedor || '') + _estadoBadge(_provEstado[x.ruta || '']) + '</td><td style="padding:7px">' + (x.nombre || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="provVerDoc(\'' + encodeURIComponent(x.ruta || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="provConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';

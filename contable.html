@@ -3851,31 +3851,48 @@ async function cargarPagos() {
   if (cont) cont.innerHTML = '<div style="color:var(--texto-suave);font-size:13px;padding:10px">Cargando…</div>';
   const anio = (document.getElementById('c-desde').value || '').slice(0, 4) || ('' + new Date().getFullYear());
   try {
-    const r = await fetch(BRIDGE_URL_C + '/contabilidad/pagos?anio=' + anio, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const r = await fetch(BRIDGE_URL_C + '/contabilidad/pagos?anio=' + anio + '&todas=1', { headers: { 'ngrok-skip-browser-warning': 'true' } });
     pagosDatos = await r.json();
     renderPagos();
   } catch (e) { if (cont) cont.innerHTML = '<div style="color:#c0392b;padding:10px">✗ ' + e.message + '</div>'; }
 }
+let _pagFiltro = { pendiente: true, parcial: true, pagada: false };   // semáforo: verde oculto por defecto
+function pagToggle(k) { _pagFiltro[k] = !_pagFiltro[k]; renderPagos(); }
+function pagPreset(p) { _pagFiltro = (p === 'todas') ? { pendiente: true, parcial: true, pagada: true } : { pendiente: true, parcial: true, pagada: false }; renderPagos(); }
 function renderPagos() {
   const cont = document.getElementById('pagos-lista');
   const res = document.getElementById('pagos-resumen');
-  const pend = pagosDatos.pagos || [];
-  if (res) res.innerHTML = '<b>' + pend.length + '</b> facturas pendientes de pagar · Total <b style="color:#c0392b">' + bkFmt(pagosDatos.tot_pendiente || 0) + '</b> · de ellas ⚡ domiciliado <b>' + bkFmt(pagosDatos.tot_domiciliado || 0) + '</b>';
-  if (!pend.length) { cont.innerHTML = '<div style="color:#1b7a3d;font-size:13px;padding:10px">✓ Nada pendiente de pagar en este año.</div>'; return; }
+  const todas = pagosDatos.pagos || [];
+  const c = pagosDatos.cuenta || { pendiente: 0, parcial: 0, pagada: 0 };
+  if (res) res.innerHTML = '<b>' + (pagosDatos.n || 0) + '</b> facturas pendientes de pagar · Total <b style="color:#c0392b">' + bkFmt(pagosDatos.tot_pendiente || 0) + '</b> · de ellas ⚡ domiciliado <b>' + bkFmt(pagosDatos.tot_domiciliado || 0) + '</b>';
+  const chip = (k, lbl, col, bg, n) => { const on = _pagFiltro[k]; return '<button onclick="pagToggle(\'' + k + '\')" style="padding:4px 10px;border-radius:7px;border:1px solid ' + (on ? col : '#dde') + ';background:' + (on ? bg : '#fff') + ';color:' + (on ? col : '#999') + ';cursor:pointer;font-size:11.5px;font-weight:' + (on ? '700' : '500') + '">' + lbl + ' ' + n + '</button>'; };
+  const barra = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">' +
+    chip('pendiente', '🔴 Pendiente', '#a32d2d', '#fcebeb', c.pendiente || 0) +
+    chip('parcial', '🟡 Parcial', '#854f0b', '#faeeda', c.parcial || 0) +
+    chip('pagada', '🟢 Pagadas', '#1b7a3d', '#e8f7ef', c.pagada || 0) +
+    '<span style="flex:1"></span>' +
+    '<button onclick="pagPreset(\'pendiente\')" title="Ocultar verdes, ver solo lo que falta" style="padding:4px 10px;border-radius:7px;border:1px solid #c0cbea;background:#eef2fb;color:#1a2e6e;cursor:pointer;font-size:11.5px;font-weight:600">Solo pendiente</button>' +
+    '<button onclick="pagPreset(\'todas\')" title="Mostrar todos los colores, incluidas las pagadas" style="padding:4px 10px;border-radius:7px;border:1px solid #dde;background:#fff;color:#1a2e6e;cursor:pointer;font-size:11.5px">Ver todas</button>' +
+    '</div>';
+  const vis = todas.filter(p => _pagFiltro[p.estado]);
+  if (!vis.length) { cont.innerHTML = barra + '<div style="color:var(--texto-suave);font-size:13px;padding:10px">Nada que mostrar con los colores activos.</div>'; return; }
   const hoy = new Date().toISOString().slice(0, 10);
-  cont.innerHTML = '<table style="width:100%;font-size:12.5px;border-collapse:collapse">' +
-    '<tr style="color:var(--texto-suave);text-align:left"><th style="padding:4px">Vence</th><th>Proveedor</th><th>Factura</th><th style="text-align:right">Pendiente</th><th></th></tr>' +
-    pend.map(p => {
-      const vencido = p.vencimiento && p.vencimiento < hoy;
-      const venc = fechaES2(p.vencimiento) + (p.fuente_venc === 'estimado' ? ' <span title="No encontré el vencimiento en el pie; estimado (fecha+30). Revísalo con ✎" style="color:#c96a10;font-weight:700">~</span>' : '');
+  const colEstado = { pendiente: '#e24b4a', parcial: '#ef9f27', pagada: '#1d9e75' };
+  cont.innerHTML = barra + '<table style="width:100%;font-size:12.5px;border-collapse:collapse">' +
+    '<tr style="color:var(--texto-suave);text-align:left"><th style="padding:4px;width:14px"></th><th>Vence</th><th>Proveedor</th><th>Factura</th><th style="text-align:right">Importe</th><th></th></tr>' +
+    vis.map(p => {
+      const vencido = p.estado !== 'pagada' && p.vencimiento && p.vencimiento < hoy;
+      const venc = fechaES2(p.vencimiento) + (p.fuente_venc === 'estimado' ? ' <span title="Vencimiento estimado (fecha+30); revísalo con ✎" style="color:#c96a10;font-weight:700">~</span>' : '');
       const metodo = p.domiciliado ? '<span title="Domiciliado: te lo cargan automáticamente" style="color:#0e7490;font-weight:700;font-size:11px">⚡ auto</span>' : '<span title="Pago manual: lo lanzas tú" style="color:#b45309;font-weight:700;font-size:11px">✋ manual</span>';
-      const est = p.estado === 'parcial' ? ' <span style="color:#c96a10;font-weight:700;font-size:11px" title="Pagado ' + bkFmt(p.pagado) + ' de ' + bkFmt(p.total) + '">🟡 parcial</span>' : '';
+      const pip = '<span title="' + p.estado + '" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + (colEstado[p.estado] || '#999') + '"></span>';
+      const impTxt = p.estado === 'pagada' ? '<span style="color:#1b7a3d">' + bkFmt(p.total) + ' ✓</span>' : (p.estado === 'parcial' ? bkFmt(p.pendiente) + ' <span style="color:#c96a10;font-size:10.5px">de ' + bkFmt(p.total) + '</span>' : bkFmt(p.pendiente));
       const re = encodeURIComponent(p.ruta || '');
-      return '<tr style="border-top:1px solid var(--borde)' + (vencido ? ';background:#fdeeee' : '') + '">' +
+      return '<tr style="border-top:1px solid var(--borde)' + (vencido ? ';background:#fdeeee' : '') + (p.estado === 'pagada' ? ';opacity:.55' : '') + '">' +
+        '<td style="padding:5px 4px">' + pip + '</td>' +
         '<td style="padding:5px 4px;white-space:nowrap' + (vencido ? ';color:#c0392b;font-weight:700' : '') + '">' + venc + (vencido ? ' ⚠' : '') + '</td>' +
-        '<td>' + (p.proveedor || '—') + ' ' + metodo + est + '</td>' +
+        '<td>' + (p.proveedor || '—') + ' ' + metodo + '</td>' +
         '<td style="color:var(--texto-suave)">' + (p.nombre || '') + '</td>' +
-        '<td style="text-align:right;font-weight:700">' + bkFmt(p.pendiente) + '</td>' +
+        '<td style="text-align:right;font-weight:700">' + impTxt + '</td>' +
         '<td style="white-space:nowrap">' +
           '<button onclick="provVerDoc(\'' + re + '\')" title="Ver la factura" style="padding:2px 7px;background:#475569;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">👁</button> ' +
           '<button onclick="pagosEditar(\'' + re + '\')" title="Corregir vencimiento / domiciliación" style="padding:2px 7px;background:#6d28d9;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">✎</button>' +

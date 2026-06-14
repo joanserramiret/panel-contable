@@ -3867,22 +3867,26 @@ async function cargarPagos() {
 let _pagFiltro = { pendiente: true, parcial: true, pagada: false };   // semáforo: verde oculto por defecto
 function pagToggle(k) { _pagFiltro[k] = !_pagFiltro[k]; renderPagos(); }
 function pagPreset(p) { _pagFiltro = (p === 'todas') ? { pendiente: true, parcial: true, pagada: true } : { pendiente: true, parcial: true, pagada: false }; renderPagos(); }
+let _pagVerClasif = true;   // mostrar/ocultar el cajón "por clasificar" (Raquel) — no es deuda a proveedor
+function pagToggleClasif() { _pagVerClasif = !_pagVerClasif; renderPagos(); }
 function renderPagos() {
   const cont = document.getElementById('pagos-lista');
   const res = document.getElementById('pagos-resumen');
   const todas = pagosDatos.pagos || [];
   const c = pagosDatos.cuenta || { pendiente: 0, parcial: 0, pagada: 0 };
-  if (res) res.innerHTML = '<b>' + (pagosDatos.n || 0) + '</b> facturas pendientes de pagar · Total <b style="color:#c0392b">' + bkFmt(pagosDatos.tot_pendiente || 0) + '</b> · de ellas ⚡ domiciliado <b>' + bkFmt(pagosDatos.tot_domiciliado || 0) + '</b>';
+  if (res) res.innerHTML = '<b>💼 Deuda real a proveedor: <span style="color:#c0392b">' + bkFmt(pagosDatos.tot_deuda_real || 0) + '</span></b> en ' + (pagosDatos.n_deuda_real || 0) + ' facturas · de ellas ⚡ domiciliado <b>' + bkFmt(pagosDatos.tot_domiciliado || 0) + '</b>' +
+    '<br><span style="color:var(--texto-suave);font-size:12px">📂 Por clasificar (Raquel/SisConta, <b>no es deuda</b>): ' + bkFmt(pagosDatos.tot_clasificar || 0) + ' en ' + (pagosDatos.n_clasificar || 0) + ' facturas</span>';
   const chip = (k, lbl, col, bg, n) => { const on = _pagFiltro[k]; return '<button onclick="pagToggle(\'' + k + '\')" style="padding:4px 10px;border-radius:7px;border:1px solid ' + (on ? col : '#dde') + ';background:' + (on ? bg : '#fff') + ';color:' + (on ? col : '#999') + ';cursor:pointer;font-size:11.5px;font-weight:' + (on ? '700' : '500') + '">' + lbl + ' ' + n + '</button>'; };
   const barra = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">' +
     chip('pendiente', '🔴 Pendiente', '#a32d2d', '#fcebeb', c.pendiente || 0) +
     chip('parcial', '🟡 Parcial', '#854f0b', '#faeeda', c.parcial || 0) +
     chip('pagada', '🟢 Pagadas', '#1b7a3d', '#e8f7ef', c.pagada || 0) +
+    '<button onclick="pagToggleClasif()" title="El cajón por clasificar (carpetas genéricas, Raquel/SisConta) NO es deuda a proveedor. Apágalo para ver solo deuda real." style="padding:4px 10px;border-radius:7px;border:1px solid ' + (_pagVerClasif ? '#6b7280' : '#dde') + ';background:' + (_pagVerClasif ? '#eef0f3' : '#fff') + ';color:' + (_pagVerClasif ? '#374151' : '#999') + ';cursor:pointer;font-size:11.5px;font-weight:' + (_pagVerClasif ? '700' : '500') + '">📂 Por clasificar ' + (pagosDatos.n_clasificar || 0) + '</button>' +
     '<span style="flex:1"></span>' +
     '<button onclick="pagPreset(\'pendiente\')" title="Ocultar verdes, ver solo lo que falta" style="padding:4px 10px;border-radius:7px;border:1px solid #c0cbea;background:#eef2fb;color:#1a2e6e;cursor:pointer;font-size:11.5px;font-weight:600">Solo pendiente</button>' +
     '<button onclick="pagPreset(\'todas\')" title="Mostrar todos los colores, incluidas las pagadas" style="padding:4px 10px;border-radius:7px;border:1px solid #dde;background:#fff;color:#1a2e6e;cursor:pointer;font-size:11.5px">Ver todas</button>' +
     '</div>';
-  const vis = todas.filter(p => _pagFiltro[p.estado]);
+  const vis = todas.filter(p => _pagFiltro[p.estado] && (_pagVerClasif || !p.clasificar));
   if (!vis.length) { cont.innerHTML = barra + '<div style="color:var(--texto-suave);font-size:13px;padding:10px">Nada que mostrar con los colores activos.</div>'; return; }
   const hoy = new Date().toISOString().slice(0, 10);
   const colEstado = { pendiente: '#e24b4a', parcial: '#ef9f27', pagada: '#1d9e75' };
@@ -3898,7 +3902,7 @@ function renderPagos() {
       return '<tr style="border-top:1px solid var(--borde)' + (vencido ? ';background:#fdeeee' : '') + (p.estado === 'pagada' ? ';opacity:.55' : '') + '">' +
         '<td style="padding:5px 4px">' + pip + '</td>' +
         '<td style="padding:5px 4px;white-space:nowrap' + (vencido ? ';color:#c0392b;font-weight:700' : '') + '">' + venc + (vencido ? ' ⚠' : '') + '</td>' +
-        '<td>' + (p.proveedor || '—') + ' ' + metodo + (p.descuento ? ' <span title="Importe a pagar NETO tras descuentos/bonificación: ' + bkFmt(p.a_pagar) + ' (factura ' + bkFmt(p.total) + '). Ajústalo con ✎ si hace falta." style="color:#0e7490;font-weight:700;font-size:10.5px">💡 neto ' + bkFmt(p.a_pagar) + '</span>' : '') + '</td>' +
+        '<td>' + (p.proveedor || '—') + ' ' + metodo + (p.clasificar ? ' <span title="Carpeta genérica: pendiente de CLASIFICAR (Raquel/SisConta), no es deuda a un proveedor concreto" style="color:#374151;font-weight:700;font-size:10.5px;background:#eef0f3;padding:1px 5px;border-radius:4px">📂 clasificar</span>' : '') + (p.descuento ? ' <span title="Importe a pagar NETO tras descuentos/bonificación: ' + bkFmt(p.a_pagar) + ' (factura ' + bkFmt(p.total) + '). Ajústalo con ✎ si hace falta." style="color:#0e7490;font-weight:700;font-size:10.5px">💡 neto ' + bkFmt(p.a_pagar) + '</span>' : '') + '</td>' +
         '<td style="color:var(--texto-suave)">' + (p.nombre || '') + '</td>' +
         '<td style="text-align:right;font-weight:700">' + impTxt + '</td>' +
         '<td style="white-space:nowrap">' +

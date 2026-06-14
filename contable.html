@@ -3892,7 +3892,7 @@ function renderPagos() {
       return '<tr style="border-top:1px solid var(--borde)' + (vencido ? ';background:#fdeeee' : '') + (p.estado === 'pagada' ? ';opacity:.55' : '') + '">' +
         '<td style="padding:5px 4px">' + pip + '</td>' +
         '<td style="padding:5px 4px;white-space:nowrap' + (vencido ? ';color:#c0392b;font-weight:700' : '') + '">' + venc + (vencido ? ' ⚠' : '') + '</td>' +
-        '<td>' + (p.proveedor || '—') + ' ' + metodo + '</td>' +
+        '<td>' + (p.proveedor || '—') + ' ' + metodo + (p.descuento ? ' <span title="Importe a pagar NETO tras descuentos/bonificación: ' + bkFmt(p.a_pagar) + ' (factura ' + bkFmt(p.total) + '). Ajústalo con ✎ si hace falta." style="color:#0e7490;font-weight:700;font-size:10.5px">💡 neto ' + bkFmt(p.a_pagar) + '</span>' : '') + '</td>' +
         '<td style="color:var(--texto-suave)">' + (p.nombre || '') + '</td>' +
         '<td style="text-align:right;font-weight:700">' + impTxt + '</td>' +
         '<td style="white-space:nowrap">' +
@@ -3907,10 +3907,12 @@ async function pagosEditar(rutaEnc) {
   const venc = prompt('Vencimiento (AAAA-MM-DD). Déjalo vacío para volver al automático del pie:', p.vencimiento || '');
   if (venc === null) return;
   const domic = confirm('¿Es DOMICILIADO (te lo cargan automáticamente)?\n\nAceptar = ⚡ domiciliado · Cancelar = ✋ pago manual');
+  const apg = prompt('Importe REAL a pagar (neto tras descuentos / bonificación de residente).\nDéjalo vacío para usar el automático.\n\nTotal factura: ' + bkFmt(p.total || 0) + (p.descuento ? '\nNeto detectado del OCR: ' + bkFmt(p.a_pagar) : ''), (p.descuento && p.a_pagar) ? p.a_pagar : '');
+  if (apg === null) return;
   try {
     await fetch(BRIDGE_URL_C + '/contabilidad/pagos/venc', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-      body: JSON.stringify({ ruta: ruta, vencimiento: (venc || '').trim(), domiciliado: domic })
+      body: JSON.stringify({ ruta: ruta, vencimiento: (venc || '').trim(), domiciliado: domic, importe_pagar: (apg || '').trim() })
     });
     cargarPagos();
   } catch (e) { alert('✗ ' + e.message); }

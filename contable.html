@@ -3263,15 +3263,43 @@ function _thSort(label, col, estado, fn, align) {
 }
 function cuadSortCli(col) { _cuadCliSort = { col, dir: _cuadCliSort.col === col ? -_cuadCliSort.dir : 1 }; cuadrarRenderCli(); }
 function cuadSortProv(col) { _cuadProvSort = { col, dir: _cuadProvSort.col === col ? -_cuadProvSort.dir : 1 }; cuadrarRenderProv(); }
+// 🎯 Estado de gestión del cobro (qué hacer): girar / esperando remesa / perseguir. Durable en el bridge (carteraDestinos).
+let _cobFiltroEstado = '';
+const _COB_EST = {
+  girar:     { e: '⚡', lbl: 'A girar',          col: '#185fa5', bg: '#e6f1fb', bd: '#85b7eb', tip: 'Incluir en una remesa SEPA (volver a girar)' },
+  esperando: { e: '📨', lbl: 'Esperando remesa', col: '#854f0b', bg: '#faeeda', bd: '#ef9f27', tip: 'Ya girada · pendiente de que entre la remesa / de importar el fichero' },
+  perseguir: { e: '✋', lbl: 'A perseguir',      col: '#a32d2d', bg: '#fcebeb', bd: '#f09595', tip: 'Cobro manual · reclamar al cliente' }
+};
+function _cobClave(x) { return bkNormClave((x.serie || '') + '-' + (x.numero || '')); }
+function cobTicks(clave) {
+  const est = (carteraDestinos || {})[clave] || '';
+  return ['girar', 'esperando', 'perseguir'].map(k => {
+    const d = _COB_EST[k], on = est === k;
+    return '<button onclick="cobSetEstado(\'' + clave + '\',\'' + k + '\')" title="' + d.tip + '" style="margin-right:4px;padding:3px 7px;border-radius:6px;border:1px solid ' + (on ? d.bd : '#dde') + ';background:' + (on ? d.bg : '#fff') + ';color:' + (on ? d.col : '#aaa') + ';cursor:pointer;font-size:12px;font-weight:' + (on ? '700' : '400') + '">' + d.e + '</button>';
+  }).join('');
+}
+async function cobSetEstado(clave, k) {
+  const actual = (carteraDestinos || {})[clave] || '';
+  const nuevo = actual === k ? null : k;
+  try {
+    await fetch(BRIDGE_URL_C + '/cartera/destino', { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }, body: JSON.stringify({ claves: [clave], destino: nuevo }) });
+    if (!carteraDestinos) carteraDestinos = {};
+    if (nuevo) carteraDestinos[clave] = nuevo; else delete carteraDestinos[clave];
+    cuadrarRenderCli();
+  } catch (e) { alert('✗ ' + e.message); }
+}
+function cobFiltrarEstado(k) { _cobFiltroEstado = (_cobFiltroEstado === k ? '' : k); cuadrarRenderCli(); }
 async function cuadrarCargar() {
   const cCli = document.getElementById('cuad-cli');
   const cProv = document.getElementById('cuad-prov');
   if (cCli) cCli.innerHTML = '<div style="color:var(--texto-suave);font-size:13px">Cargando…</div>';
   if (cProv) cProv.innerHTML = '<div style="color:var(--texto-suave);font-size:13px">Cargando…</div>';
+  if (carteraDestinos === null) { try { await cargarCarteraDestinos(); } catch (e) { } }
   try {
     const d = await (await fetch(`${BRIDGE_URL_C}/contabilidad/clientes_pendientes?anio=2026&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } })).json();
-    _cliPend = d.facturas || [];
-    if (cCli) cCli.innerHTML = '<div style="margin-bottom:6px;font-size:12.5px;color:#6d28d9;font-weight:700">' + (d.n || 0) + ' facturas · €' + (d.total || 0).toFixed(2) + '</div>' +
+    _cliPend = (d.facturas || []).filter(x => (Number(x.importe) || 0) > 0);   // los abonos (FD negativos) NO son cobros pendientes — se anulan con su factura
+    const _nC = _cliPend.length, _totC = _cliPend.reduce((s, x) => s + (Number(x.importe) || 0), 0);
+    if (cCli) cCli.innerHTML = '<div style="margin-bottom:6px;font-size:12.5px;color:#6d28d9;font-weight:700">' + _nC + ' facturas · €' + _totC.toFixed(2) + '</div>' +
       '<input id="cuad-cli-buscar" oninput="cuadrarRenderCli()" placeholder="🔎 Filtrar cliente / nº / importe / fecha…" style="width:100%;max-width:420px;padding:7px 10px;margin-bottom:8px;border:1.5px solid #dde;border-radius:8px;font-size:12px"/>' +
       ' <button onclick="cliConciliarTodos()" style="padding:6px 12px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-size:12px;font-weight:600;vertical-align:top">⚖️ Conciliar todos</button>' +
       '<div id="cuad-cli-tabla"></div>';
@@ -3291,15 +3319,22 @@ function cuadrarRenderCli() {
   const q = (document.getElementById('cuad-cli-buscar') ? document.getElementById('cuad-cli-buscar').value : '').trim().toLowerCase();
   let f = _cliPend;
   if (q) f = f.filter(x => ((x.cliente || '') + ' ' + x.serie + '-' + x.numero + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha || '')).toLowerCase().includes(q));
+  if (_cobFiltroEstado) f = f.filter(x => ((carteraDestinos || {})[_cobClave(x)] || 'sin') === _cobFiltroEstado);
   f = _cuadCliSort.col ? _ordenarPorColumna(f, _GET_CLI[_cuadCliSort.col], _cuadCliSort.dir) : _ordenEstado(f, _cliEstado, x => (x.serie || '').toUpperCase() + '-' + x.numero);
-  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' + _thSort('Cliente', 'cliente', _cuadCliSort, 'cuadSortCli') + _thSort('Factura', 'factura', _cuadCliSort, 'cuadSortCli') + _thSort('Fecha', 'fecha', _cuadCliSort, 'cuadSortCli') + _thSort('Importe', 'importe', _cuadCliSort, 'cuadSortCli', 'right') + '<th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
+  const cnt = { girar: 0, esperando: 0, perseguir: 0, sin: 0 };
+  _cliPend.forEach(x => { const e = (carteraDestinos || {})[_cobClave(x)] || 'sin'; cnt[e] = (cnt[e] || 0) + 1; });
+  const chip = (k, lbl, n) => { const on = _cobFiltroEstado === k; const d = _COB_EST[k]; return '<button onclick="cobFiltrarEstado(\'' + k + '\')" style="padding:4px 10px;border-radius:7px;border:1px solid ' + (on ? (d ? d.bd : '#c8ccd0') : '#dde') + ';background:' + (on ? (d ? d.bg : '#eef0f2') : '#fff') + ';color:' + (on ? (d ? d.col : '#444') : '#666') + ';cursor:pointer;font-size:11.5px;font-weight:' + (on ? '700' : '500') + '">' + (d ? d.e + ' ' : '') + lbl + ' ' + n + '</button>'; };
+  const barra = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">' +
+    '<button onclick="cobFiltrarEstado(\'\')" style="padding:4px 10px;border-radius:7px;border:1px solid ' + (_cobFiltroEstado === '' ? '#c0cbea' : '#dde') + ';background:' + (_cobFiltroEstado === '' ? '#eef2fb' : '#fff') + ';color:#1a2e6e;cursor:pointer;font-size:11.5px;font-weight:' + (_cobFiltroEstado === '' ? '700' : '500') + '">Todos ' + _cliPend.length + '</button>' +
+    chip('girar', 'A girar', cnt.girar) + chip('esperando', 'Esperando remesa', cnt.esperando) + chip('perseguir', 'A perseguir', cnt.perseguir) + chip('sin', 'Sin clasificar', cnt.sin) + '</div>';
+  let html = barra + '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' + _thSort('Cliente', 'cliente', _cuadCliSort, 'cuadSortCli') + _thSort('Factura', 'factura', _cuadCliSort, 'cuadSortCli') + _thSort('Fecha', 'fecha', _cuadCliSort, 'cuadSortCli') + _thSort('Importe', 'importe', _cuadCliSort, 'cuadSortCli', 'right') + '<th style="padding:7px;text-align:left">Estado · qué hacer</th><th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
   f.forEach(x => {
     const args = "'" + (x.serie || '') + "'," + (Number(x.importe) || 0) + ",'" + encodeURIComponent(x.numero || '') + "','" + encodeURIComponent(x.cliente || '') + "'";
-    html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px">' + (x.cliente || '') + _estadoBadge(_cliEstado[(x.serie || '').toUpperCase() + '-' + x.numero]) + '</td><td style="padding:7px">' + (x.serie || '') + '-' + (x.numero || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="cliVerDoc(\'' + (x.serie || '') + '\',\'' + encodeURIComponent(x.numero || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="cliConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
+    html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px">' + (x.cliente || '') + _estadoBadge(_cliEstado[(x.serie || '').toUpperCase() + '-' + x.numero]) + '</td><td style="padding:7px">' + (x.serie || '') + '-' + (x.numero || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap">' + cobTicks(_cobClave(x)) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="cliVerDoc(\'' + (x.serie || '') + '\',\'' + encodeURIComponent(x.numero || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="cliConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
   });
   html += '</tbody></table>';
-  if (!f.length) html = '<div style="color:#1b7a3d;font-size:13px;padding:6px">✓ Nada pendiente de cobro.</div>';
-  else if (q) html += '<div style="font-size:11px;color:#999;margin-top:5px">Mostrando ' + f.length + ' de ' + _cliPend.length + '</div>';
+  if (!f.length) html = barra + '<div style="color:#1b7a3d;font-size:13px;padding:6px">✓ Nada en este filtro.</div>';
+  else if (q || _cobFiltroEstado) html += '<div style="font-size:11px;color:#999;margin-top:5px">Mostrando ' + f.length + ' de ' + _cliPend.length + '</div>';
   const t = document.getElementById('cuad-cli-tabla'); if (t) t.innerHTML = html;
 }
 function cuadrarRenderProv() {
@@ -3324,8 +3359,9 @@ async function cliPendientes() {
   try {
     const res = await fetch(`${BRIDGE_URL_C}/contabilidad/clientes_pendientes?anio=2026&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
     const d = await res.json();
-    _cliPend = d.facturas || [];
-    let html = '<div style="margin:16px 0 8px;font-weight:700;font-size:14px;color:#6d28d9">⚖️ Facturas pendientes de cobro: ' + (d.n||0) + ' &nbsp;·&nbsp; €' + (d.total||0).toFixed(2) + '</div>';
+    _cliPend = (d.facturas || []).filter(x => (Number(x.importe)||0) > 0);   // abonos (FD negativos) fuera: no son cobros pendientes
+    const _nC = _cliPend.length, _totC = _cliPend.reduce((s,x)=>s+(Number(x.importe)||0),0);
+    let html = '<div style="margin:16px 0 8px;font-weight:700;font-size:14px;color:#6d28d9">⚖️ Facturas pendientes de cobro: ' + _nC + ' &nbsp;·&nbsp; €' + _totC.toFixed(2) + '</div>';
     html += '<input id="cli-pend-buscar" oninput="cliPendRender()" placeholder="🔎 Filtrar por cliente, nº de factura, importe o fecha…" style="width:100%;max-width:420px;padding:7px 10px;margin-bottom:8px;border:1.5px solid #dde;border-radius:8px;font-size:12px"/>';
     html += ' <button onclick="cliConciliarTodos()" style="padding:7px 13px;margin:0 0 8px 6px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-size:12px;font-weight:600;vertical-align:top">⚖️ Conciliar todos (visibles)</button>';
     html += '<div id="cli-pend-tabla"></div>';

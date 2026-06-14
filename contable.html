@@ -3413,9 +3413,12 @@ async function cliConciliar(serie, importe, numeroEnc, clienteEnc) {
     if (!lista.length) html += '<div style="color:#c00">No hay ingresos en el banco con ese importe libre. Quizá llegó en una remesa (desglósala) o aún no ha entrado.</div>';
     lista.forEach(m => {
       const c = encodeURIComponent(cliente), n = encodeURIComponent(numero);
+      const cubierto = m.conciliado && (Number(m.libre) <= 0.005);
       html += '<div style="border-bottom:1px solid #eee;padding:7px 0;display:flex;justify-content:space-between;align-items:center;gap:10px">' +
-        '<div><b>€' + Number(m.importe).toFixed(2) + '</b>' + (m.conciliado ? ' <span style="color:#999">(libre €' + Number(m.libre).toFixed(2) + ')</span>' : '') + ' · ' + (m.fecha||'') + '<br><span style="color:#999;font-size:11px">' + (m.concepto||'') + '</span></div>' +
-        '<button onclick="cliLinkCobro(' + m.id + ',\'' + serie + '\',\'' + n + '\',' + importe + ',\'' + c + '\')" style="padding:5px 11px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap">Enlazar ⚖️</button></div>';
+        '<div><b>€' + Number(m.importe).toFixed(2) + '</b>' + (m.conciliado ? ' <span style="color:' + (cubierto ? '#c0392b;font-weight:700' : '#999') + '">' + (cubierto ? '⚠ ya cubierto (libre €' + Number(m.libre).toFixed(2) + ')' : 'libre €' + Number(m.libre).toFixed(2)) + '</span>' : '') + ' · ' + (m.fecha||'') + '<br><span style="color:#999;font-size:11px">' + (m.concepto||'') + '</span></div>' +
+        (cubierto
+          ? '<button disabled title="Este ingreso ya está repartido del todo — no caben más facturas. Si crees que falta una, probablemente hay un DUPLICADO." style="padding:5px 11px;background:#eee;color:#999;border:none;border-radius:6px;cursor:not-allowed;white-space:nowrap">✓ lleno</button>'
+          : '<button onclick="cliLinkCobro(' + m.id + ',\'' + serie + '\',\'' + n + '\',' + importe + ',\'' + c + '\')" style="padding:5px 11px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap">Enlazar ⚖️</button>') + '</div>';
     });
     html += '<div style="text-align:right;margin-top:12px"><button onclick="document.getElementById(\'cli-ov\').remove()" style="padding:6px 14px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer">Cerrar</button></div></div>';
     ov.innerHTML = html;
@@ -3516,9 +3519,12 @@ async function provConciliar(importe, provEnc, nombreEnc, rutaEnc) {
     if (!lista.length) html += '<div style="color:#c00">No hay cargos en el banco con ese importe libre. Quizá se pagó con tarjeta (pestaña 💳) o dentro de un recibo agrupado.</div>';
     lista.forEach(m => {
       const p = encodeURIComponent(proveedor), n = encodeURIComponent(nombre), r = encodeURIComponent(ruta);
+      const cubierto = m.conciliado && (Number(m.libre) <= 0.005);
       html += '<div style="border-bottom:1px solid #eee;padding:7px 0;display:flex;justify-content:space-between;align-items:center;gap:10px">' +
-        '<div><b>€' + Number(Math.abs(m.importe)).toFixed(2) + '</b>' + (m.conciliado ? ' <span style="color:#999">(libre €' + Number(m.libre).toFixed(2) + ')</span>' : '') + ' · ' + (m.fecha||'') + '<br><span style="color:#999;font-size:11px">' + (m.concepto||'') + '</span></div>' +
-        '<button onclick="provLinkCargo(' + m.id + ',\'' + p + '\',\'' + n + '\',\'' + r + '\',' + importe + ')" style="padding:5px 11px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap">Enlazar ⚖️</button></div>';
+        '<div><b>€' + Number(Math.abs(m.importe)).toFixed(2) + '</b>' + (m.conciliado ? ' <span style="color:' + (cubierto ? '#c0392b;font-weight:700' : '#999') + '">' + (cubierto ? '⚠ ya cubierto (libre €' + Number(m.libre).toFixed(2) + ')' : 'libre €' + Number(m.libre).toFixed(2)) + '</span>' : '') + ' · ' + (m.fecha||'') + '<br><span style="color:#999;font-size:11px">' + (m.concepto||'') + '</span></div>' +
+        (cubierto
+          ? '<button disabled title="Este cargo ya está pagado del todo — no caben más facturas. Si crees que falta una, probablemente hay un DUPLICADO de escaneo (usa el limpiador de duplicados)." style="padding:5px 11px;background:#eee;color:#999;border:none;border-radius:6px;cursor:not-allowed;white-space:nowrap">✓ lleno</button>'
+          : '<button onclick="provLinkCargo(' + m.id + ',\'' + p + '\',\'' + n + '\',\'' + r + '\',' + importe + ')" style="padding:5px 11px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap">Enlazar ⚖️</button>') + '</div>';
     });
     html += '<div style="text-align:right;margin-top:12px"><button onclick="document.getElementById(\'prov-ov\').remove()" style="padding:6px 14px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer">Cerrar</button></div></div>';
     ov.innerHTML = html;

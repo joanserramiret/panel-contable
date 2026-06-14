@@ -3904,14 +3904,22 @@ async function pagosAutocasar() {
   try {
     const d = await (await fetch(BRIDGE_URL_C + '/contabilidad/pagos/autocasar?anio=2026&nc=' + Date.now(), { headers: H })).json();
     if (!d.ok) throw new Error(d.error || 'error');
-    const msg = 'Simulación del casador por vencimiento:\n\n' +
-      '🟢 ' + d.verde + ' facturas se enlazarían a su pago (' + bkFmt(d.suma_verde) + ') → pasan a PAGADAS\n' +
-      '🟡 ' + d.amarillo + ' con varios cargos candidatos → a revisar a mano\n' +
+    const msg = 'Simulación del casador por vencimiento (solo 2026):\n\n' +
+      '🟢 ' + d.verde + ' con 1 pago exacto (' + bkFmt(d.suma_verde) + ') → seguras, a PAGADAS\n' +
+      '🔵 ' + d.agrupado + ' en pagos AGRUPADOS — 1 cargo = varias facturas (' + bkFmt(d.suma_agrupado) + ')\n' +
+      '🟡 ' + d.amarillo + ' con varios candidatos → revisar a mano\n' +
       '🔴 ' + d.rojo + ' sin pago localizado → pendientes de verdad\n\n' +
-      '¿Aplico el enlace de las 🟢? (es reversible: solo escribe la factura en el pago ya hecho)';
+      'Paso 1: enlazo las 🟢 (seguras). ¿Seguir? (reversible)';
     if (!confirm(msg)) return;
-    const r = await (await fetch(BRIDGE_URL_C + '/contabilidad/pagos/autocasar?anio=2026&confirmar=1&nc=' + Date.now(), { method: 'POST', headers: H })).json();
-    alert('✅ Enlazadas ' + (r.aplicados || 0) + ' facturas a su pago. El calendario de Pagos baja el rojo en consecuencia.');
+    const r1 = await (await fetch(BRIDGE_URL_C + '/contabilidad/pagos/autocasar?anio=2026&confirmar=1&nc=' + Date.now(), { method: 'POST', headers: H })).json();
+    let txt = '✅ Enlazadas ' + (r1.aplicados || 0) + ' facturas (1 cargo = 1 factura).';
+    if ((d.agrupado || 0) > 0) {
+      if (confirm(txt + '\n\nPaso 2 — AGRUPADOS: ' + d.agrupado + ' cargos que pagan varias facturas cada uno (' + bkFmt(d.suma_agrupado) + '), cada grupo cuadra al céntimo. ¿Los aplico también? (parte cada cargo en sus facturas, el cuadre queda intacto)')) {
+        const r2 = await (await fetch(BRIDGE_URL_C + '/contabilidad/pagos/autocasar?anio=2026&confirmar=1&agrupados=1&nc=' + Date.now(), { method: 'POST', headers: H })).json();
+        txt = '✅ Enlazadas en total: ' + (r2.aplicados || 0) + ' (sueltas + agrupadas).';
+      }
+    }
+    alert(txt + '\n\nEl rojo del calendario baja en consecuencia.');
     cargarPagos();
   } catch (e) { alert('✗ ' + e.message); }
 }

@@ -3239,6 +3239,17 @@ function refrescarPend(tipo) {
   if (activo === 'ctab-cuadrar') { cuadrarCargar(); return; }
   if (tipo === 'cli') cliPendientes(); else provPendientes();
 }
+// Estado tras "Conciliar todos": clave → 'varias' (varios cobros, elige con ⚖️) | 'ninguna' (sin cobro en banco).
+let _cliEstado = {}, _provEstado = {};
+function _estadoBadge(estado) {
+  if (estado === 'varias') return ' <span title="Hay VARIOS cobros/cargos en el banco con este importe — elige el correcto con ⚖️ Conciliar" style="background:#fff3cd;border:1px solid #e8c97a;color:#8a6d1a;border-radius:5px;padding:1px 6px;font-size:10.5px;font-weight:700">🟡 revisar</span>';
+  if (estado === 'ninguna') return ' <span title="No hay ningún movimiento en el banco con este importe — quizá llegó dentro de una remesa o aún no ha entrado" style="background:#eef0f2;border:1px solid #c8ccd0;color:#5a6066;border-radius:5px;padding:1px 6px;font-size:10.5px;font-weight:700">⬜ sin movimiento</span>';
+  return '';
+}
+function _ordenEstado(arr, mapa, claveFn) {
+  const rank = e => e === 'varias' ? 2 : e === 'ninguna' ? 1 : 0;
+  return arr.slice().sort((a, b) => rank(mapa[claveFn(b)]) - rank(mapa[claveFn(a)]));
+}
 async function cuadrarCargar() {
   const cCli = document.getElementById('cuad-cli');
   const cProv = document.getElementById('cuad-prov');
@@ -3267,10 +3278,11 @@ function cuadrarRenderCli() {
   const q = (document.getElementById('cuad-cli-buscar') ? document.getElementById('cuad-cli-buscar').value : '').trim().toLowerCase();
   let f = _cliPend;
   if (q) f = f.filter(x => ((x.cliente || '') + ' ' + x.serie + '-' + x.numero + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha || '')).toLowerCase().includes(q));
+  f = _ordenEstado(f, _cliEstado, x => (x.serie || '').toUpperCase() + '-' + x.numero);
   let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd"><th style="padding:7px;text-align:left">Cliente</th><th style="padding:7px;text-align:left">Factura</th><th style="padding:7px;text-align:left">Fecha</th><th style="padding:7px;text-align:right">Importe</th><th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
   f.forEach(x => {
     const args = "'" + (x.serie || '') + "'," + (Number(x.importe) || 0) + ",'" + encodeURIComponent(x.numero || '') + "','" + encodeURIComponent(x.cliente || '') + "'";
-    html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px">' + (x.cliente || '') + '</td><td style="padding:7px">' + (x.serie || '') + '-' + (x.numero || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="cliVerDoc(\'' + (x.serie || '') + '\',\'' + encodeURIComponent(x.numero || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="cliConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
+    html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px">' + (x.cliente || '') + _estadoBadge(_cliEstado[(x.serie || '').toUpperCase() + '-' + x.numero]) + '</td><td style="padding:7px">' + (x.serie || '') + '-' + (x.numero || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="cliVerDoc(\'' + (x.serie || '') + '\',\'' + encodeURIComponent(x.numero || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="cliConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
   });
   html += '</tbody></table>';
   if (!f.length) html = '<div style="color:#1b7a3d;font-size:13px;padding:6px">✓ Nada pendiente de cobro.</div>';
@@ -3281,10 +3293,11 @@ function cuadrarRenderProv() {
   const q = (document.getElementById('cuad-prov-buscar') ? document.getElementById('cuad-prov-buscar').value : '').trim().toLowerCase();
   let f = _provPend;
   if (q) f = f.filter(x => ((x.proveedor || '') + ' ' + (x.nombre || '') + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha || '')).toLowerCase().includes(q));
+  f = _ordenEstado(f, _provEstado, x => x.ruta || '');
   let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd"><th style="padding:7px;text-align:left">Proveedor</th><th style="padding:7px;text-align:left">Factura</th><th style="padding:7px;text-align:left">Fecha</th><th style="padding:7px;text-align:right">Importe</th><th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
   f.forEach(x => {
     const args = (Number(x.importe) || 0) + ",'" + encodeURIComponent(x.proveedor || '') + "','" + encodeURIComponent(x.nombre || '') + "','" + encodeURIComponent(x.ruta || '') + "'";
-    html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px">' + (x.proveedor || '') + '</td><td style="padding:7px">' + (x.nombre || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="provVerDoc(\'' + encodeURIComponent(x.ruta || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="provConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
+    html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px">' + (x.proveedor || '') + _estadoBadge(_provEstado[x.ruta || '']) + '</td><td style="padding:7px">' + (x.nombre || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="provVerDoc(\'' + encodeURIComponent(x.ruta || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="provConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
   });
   html += '</tbody></table>';
   if (!f.length) html = '<div style="color:#1b7a3d;font-size:13px;padding:6px">✓ Nada pendiente de pago.</div>';
@@ -3312,6 +3325,7 @@ function cliPendRender() {
   const q = (document.getElementById('cli-pend-buscar') ? document.getElementById('cli-pend-buscar').value : '').trim().toLowerCase();
   let f = _cliPend;
   if (q) f = f.filter(x => ((x.cliente||'') + ' ' + x.serie + '-' + x.numero + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha||'')).toLowerCase().includes(q));
+  f = _ordenEstado(f, _cliEstado, x => (x.serie||'').toUpperCase() + '-' + x.numero);
   let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
     '<th style="padding:7px;text-align:left">Cliente</th><th style="padding:7px;text-align:left">Factura</th>' +
     '<th style="padding:7px;text-align:left">Fecha</th><th style="padding:7px;text-align:right">Importe</th>' +
@@ -3319,7 +3333,7 @@ function cliPendRender() {
   f.forEach(x => {
     const args = "'" + (x.serie||'') + "'," + (Number(x.importe)||0) + ",'" + encodeURIComponent(x.numero||'') + "','" + encodeURIComponent(x.cliente||'') + "'";
     html += '<tr style="border-bottom:1px solid #eee">' +
-      '<td style="padding:7px">' + (x.cliente||'') + '</td>' +
+      '<td style="padding:7px">' + (x.cliente||'') + _estadoBadge(_cliEstado[(x.serie||'').toUpperCase() + '-' + x.numero]) + '</td>' +
       '<td style="padding:7px">' + (x.serie||'') + '-' + (x.numero||'') + '</td>' +
       '<td style="padding:7px">' + (x.fecha||'') + '</td>' +
       '<td style="padding:7px;text-align:right">€' + (Number(x.importe)||0).toFixed(2) + '</td>' +
@@ -3375,7 +3389,9 @@ async function cliConciliarTodos() {
   if (!f.length) { alert('No hay facturas pendientes en pantalla.'); return; }
   if (!confirm('Voy a conciliar automáticamente las facturas pendientes visibles que tengan UN ÚNICO cobro en banco con ese importe. Las ambiguas o sin cobro las dejo para revisar.\n\n¿Seguir? (' + f.length + ' facturas)')) return;
   let ok = 0, varias = 0, ninguna = 0;
+  _cliEstado = {};
   for (const x of f) {
+    const clave = (x.serie||'').toUpperCase() + '-' + x.numero;
     try {
       const res = await fetch(`${BRIDGE_URL_C}/banco/cobros_candidatos?importe=${x.importe}&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
       const d = await res.json();
@@ -3383,11 +3399,11 @@ async function cliConciliarTodos() {
       if (lista.length === 1) {
         await fetch(`${BRIDGE_URL_C}/banco/conciliar_factura?mov=${lista[0].id}&serie=${encodeURIComponent(x.serie)}&numero=${encodeURIComponent(x.numero)}&importe=${x.importe}&cliente=${encodeURIComponent(x.cliente||'')}&confirmar=1&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
         ok++;
-      } else if (lista.length > 1) { varias++; }
-      else { ninguna++; }
+      } else if (lista.length > 1) { varias++; _cliEstado[clave] = 'varias'; }
+      else { ninguna++; _cliEstado[clave] = 'ninguna'; }
     } catch(e) {}
   }
-  alert('Hecho ✅\n\n⚖️ Conciliadas (1 cobro exacto): ' + ok + '\n🟡 Con varios cobros (revísalas): ' + varias + '\n⬜ Sin cobro en banco: ' + ninguna);
+  alert('Hecho ✅\n\n⚖️ Conciliadas (1 cobro exacto): ' + ok + '\n🟡 Con varios cobros (revísalas con ⚖️): ' + varias + '\n⬜ Sin cobro en banco: ' + ninguna + '\n\nLas 🟡 y ⬜ quedan MARCADAS y ARRIBA del todo en la lista.');
   refrescarPend('cli');
 }
 
@@ -3412,6 +3428,7 @@ function provPendRender() {
   const q = (document.getElementById('prov-pend-buscar') ? document.getElementById('prov-pend-buscar').value : '').trim().toLowerCase();
   let f = _provPend;
   if (q) f = f.filter(x => ((x.proveedor||'') + ' ' + (x.nombre||'') + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha||'')).toLowerCase().includes(q));
+  f = _ordenEstado(f, _provEstado, x => x.ruta||'');
   let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
     '<th style="padding:7px;text-align:left">Proveedor</th><th style="padding:7px;text-align:left">Factura</th>' +
     '<th style="padding:7px;text-align:left">Fecha</th><th style="padding:7px;text-align:right">Importe</th>' +
@@ -3419,7 +3436,7 @@ function provPendRender() {
   f.forEach(x => {
     const args = (Number(x.importe)||0) + ",'" + encodeURIComponent(x.proveedor||'') + "','" + encodeURIComponent(x.nombre||'') + "','" + encodeURIComponent(x.ruta||'') + "'";
     html += '<tr style="border-bottom:1px solid #eee">' +
-      '<td style="padding:7px">' + (x.proveedor||'') + '</td>' +
+      '<td style="padding:7px">' + (x.proveedor||'') + _estadoBadge(_provEstado[x.ruta||'']) + '</td>' +
       '<td style="padding:7px">' + (x.nombre||'') + '</td>' +
       '<td style="padding:7px">' + (x.fecha||'') + '</td>' +
       '<td style="padding:7px;text-align:right">€' + (Number(x.importe)||0).toFixed(2) + '</td>' +
@@ -3475,6 +3492,7 @@ async function provConciliarTodos() {
   if (!f.length) { alert('No hay facturas pendientes en pantalla.'); return; }
   if (!confirm('Voy a conciliar automáticamente las facturas pendientes visibles que tengan UN ÚNICO cargo en banco con ese importe. Las ambiguas o sin cargo las dejo para revisar.\n\n¿Seguir? (' + f.length + ' facturas)')) return;
   let ok = 0, varias = 0, ninguna = 0;
+  _provEstado = {};
   for (const x of f) {
     try {
       const res = await fetch(`${BRIDGE_URL_C}/banco/cargos_candidatos?importe=${x.importe}&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
@@ -3483,11 +3501,11 @@ async function provConciliarTodos() {
       if (lista.length === 1) {
         await fetch(`${BRIDGE_URL_C}/banco/conciliar_factura?mov=${lista[0].id}&serie=PROV&numero=${encodeURIComponent(x.nombre)}&importe=${x.importe}&cliente=${encodeURIComponent(x.proveedor||'')}&ruta=${encodeURIComponent(x.ruta||'')}&confirmar=1&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
         ok++;
-      } else if (lista.length > 1) { varias++; }
-      else { ninguna++; }
+      } else if (lista.length > 1) { varias++; _provEstado[x.ruta||''] = 'varias'; }
+      else { ninguna++; _provEstado[x.ruta||''] = 'ninguna'; }
     } catch(e) {}
   }
-  alert('Hecho ✅\n\n⚖️ Conciliadas (1 cargo exacto): ' + ok + '\n🟡 Con varios cargos (revísalas): ' + varias + '\n⬜ Sin cargo en banco: ' + ninguna);
+  alert('Hecho ✅\n\n⚖️ Conciliadas (1 cargo exacto): ' + ok + '\n🟡 Con varios cargos (revísalas con ⚖️): ' + varias + '\n⬜ Sin cargo en banco: ' + ninguna + '\n\nLas 🟡 y ⬜ quedan MARCADAS y ARRIBA del todo en la lista.');
   refrescarPend('prov');
 }
 

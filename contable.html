@@ -3612,7 +3612,7 @@ function ctaRender(tipo) {
   const q = (document.getElementById(tipo === 'prov' ? 'cp-buscar' : 'cc-buscar').value || '').toLowerCase();
   const nomCol = tipo === 'prov' ? 'proveedor' : 'cliente';
   const movCol = tipo === 'prov' ? 'pagado' : 'cobrado';
-  const movTit = tipo === 'prov' ? 'Pagado (banco)' : 'Cobrado (banco)';
+  const movTit = tipo === 'prov' ? 'Pagado (banco + fuera)' : 'Cobrado (banco)';
   const vis = filas.filter(f => !q || (f[nomCol] || '').toLowerCase().includes(q) || (f.cuenta || '').includes(q));
   let tF = 0, tM = 0;
   let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">' +
@@ -3630,7 +3630,8 @@ function ctaRender(tipo) {
     html += '<tr style="border-bottom:1px solid #eef' + (generica ? ';background:#fff7ed' : (i % 2 ? ';background:#f7f9fd' : '')) + '">' +
       '<td style="padding:6px 9px;font-weight:600">' + (f[nomCol] || '') + '</td>' +
       '<td style="padding:6px 9px;text-align:right">' + ctaFmt(f.facturado) + '</td>' +
-      '<td style="padding:6px 9px;text-align:right">' + ctaFmt(f[movCol]) + '</td>' +
+      '<td style="padding:6px 9px;text-align:right">' + ctaFmt(f[movCol]) +
+        (tipo === 'prov' && (f.pagado_externo || 0) > 0.01 ? '<br><span style="font-size:10px;color:#0e7490" title="Pagado fuera del banco: efectivo / tarjeta personal / aplazada">💳 ' + ctaFmt(f.pagado_externo) + ' fuera</span>' : '') + '</td>' +
       '<td style="padding:6px 9px;text-align:right;font-weight:700;color:' + saldoCol + '">' + ctaFmt(f.saldo) + '</td>' +
       '<td style="padding:6px 9px;text-align:center;color:#888">' + (f.n_facturas || 0) + '</td>' +
       '<td style="padding:6px 9px"><input type="text" value="' + (f.cuenta || '') + '" placeholder="400000..." ' +

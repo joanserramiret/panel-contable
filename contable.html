@@ -3879,13 +3879,16 @@ function renderPagos() {
   // Cajón "por clasificar" (NO es deuda a proveedor): el backend ya respeta la reclasificación (tabla-puente),
   // así que confiamos en su flag (una factura reclasificada a su proveedor real ya NO es cubo).
   const _esClasif = p => !!p.clasificar;
-  let _tReal = 0, _nReal = 0, _tClas = 0, _nClas = 0, _tDom = 0;
-  todas.filter(p => p.estado !== 'pagada').forEach(p => {
+  let _tReal = 0, _nReal = 0, _tClas = 0, _nClas = 0, _tDom = 0, _tExt = 0, _nExt = 0;
+  todas.forEach(p => {
+    if (p.estado === 'pagada') return;
+    if (p.estado === 'externo') { _tExt += (p.a_pagar || p.total || 0); _nExt++; return; }   // pagado fuera del banco: NO es deuda
     if (_esClasif(p)) { _tClas += p.pendiente || 0; _nClas++; }
     else { _tReal += p.pendiente || 0; _nReal++; if (p.domiciliado) _tDom += p.pendiente || 0; }
   });
   if (res) res.innerHTML = '<b>💼 Deuda real a proveedor: <span style="color:#c0392b">' + bkFmt(_tReal) + '</span></b> en ' + _nReal + ' facturas · de ellas ⚡ domiciliado <b>' + bkFmt(_tDom) + '</b>' +
-    '<br><span style="color:var(--texto-suave);font-size:12px">📂 Por clasificar (Raquel/SisConta, <b>no es deuda</b>): ' + bkFmt(_tClas) + ' en ' + _nClas + ' facturas</span>';
+    '<br><span style="color:var(--texto-suave);font-size:12px">📂 Por clasificar (Raquel/SisConta, <b>no es deuda</b>): ' + bkFmt(_tClas) + ' en ' + _nClas + ' facturas' +
+    (_nExt ? ' · 💳 <b>Pagado fuera del banco</b> (efectivo/tarjeta personal/aplazada): ' + bkFmt(_tExt) + ' en ' + _nExt : '') + '</span>';
   const chip = (k, lbl, col, bg, n) => { const on = _pagFiltro[k]; return '<button onclick="pagToggle(\'' + k + '\')" style="padding:4px 10px;border-radius:7px;border:1px solid ' + (on ? col : '#dde') + ';background:' + (on ? bg : '#fff') + ';color:' + (on ? col : '#999') + ';cursor:pointer;font-size:11.5px;font-weight:' + (on ? '700' : '500') + '">' + lbl + ' ' + n + '</button>'; };
   const barra = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">' +
     chip('pendiente', '🔴 Pendiente', '#a32d2d', '#fcebeb', c.pendiente || 0) +
@@ -3917,9 +3920,34 @@ function renderPagos() {
         '<td style="text-align:right;font-weight:700">' + impTxt + '</td>' +
         '<td style="white-space:nowrap">' +
           '<button onclick="provVerDoc(\'' + re + '\')" title="Ver la factura" style="padding:2px 7px;background:#475569;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">👁</button> ' +
-          '<button onclick="pagosEditar(\'' + re + '\')" title="Corregir vencimiento / domiciliación" style="padding:2px 7px;background:#6d28d9;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">✎</button>' +
+          '<button onclick="pagosEditar(\'' + re + '\')" title="Corregir vencimiento / domiciliación" style="padding:2px 7px;background:#6d28d9;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">✎</button> ' +
+          '<button onclick="pagosExterno(\'' + re + '\')" title="Marcar como PAGADO FUERA del banco (efectivo / tarjeta personal / aplazada) → sale del rojo y se lista aparte" style="padding:2px 7px;background:#0e7490;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">💳</button>' +
         '</td></tr>';
-    }).join('') + '</table>';
+    }).join('') + '</table>' + _extHtml(todas);
+}
+function _extHtml(todas) {
+  const exts = (todas || []).filter(p => p.estado === 'externo');
+  if (!exts.length) return '';
+  return '<div style="margin-top:14px;border-top:2px solid #cdeef0;padding-top:8px">' +
+    '<div style="font-size:12.5px;font-weight:700;color:#0e7490;margin-bottom:6px">💳 Pagado fuera del banco — ' + bkFmt(exts.reduce((s, p) => s + (p.a_pagar || p.total || 0), 0)) + ' · ' + exts.length + ' fra. <span style="font-weight:400;color:var(--texto-suave)">(no es deuda; efectivo / tarjeta personal / aplazada)</span></div>' +
+    exts.map(p => { const re = encodeURIComponent(p.ruta || ''); return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f3f3f3;font-size:12px;opacity:.85">' +
+      '<span style="flex:1"><b>' + (p.proveedor || '—') + '</b> <span style="color:var(--texto-suave)">' + (p.nombre || '') + '</span> <span style="color:#0e7490;font-size:10.5px">· ' + (p.externo || 'fuera') + '</span></span>' +
+      '<b>' + bkFmt(p.a_pagar || p.total || 0) + '</b>' +
+      '<button onclick="pagosExterno(\'' + re + '\', true)" title="Quitar la marca (vuelve a deuda normal)" style="padding:1px 6px;background:#eee;color:#333;border:none;border-radius:5px;font-size:10.5px;cursor:pointer">↺</button></div>'; }).join('') +
+    '</div>';
+}
+async function pagosExterno(rutaEnc, quitar) {
+  const ruta = decodeURIComponent(rutaEnc);
+  let metodo = '';
+  if (!quitar) {
+    metodo = prompt('¿Cómo se pagó FUERA del banco del Sabadell?\n\nEj: efectivo · tarjeta personal · tarjeta aplazada · otra cuenta', 'efectivo');
+    if (metodo === null) return;
+    metodo = (metodo || '').trim(); if (!metodo) return;
+  }
+  try {
+    await fetch(BRIDGE_URL_C + '/contabilidad/pagos/externo', { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }, body: JSON.stringify({ rutas: [ruta], metodo: metodo }) });
+    cargarPagos();
+  } catch (e) { alert('✗ ' + e.message); }
 }
 async function pagosEditar(rutaEnc) {
   const ruta = decodeURIComponent(rutaEnc);

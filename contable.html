@@ -3876,8 +3876,9 @@ function renderPagos() {
   const res = document.getElementById('pagos-resumen');
   const todas = pagosDatos.pagos || [];
   const c = pagosDatos.cuenta || { pendiente: 0, parcial: 0, pagada: 0 };
-  // Cajón "por clasificar" (NO es deuda a proveedor): flag backend + grafías de CONTABILIZAR/VARIOS/sin clasificar
-  const _esClasif = p => !!p.clasificar || /contabili|\bvarios\b|sin\s*clasific|por\s*clasific/i.test(p.proveedor || '');
+  // Cajón "por clasificar" (NO es deuda a proveedor): el backend ya respeta la reclasificación (tabla-puente),
+  // así que confiamos en su flag (una factura reclasificada a su proveedor real ya NO es cubo).
+  const _esClasif = p => !!p.clasificar;
   let _tReal = 0, _nReal = 0, _tClas = 0, _nClas = 0, _tDom = 0;
   todas.filter(p => p.estado !== 'pagada').forEach(p => {
     if (_esClasif(p)) { _tClas += p.pendiente || 0; _nClas++; }

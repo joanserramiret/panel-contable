@@ -4067,6 +4067,7 @@ function ocultarSplash(){var s=document.getElementById('splash-carga');if(s)s.st
     <div id="bk-modal-lista" style="max-height:320px;overflow-y:auto;border:1px solid #eee;border-radius:8px"></div>
     <button onclick="bkDesgloseModal()" style="margin-top:8px;padding:8px 14px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">🧩 Buscar desglose automático (remesas)</button>
     <div id="bk-modal-suma" style="margin:12px 0;font-size:14px;font-weight:800"></div>
+    <button onclick="bkMarcar2025()" title="El cargo/abono paga una factura de un ejercicio anterior (2025 o antes — año cerrado de Raquel). Lo marca como tal y sale de pendientes; NO cuenta como deuda de 2026. Reversible (desconciliar)." style="width:100%;margin-bottom:10px;padding:9px;background:#fff7ed;border:1.5px solid #e8b27a;color:#b45309;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer">🗂 Pertenece a una factura de 2025 (año cerrado) → sacar de pendientes</button>
     <div style="display:flex;gap:10px">
       <button onclick="bkCerrarModal()" style="flex:1;padding:11px;border-radius:8px;border:1.5px solid #dde;background:#fff;font-size:13px;font-weight:700;cursor:pointer">Cancelar</button>
       <button onclick="bkGuardarConciliacion()" id="bk-modal-guardar" style="flex:2;padding:11px;border-radius:8px;border:none;background:#1a2e6e;color:#fff;font-size:13px;font-weight:700;cursor:pointer">✓ Conciliar</button>
@@ -4772,6 +4773,26 @@ async function bkGuardarConciliacion() {
     bkCerrarModal();
     bkCargar();
     refrescarEstadosCobro();  // Resumen, badges de facturas y cartera, EN VIVO
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+// 🗂 El movimiento paga/cobra una factura de un ejercicio CERRADO (2025 o antes). Se marca con
+// la etiqueta EJ2025 (no es PROV ni F/FD → no cuenta como deuda ni venta) y sale de pendientes.
+async function bkMarcar2025() {
+  if (!bkMovActual) return;
+  if (!confirm('¿Marcar este movimiento como pago/cobro de una factura de 2025 (ejercicio CERRADO)?\n\n' +
+    'Saldrá de pendientes y NO contará como deuda de 2026. Es reversible (desconciliar).')) return;
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/banco/conciliar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ id: bkMovActual.id, facturas: [{
+        serie: 'EJ2025', cliente: 'Factura de ejercicio 2025 (año cerrado)',
+        importe: Math.abs(bkMovActual.importe), origen: 'ejercicio_anterior' }] })
+    });
+    if (!(await r.json()).ok) throw new Error('No se pudo guardar');
+    bkCerrarModal();
+    bkCargar();
   } catch(e) { alert('Error: ' + e.message); }
 }
 

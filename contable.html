@@ -753,7 +753,7 @@
         </div>
       </div>
 
-      <div class="card" style="margin-bottom:16px">
+      <div class="card" style="margin-bottom:16px;display:none" id="bk-eb-card">
         <div class="card-title">Conexión automática con el banco (Enable Banking)</div>
         <div id="bk-gc-estado" style="font-size:12.5px;color:var(--texto-suave);margin-bottom:10px">Comprobando configuración...</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
@@ -4524,6 +4524,26 @@ function bkVerDocCand(ci) {
   window.open(BRIDGE_URL_C + '/proveedores/abrir?anio=' + anio + '&ruta=' + encodeURIComponent(ruta.slice(anio.length + 1)));
 }
 
+// 👁 Ver la FACTURA DE VENTA (F/FD) de una candidata: la genera con la plantilla oficial de Ágora y la abre en ventana
+function bkVerVentaCand(ci) {
+  const c = bkCandsVisibles[ci];
+  if (!c) return;
+  const f = (typeof todasFacturasC !== 'undefined' ? todasFacturasC : [])
+    .find(x => x.Serie === c.serie && String(x.Number) === String(c.numero));
+  if (!f) { alert('No encuentro la factura de venta ' + c.clave + ' en los datos cargados.\nPulsa "Cargar" (arriba) para traer las facturas del período.'); return; }
+  try {
+    const html = generarHTMLFactura(f);
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    const btn = w.document.createElement('button');
+    btn.textContent = '✕ Cerrar';
+    btn.setAttribute('onclick', 'window.close(); history.back();');
+    btn.style.cssText = 'position:fixed;top:12px;right:12px;z-index:99999;padding:11px 18px;background:#1a2e6e;color:#fff;border:none;border-radius:9px;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35)';
+    w.document.body.appendChild(btn);
+    w.document.close();
+  } catch(e) { alert('✗ No pude generar la factura: ' + e.message); }
+}
+
 async function bkCorregirCand(ci) {
   const c = bkCandsVisibles[ci];
   if (!c || (c.clave || '').indexOf('PROV:') !== 0) return;
@@ -4558,11 +4578,10 @@ function bkModalRender() {
     cands = cands.filter(c => {
       const k = bkNormClave(c.clave);
       if (!bkUsadas.has(k) || bkSeleccion[c.clave]) { c._restante = 0; return true; }
-      // PAGOS A CUENTA: factura de proveedor parcialmente pagada → se ofrece por lo que QUEDA
-      if (c.ruta) {
-        const queda = Math.round((c.importe - (bkImputado[k] || 0)) * 100) / 100;
-        if (queda > 0.01) { c._restante = queda; return true; }
-      }
+      // PAGOS A CUENTA: factura (proveedor O venta) parcialmente pagada → se ofrece por lo que QUEDA
+      // (p.ej. una venta cobrada en 2 transferencias: 1ª deja la mitad pendiente, sigue visible para la 2ª)
+      const queda = Math.round((c.importe - (bkImputado[k] || 0)) * 100) / 100;
+      if (queda > 0.01) { c._restante = queda; return true; }
       return false;
     });
   }
@@ -4603,11 +4622,11 @@ function bkModalRender() {
   document.getElementById('bk-modal-lista').innerHTML = banner + bkCandsVisibles.map((c, ci) => {
     const sel = !!bkSeleccion[c.clave];
     const esProv = (c.clave || '').indexOf('PROV:') === 0;
-    // Facturas de proveedor: ver el PDF original y corregir el total sin salir del modal
+    // 👁 ver documento original: proveedor → el PDF del Dropbox (+ ✎ corregir total); venta → la factura F/FD generada
     const herr = esProv
       ? '<button onclick="event.preventDefault();event.stopPropagation();bkVerDocCand(' + ci + ')" title="Ver el documento original" style="padding:3px 8px;background:#1a2e6e;color:#fff;border:none;border-radius:5px;font-size:10.5px;font-weight:700;cursor:pointer">👁</button>' +
         '<button onclick="event.preventDefault();event.stopPropagation();bkCorregirCand(' + ci + ')" title="Corregir el importe total (si el lector lo interpretó mal)" style="padding:3px 8px;background:#e87e1a;color:#fff;border:none;border-radius:5px;font-size:10.5px;font-weight:700;cursor:pointer">✎</button>'
-      : '';
+      : '<button onclick="event.preventDefault();event.stopPropagation();bkVerVentaCand(' + ci + ')" title="Ver la factura de venta" style="padding:3px 8px;background:#1a2e6e;color:#fff;border:none;border-radius:5px;font-size:10.5px;font-weight:700;cursor:pointer">👁</button>';
     return '<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid #f3f3f3;cursor:pointer;background:' + (sel ? '#eef4ff' : '#fff') + (sel ? ';border-left:4px solid #1a2e6e' : ';border-left:4px solid transparent') + '">' +
       '<input type="checkbox" ' + (sel ? 'checked' : '') + ' onchange="bkToggle(\'' + c.clave + '\')" style="width:auto"/>' +
       '<span style="flex:1;font-size:12.5px"><b>' + c.clave + '</b> · ' + c.fecha +
@@ -4712,9 +4731,9 @@ async function bkGuardarConciliacion() {
   if (!seles.length) { alert('Marca al menos una factura.'); return; }
   const objetivo = Math.abs(bkMovActual.importe);
   let suma = seles.reduce((s, c) => s + c.importe, 0);
-  // PAGO A CUENTA: una sola factura de proveedor mayor que el movimiento → imputar solo
-  // el importe del movimiento; el resto queda pendiente para futuros pagos
-  if (seles.length === 1 && seles[0].ruta && suma - objetivo >= 0.01) {
+  // PAGO A CUENTA: una sola factura (proveedor O venta) mayor que el movimiento → imputar solo
+  // el importe del movimiento; el resto queda pendiente para futuros pagos (p.ej. venta cobrada en 2 transferencias)
+  if (seles.length === 1 && suma - objetivo >= 0.01) {
     if (confirm('La factura (' + bkFmt(suma) + ') es MAYOR que este pago (' + bkFmt(objetivo) + ').\n\n' +
       '¿Imputar solo ' + bkFmt(objetivo) + ' como PAGO A CUENTA? La factura quedará parcialmente pagada\n' +
       '(quedarán ' + bkFmt(suma - objetivo) + ' pendientes, asignables a futuros pagos).')) {
@@ -6821,7 +6840,7 @@ async function cargarSaldos() {
   try {
     const r = await fetch(BRIDGE_URL_C + '/banco/eb/saldos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
     const d = await r.json();
-    if (!d.saldos || !d.saldos.length) { el.textContent = d.error || 'Sin cuentas bancarias vinculadas.'; return; }
+    if (!d.saldos || !d.saldos.length) { el.innerHTML = '<span style="color:var(--texto-suave);font-size:12px">📄 Trabajamos con el extracto <b>N43</b> — sube el fichero del banco en 🏦 Tesorería. (Saldo en vivo desactivado.)</span>'; return; }
     el.innerHTML = d.saldos.map(s => {
       if (s.saldo === null)
         return '<span><b style="color:#1a2e6e">' + s.banco + '</b> · <span style="color:#c0392b;font-size:12px">' + (s.error || 'error') + '</span></span>';

@@ -4304,6 +4304,7 @@ function plReclamar(cli, imp){
 function plMail(cli, imp, tono){
   var eur=function(v){return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v)+' €';};
   var facs=(window._plPend||[]).filter(function(f){return (f.cliente||'')===cli;});
+  window._plComposeFacs=facs;
   var total=facs.length? facs.reduce(function(a,f){return a+(+f.importe||0);},0) : imp;
   var lista=facs.length? facs.map(function(f){return '  - Factura '+(f.serie||'F')+'-'+f.numero+(f.fecha?' ('+f.fecha+')':'')+': '+eur(+f.importe||0);}).join('\n') : '  - Importe pendiente: '+eur(total);
   var firma='\n\nUn saludo,\nJS Technology Menorca SL\nNIF B57841140';
@@ -4336,6 +4337,7 @@ async function plCompose(cli, asunto, cuerpo){
     '<input id="pl-comp-asunto" value="'+asunto.replace(/"/g,'&quot;')+'" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;margin:3px 0 8px;font-size:13px">'+
     '<label style="font-size:12px;color:#666">Mensaje (editable):</label>'+
     '<textarea id="pl-comp-cuerpo" style="width:100%;height:210px;padding:8px;border:1px solid #ddd;border-radius:8px;margin:3px 0 6px;font-size:12.5px;font-family:inherit"></textarea>'+
+    '<label style="font-size:12.5px;display:flex;align-items:center;gap:6px;margin:2px 0 8px;cursor:pointer"><input type="checkbox" id="pl-comp-adj" checked> 📎 Adjuntar las '+((window._plComposeFacs||[]).length)+' factura(s) en PDF</label>'+
     '<div id="pl-comp-res" style="font-size:12.5px;margin-bottom:8px"></div>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end"><button onclick="document.getElementById(\'pl-comp-ov\').remove()" style="padding:7px 16px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">Cancelar</button>'+
     '<button id="pl-comp-enviar" onclick="plEnviar(decodeURIComponent(\''+encodeURIComponent(cli)+'\'))" style="padding:7px 18px;border:none;border-radius:8px;background:#0F6E56;color:#fff;cursor:pointer;font-weight:700;font-size:13px">📨 Enviar</button></div>'+
@@ -4351,9 +4353,23 @@ async function plEnviar(cli){
   if(!para || para.indexOf('@')<0){ res.innerHTML='<span style="color:#dc2626">Pon un email de destinatario válido.</span>'; return; }
   btn.disabled=true; btn.textContent='Enviando…'; res.innerHTML='';
   var HP={'ngrok-skip-browser-warning':'true','Content-Type':'application/json'};
+  var adjuntos=[];
   try{
-    var j=await fetch(BRIDGE_URL_C+'/correo/enviar',{method:'POST',headers:HP,body:JSON.stringify({de:'info@js-tech.es',para:para,asunto:asunto,cuerpo:cuerpo})}).then(function(r){return r.json();});
-    if(j.ok){ res.innerHTML='<span style="color:#0F6E56;font-weight:700">✅ Enviado a '+para+'.</span>';
+    var adj=document.getElementById('pl-comp-adj');
+    if(adj && adj.checked){
+      var facs=window._plComposeFacs||[];
+      var docs=(typeof todasFacturasC!=='undefined' && todasFacturasC && todasFacturasC.length)? todasFacturasC : null;
+      if(!docs){ try{ var jf=await fetch(BRIDGE_URL_C+'/agora/facturas?anio=2026&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();}); docs=jf.documentos||[]; }catch(e){ docs=[]; } }
+      for(var i=0;i<facs.length;i++){ var fc=facs[i];
+        btn.textContent='Generando PDFs… '+(i+1)+'/'+facs.length;
+        var d=docs.find(function(x){ return x.Serie===(fc.serie||'F') && String(x.Number)===String(fc.numero); });
+        if(!d) continue;
+        try{ var bl=await generarPDFBlobC(d); var b64=await blobABase64C(bl); adjuntos.push({nombre:d.Serie+'-'+d.Number+'.pdf', base64:b64}); }catch(e){}
+      }
+    }
+    btn.textContent='Enviando…';
+    var j=await fetch(BRIDGE_URL_C+'/correo/enviar',{method:'POST',headers:HP,body:JSON.stringify({de:'info@js-tech.es',para:para,asunto:asunto,cuerpo:cuerpo,adjuntos:adjuntos})}).then(function(r){return r.json();});
+    if(j.ok){ res.innerHTML='<span style="color:#0F6E56;font-weight:700">✅ Enviado a '+para+(j.adjuntos?' · '+j.adjuntos+' factura(s) adjunta(s)':'')+'.</span>';
       fetch(BRIDGE_URL_C+'/clientes/email',{method:'POST',headers:HP,body:JSON.stringify({cliente:cli,email:para})}).catch(function(){});
       setTimeout(function(){ var ov=document.getElementById('pl-comp-ov'); if(ov) ov.remove(); },1300);
     } else { res.innerHTML='<span style="color:#dc2626">Error: '+(j.error||'?')+'</span>'; btn.disabled=false; btn.textContent='📨 Enviar'; }

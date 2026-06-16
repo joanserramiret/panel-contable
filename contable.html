@@ -2624,6 +2624,8 @@ function actualizarCobros() {
   }
   // Destinos manuales (girar↔perseguir) guardados en el bridge: se cargan una vez
   if (carteraDestinos === null) { carteraDestinos = {}; cargarCarteraDestinos().then(actualizarCobros); }
+  // Guardarraíl pre-remesa: estado por factura (verde/regirar/ambar/rojo) para colorear PARA GIRAR
+  if (window._cobGuard === undefined) { window._cobGuard = null; cargarCobGuard().then(actualizarCobros); }
 
   const buckets = { '0-30': [0, 0], '31-60': [0, 0], '61-90': [0, 0], '+90': [0, 0] };
   // DOS CARTERAS por método de pago (el ajuste manual prevalece):
@@ -2673,9 +2675,18 @@ function actualizarCobros() {
     const nf = grupos.reduce((s, [, g]) => s + g.facts.length, 0);
     const otro = destino === 'girar' ? 'perseguir' : 'girar';
     const etqOtro = destino === 'girar' ? '🏃 a perseguir' : '🧲 a girar';
+    let _gb = '';
+    if (destino === 'girar' && window._cobGuard) {
+      const acc = { verde: [0, 0], regirar: [0, 0], ambar: [0, 0], rojo: [0, 0] };
+      grupos.forEach(([, g]) => g.facts.forEach(x => { const e = _guardEstado(x.num); if (e && acc[e]) { acc[e][0]++; acc[e][1] += x.total; } }));
+      const chip = e => acc[e][0] ? '<span style="background:' + _GUARD_STYLE[e].b + ';color:' + _GUARD_STYLE[e].c + ';border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;margin:0 5px 4px 0;display:inline-block">' + _GUARD_STYLE[e].t + ': ' + bkFmt(acc[e][1]) + ' (' + acc[e][0] + ')</span>' : '';
+      const propuesta = acc.verde[1] + acc.regirar[1] + acc.ambar[1];
+      _gb = '<div style="margin:2px 0 8px">' + chip('verde') + chip('regirar') + chip('ambar') + chip('rojo') +
+        '<div style="font-size:11px;color:var(--texto-suave);margin-top:3px">Propuesta a remesar (verde+azul+ámbar): <b style="color:#1a7a3f">' + bkFmt(propuesta) + '</b>. El rojo NO se gira.</div></div>';
+    }
     let h = '<div style="background:#fff;border:2px solid ' + color + ';border-radius:12px;padding:10px 12px">' +
       '<div style="font-weight:800;font-size:13px;color:' + color + ';margin-bottom:2px">' + titulo + ' — ' + bkFmt(tot) + ' · ' + nf + ' fra.</div>' +
-      '<div style="font-size:11px;color:var(--texto-suave);margin-bottom:8px">' + sub + '</div>';
+      '<div style="font-size:11px;color:var(--texto-suave);margin-bottom:8px">' + sub + '</div>' + _gb;
     if (!grupos.length) h += '<div style="font-size:12px;color:var(--texto-suave)">Nada por aquí ✓</div>';
     h += grupos.map(([cli, g]) => {
       const gi = carteraGruposIdx.push({ claves: g.claves.slice(), destino: otro }) - 1;
@@ -2689,14 +2700,19 @@ function actualizarCobros() {
         '<span style="color:var(--texto-suave);font-size:10.5px;flex-shrink:0;white-space:nowrap">' + g.facts.length + ' · ' + g.maxDias + 'd</span>' +
         '<b style="flex-shrink:0">' + g.total.toFixed(2) + '€</b>' +
         '<button onclick="event.preventDefault();carteraMoverGrupo(' + gi + ')" title="Mover TODAS las facturas de ' + cli.replace(/[<>"]/g,'') + ' → «' + etqOtro + '»" style="flex-shrink:0;padding:2px 8px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:6px;font-size:14px;font-weight:700;line-height:1;cursor:pointer">⇄</button></summary>' +
-        g.facts.sort((a, b) => b.dias - a.dias).map(x =>
-          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0 5px 10px;border-bottom:1px solid #f3f3f3;font-size:12px">' +
-          '<span style="flex:1"><b style="color:var(--azul)">' + x.num + '</b> · ' + x.fecha +
+        g.facts.sort((a, b) => (destino === 'girar' ? _guardRank(a.num) - _guardRank(b.num) : 0) || (b.dias - a.dias)).map(x => {
+          const _e = destino === 'girar' ? _guardEstado(x.num) : null;
+          const _s = _e ? _GUARD_STYLE[_e] : null;
+          return '<div style="' + (_e === 'rojo' ? 'opacity:.5;' : '') + 'display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0 5px 10px;border-bottom:1px solid #f3f3f3;font-size:12px">' +
+          '<span style="flex:1"><b style="color:var(--azul)">' + x.num + '</b>' +
+          (_s ? ' <span style="background:' + _s.b + ';color:' + _s.c + ';border-radius:5px;padding:0 5px;font-size:9.5px;font-weight:700">' + _s.t + '</span>' : '') +
+          ' · ' + x.fecha +
           (x.devuelta ? ' <span style="color:#c0392b;font-weight:700">↩ DEVUELTO</span>' : '') +
           (!x.recibo && destino === 'girar' ? ' <span style="color:#888;font-size:10px">(era transferencia)</span>' : '') + '</span>' +
           '<b>' + x.total.toFixed(2) + '€</b>' +
           '<span style="color:' + (x.dias > 30 ? 'var(--rojo)' : 'var(--texto-suave)') + ';font-size:11px;width:32px;text-align:right">' + x.dias + 'd</span>' +
-          '<button onclick="carteraMoverUna(\'' + x.clave + '\')" title="Mover SOLO esta factura a la otra columna (se recuerda)" style="padding:1px 7px;background:#f0f4fb;border:1px solid #c0cbea;border-radius:5px;font-size:10.5px;cursor:pointer">⇄</button></div>').join('') +
+          '<button onclick="carteraMoverUna(\'' + x.clave + '\')" title="Mover SOLO esta factura a la otra columna (se recuerda)" style="padding:1px 7px;background:#f0f4fb;border:1px solid #c0cbea;border-radius:5px;font-size:10.5px;cursor:pointer">⇄</button></div>';
+        }).join('') +
         '</details>';
     }).join('');
     return h + '</div>';
@@ -2712,6 +2728,26 @@ function actualizarCobros() {
 let carteraDestinos = null;   // clave → 'girar' | 'perseguir' (ajustes manuales)
 let carteraFacts = {};        // último render: clave → { destino }
 let carteraGruposIdx = [];    // grupos por cliente del último render (para mover en bloque)
+
+// ── Guardarraíl pre-remesa → color por factura en PARA GIRAR ──
+async function cargarCobGuard() {
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/remesa/verificar?anio=' + (new Date().getFullYear()), { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const g = await r.json();
+    const m = {};
+    const put = (arr, est) => (arr || []).forEach(x => { const k = (x.fact || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (k) m[k] = est; });
+    put(g.verde, 'verde'); put(g.regirar, 'regirar'); put(g.ambar, 'ambar'); put(g.rojo, 'rojo');
+    window._cobGuard = m;
+  } catch (e) { window._cobGuard = {}; }
+}
+const _GUARD_STYLE = {
+  verde:   { c: '#1a7a3f', b: '#e8f7ef', t: '🟢 girar' },
+  regirar: { c: '#1d63c9', b: '#e7f0fd', t: '🔵 re-girar' },
+  ambar:   { c: '#b8860b', b: '#fdf3da', t: '🟡 revisar' },
+  rojo:    { c: '#c0392b', b: '#fbeaea', t: '🔴 no girar' }
+};
+function _guardEstado(num) { const m = window._cobGuard || {}; return m[(num || '').toUpperCase().replace(/[^A-Z0-9]/g, '')] || null; }
+function _guardRank(num) { const e = _guardEstado(num); return e === 'rojo' ? 2 : e === 'ambar' ? 1 : 0; }  // rojo y ámbar al fondo
 
 async function cargarCarteraDestinos() {
   try {

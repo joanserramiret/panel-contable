@@ -4318,8 +4318,46 @@ function plMail(cli, imp, tono){
     ini='Estimados '+cli+',\n\nPese a comunicaciones anteriores, siguen pendientes de pago las siguientes facturas vencidas:';
     cierre='\n\nLes REQUERIMOS el abono en un plazo máximo de 7 días naturales. De no recibir el pago, nos veremos obligados a suspender el servicio e iniciar las acciones de reclamación que correspondan.'; }
   var cuerpo=ini+'\n'+lista+'\n\nTotal pendiente: '+eur(total)+cierre+firma;
-  window.location.href='mailto:?subject='+encodeURIComponent(asunto)+'&body='+encodeURIComponent(cuerpo);
   var ov=document.getElementById('pl-rec-ov'); if(ov) ov.remove();
+  plCompose(cli, asunto, cuerpo);
+}
+async function plCompose(cli, asunto, cuerpo){
+  var ex=document.getElementById('pl-comp-ov'); if(ex) ex.remove();
+  var email='';
+  try{ var j=await fetch(BRIDGE_URL_C+'/clientes/email?cliente='+encodeURIComponent(cli)+'&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();}); email=j.email||''; }catch(e){}
+  var ov=document.createElement('div'); ov.id='pl-comp-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:10080;background:rgba(15,31,92,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:20px;max-width:580px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.32)">'+
+    '<div style="font-size:16px;font-weight:800;margin-bottom:10px">✉️ Reclamación a '+cli+'</div>'+
+    '<div style="font-size:12px;color:#666;margin-bottom:6px">De: <b>info@js-tech.es</b></div>'+
+    '<label style="font-size:12px;color:#666">Para (email del cliente)'+(email?' · sugerido':'')+':</label>'+
+    '<input id="pl-comp-para" value="'+email.replace(/"/g,'&quot;')+'" placeholder="cliente@correo.com" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;margin:3px 0 8px;font-size:13px">'+
+    '<label style="font-size:12px;color:#666">Asunto:</label>'+
+    '<input id="pl-comp-asunto" value="'+asunto.replace(/"/g,'&quot;')+'" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;margin:3px 0 8px;font-size:13px">'+
+    '<label style="font-size:12px;color:#666">Mensaje (editable):</label>'+
+    '<textarea id="pl-comp-cuerpo" style="width:100%;height:210px;padding:8px;border:1px solid #ddd;border-radius:8px;margin:3px 0 6px;font-size:12.5px;font-family:inherit"></textarea>'+
+    '<div id="pl-comp-res" style="font-size:12.5px;margin-bottom:8px"></div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end"><button onclick="document.getElementById(\'pl-comp-ov\').remove()" style="padding:7px 16px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">Cancelar</button>'+
+    '<button id="pl-comp-enviar" onclick="plEnviar(decodeURIComponent(\''+encodeURIComponent(cli)+'\'))" style="padding:7px 18px;border:none;border-radius:8px;background:#0F6E56;color:#fff;cursor:pointer;font-weight:700;font-size:13px">📨 Enviar</button></div>'+
+    '<div style="margin-top:8px;font-size:11px;color:#999">Revisa el destinatario y el texto antes de enviar. El email del cliente se guarda para la próxima vez.</div></div>';
+  document.body.appendChild(ov);
+  document.getElementById('pl-comp-cuerpo').value=cuerpo;
+}
+async function plEnviar(cli){
+  var para=(document.getElementById('pl-comp-para').value||'').trim();
+  var asunto=(document.getElementById('pl-comp-asunto').value||'').trim();
+  var cuerpo=document.getElementById('pl-comp-cuerpo').value||'';
+  var res=document.getElementById('pl-comp-res'), btn=document.getElementById('pl-comp-enviar');
+  if(!para || para.indexOf('@')<0){ res.innerHTML='<span style="color:#dc2626">Pon un email de destinatario válido.</span>'; return; }
+  btn.disabled=true; btn.textContent='Enviando…'; res.innerHTML='';
+  var HP={'ngrok-skip-browser-warning':'true','Content-Type':'application/json'};
+  try{
+    var j=await fetch(BRIDGE_URL_C+'/correo/enviar',{method:'POST',headers:HP,body:JSON.stringify({de:'info@js-tech.es',para:para,asunto:asunto,cuerpo:cuerpo})}).then(function(r){return r.json();});
+    if(j.ok){ res.innerHTML='<span style="color:#0F6E56;font-weight:700">✅ Enviado a '+para+'.</span>';
+      fetch(BRIDGE_URL_C+'/clientes/email',{method:'POST',headers:HP,body:JSON.stringify({cliente:cli,email:para})}).catch(function(){});
+      setTimeout(function(){ var ov=document.getElementById('pl-comp-ov'); if(ov) ov.remove(); },1300);
+    } else { res.innerHTML='<span style="color:#dc2626">Error: '+(j.error||'?')+'</span>'; btn.disabled=false; btn.textContent='📨 Enviar'; }
+  }catch(e){ res.innerHTML='<span style="color:#dc2626">'+e.message+'</span>'; btn.disabled=false; btn.textContent='📨 Enviar'; }
 }
 
 // Init date inputs on load

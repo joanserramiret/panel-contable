@@ -4159,20 +4159,24 @@ async function cargarPulso(){
   const eur=x=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(Math.round(x||0))+' €';
   const S=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
   try{
-    const [jp,jpag,jt]=await Promise.all([
+    const [jp,jpag,jt,js]=await Promise.all([
       fetch(BRIDGE_URL_C+'/contabilidad/clientes_pendientes?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/contabilidad/pagos?anio=2026&_='+Date.now(),H).then(r=>r.json()),
-      fetch(BRIDGE_URL_C+'/agora/totales_mensuales?anios=2025,2026&_='+Date.now(),H).then(r=>r.json())
+      fetch(BRIDGE_URL_C+'/agora/totales_mensuales?anios=2025,2026&_='+Date.now(),H).then(r=>r.json()),
+      fetch(BRIDGE_URL_C+'/banco/eb/saldos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({saldos:[]}))
     ]);
     const pend=jp.facturas||[]; window._plPend=pend;
     const deben=jp.total||0;
     const debemos=(jpag.tot_deuda_real!=null?jpag.tot_deuda_real:(jpag.total||0));
     S('pl-deben',eur(deben)); S('pl-deben-n',(jp.n||pend.length)+' facturas');
     S('pl-debemos',eur(debemos));
-    const neto=deben-debemos;
+    const _saldos=(js&&js.saldos)||[];
+    const hayBanco=_saldos.some(s=>typeof s.saldo==='number');
+    const saldoBancos=_saldos.reduce((a,s)=>a+(typeof s.saldo==='number'?s.saldo:0),0);
+    const neto=(hayBanco?saldoBancos:0)+deben-debemos;
     S('pl-tesoreria-hero',(neto>=0?'+':'')+eur(neto));
-    S('pl-tesoreria-desc','circulante (sin bancos) · saldo por conectar');
-    S('pl-saldo','por conectar');
+    S('pl-tesoreria-desc', hayBanco?'saldo bancos + nos deben − debemos':'circulante (sin bancos) · saldo por cargar');
+    S('pl-saldo', hayBanco?eur(saldoBancos):'por conectar');
     const _st=document.getElementById('pl-stamp'); if(_st) _st.textContent='Actualizado '+new Date().toLocaleString('es-ES');
     // AGING
     const hoy=new Date(); const tr={a:0,b:0,c:0,d:0}, trn={a:0,b:0,c:0,d:0};

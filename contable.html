@@ -492,7 +492,7 @@
   <main>
 
     <div id="bi-frase" style="margin:10px 0 2px;padding:8px 16px;border-radius:10px;background:#eef0fb;border:1px solid #e3e6f5;display:flex;align-items:center;gap:10px;font-size:13px;color:#3b3a6b;transition:opacity .5s">
-      <span id="bi-frase-ic" aria-hidden="true">💡</span><span id="bi-frase-txt" style="font-style:italic">La caja manda. El beneficio es opinión; la tesorería, un hecho.</span>
+      <span id="bi-frase-ic" aria-hidden="true">💡</span><span id="bi-frase-txt" style="font-style:italic;flex:1">La caja manda. El beneficio es opinión; la tesorería, un hecho.</span><button onclick="buzonAbrir()" title="Suelta cualquier archivo (N43, remesa, factura…) y yo lo coloco donde toca" style="padding:5px 12px;border:1px solid #c4b5fd;border-radius:8px;background:#fff;color:#6d28d9;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">📥 Buzón</button>
     </div>
 
     <!-- PERIOD BAR (shared) -->
@@ -2673,9 +2673,11 @@ function actualizarCobros() {
     h += grupos.map(([cli, g]) => {
       const gi = carteraGruposIdx.push({ claves: g.claves.slice(), destino: otro }) - 1;
       const colorCli = g.maxDias > 60 ? 'var(--rojo)' : g.maxDias > 30 ? '#c96a10' : 'var(--azul)';
+      const _imps = {}; g.facts.forEach(x => { const k = (Number(x.total)||0).toFixed(2); _imps[k] = (_imps[k]||0) + 1; });
+      const _recurBadge = Object.values(_imps).some(n => n >= 2) ? '<span title="Recibos del mismo importe en meses distintos = cuota mensual recurrente, NO duplicados" style="background:#eef0fb;color:#3b3a6b;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700">🔁 recurrente</span>' : '';
       return '<details style="border:1px solid var(--borde);border-radius:8px;padding:7px 10px;margin-bottom:6px">' +
         '<summary style="cursor:pointer;display:flex;gap:8px;align-items:center;font-size:12.5px">' +
-        '<b style="color:' + colorCli + ';flex:1">' + cli + '</b>' +
+        '<span style="flex:1;display:flex;align-items:center;gap:6px;min-width:0"><b style="color:' + colorCli + ';overflow:hidden;text-overflow:ellipsis">' + cli + '</b>' + _recurBadge + '</span>' +
         '<span style="color:var(--texto-suave);font-size:11px">' + g.facts.length + ' fra. · hasta ' + g.maxDias + 'd</span>' +
         '<b>' + g.total.toFixed(2) + '€</b>' +
         '<button onclick="event.preventDefault();carteraMoverGrupo(' + gi + ')" title="Mover TODAS las facturas de este cliente a la otra columna (se recuerda)" style="padding:2px 8px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:6px;font-size:10.5px;font-weight:700;cursor:pointer">⇄ ' + etqOtro + '</button></summary>' +
@@ -4173,6 +4175,79 @@ async function cargarPulso(){
       '<div style="margin-top:6px;font-size:11px;color:var(--texto-suave)">Cobros entrados y próximos vencimientos: próximamente.</div>';
   }catch(e){
     const a=document.getElementById('pl-alertas'); if(a) a.innerHTML='<div style="color:#dc2626;font-size:13px">No pude cargar el Pulso: '+e.message+'</div>';
+  }
+}
+
+// 📥 BUZÓN — suelta cualquier archivo, yo detecto qué es y lo coloco
+function buzonAbrir(){
+  var ex=document.getElementById('buzon-ov'); if(ex) ex.remove();
+  var ov=document.createElement('div'); ov.id='buzon-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:10070;background:rgba(15,31,92,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px;max-width:560px;width:100%;box-shadow:0 12px 44px rgba(0,0,0,.32)">'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📥 Buzón — suelta cualquier archivo</div>'+
+    '<div style="font-size:12.5px;color:#666;margin-bottom:14px">Detecto qué es (N43, remesa SEPA, factura…) y lo coloco donde toca. Te enseño qué voy a hacer antes de tocar nada.</div>'+
+    '<div id="buzon-drop" style="border:2px dashed #c4b5fd;border-radius:12px;padding:28px;text-align:center;background:#faf9ff;cursor:pointer;color:#6d28d9;font-size:14px">Arrastra aquí el archivo<br><span style="font-size:12px;color:#999">o haz clic para elegirlo</span></div>'+
+    '<input id="buzon-input" type="file" style="display:none">'+
+    '<div id="buzon-res" style="margin-top:14px"></div>'+
+    '<div style="margin-top:14px;text-align:right"><button onclick="document.getElementById(\'buzon-ov\').remove()" style="padding:6px 14px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:12px">Cerrar</button></div></div>';
+  ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
+  var drop=document.getElementById('buzon-drop'), inp=document.getElementById('buzon-input');
+  drop.onclick=function(){ inp.click(); };
+  inp.onchange=function(){ if(inp.files[0]) buzonFile(inp.files[0]); };
+  drop.ondragover=function(e){ e.preventDefault(); drop.style.background='#f0ebff'; };
+  drop.ondragleave=function(){ drop.style.background='#faf9ff'; };
+  drop.ondrop=function(e){ e.preventDefault(); drop.style.background='#faf9ff'; if(e.dataTransfer.files[0]) buzonFile(e.dataTransfer.files[0]); };
+}
+function buzonFile(file){
+  var res=document.getElementById('buzon-res'); res.innerHTML='<div style="color:#666;font-size:13px">Leyendo '+file.name+'…</div>';
+  var rd=new FileReader();
+  rd.onload=function(){
+    var txt=(rd.result||''); var head=txt.replace(/^\s+/,'').slice(0,400); var tipo='desconocido';
+    if(/\.pdf$/i.test(file.name)||head.slice(0,4)==='%PDF') tipo='pdf';
+    else if(/^0119143/.test(head)) tipo='remesa';
+    else if(/\.n43$/i.test(file.name)||/^(11|00)\d{6}/.test(head)) tipo='n43';
+    else if(/\n/.test(txt)&&/[;,].*[;,]/.test(head)) tipo='csv';
+    buzonDetectado(file, tipo, txt);
+  };
+  rd.readAsText(file.slice(0,5000));
+}
+function buzonB64(file){ return new Promise(function(r){ var x=new FileReader(); x.onload=function(){ r((x.result+'').split(',')[1]); }; x.readAsDataURL(file); }); }
+async function buzonDetectado(file, tipo, txt){
+  var res=document.getElementById('buzon-res');
+  var HP={'ngrok-skip-browser-warning':'true','Content-Type':'application/json'};
+  function badge(t,c){ return '<span style="background:'+c+';padding:4px 11px;border-radius:7px;font-size:12.5px;font-weight:700">'+t+'</span>'; }
+  if(tipo==='n43'){
+    res.innerHTML=badge('🏦 Extracto N43 detectado','#e6f1fb')+
+      '<div style="margin:12px 0 8px;font-size:13px">¿De qué banco es?</div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:10px"><select id="buzon-banco" style="flex:1;padding:7px;border:1px solid #ddd;border-radius:8px;font-size:13px"><option>Sabadell</option><option>Bankinter</option></select>'+
+      '<button id="buzon-sim" style="padding:7px 16px;border:1px solid #185FA5;border-radius:8px;background:#e6f1fb;color:#185FA5;cursor:pointer;font-weight:700;font-size:13px">Comprobar</button></div><div id="buzon-n43res"></div>';
+    var full=await file.text();
+    document.getElementById('buzon-sim').onclick=async function(){
+      var banco=document.getElementById('buzon-banco').value, nr=document.getElementById('buzon-n43res'); nr.innerHTML='<div style="color:#666;font-size:13px">Comprobando…</div>';
+      try{ var j=await fetch(BRIDGE_URL_C+'/banco/importar',{method:'POST',headers:HP,body:JSON.stringify({contenido:full,banco:banco,dedup_por:'fecha_importe',simular:true})}).then(function(r){return r.json();});
+        if(!j.ok){ nr.innerHTML='<div style="color:#dc2626;font-size:13px">'+(j.error||'Error')+'</div>'; return; }
+        nr.innerHTML='<div style="font-size:13px;margin:8px 0">En el fichero: <b>'+((j.nuevos||0)+(j.duplicados||0))+'</b> movimientos · Nuevos: <b style="color:#0F6E56">'+(j.nuevos||0)+'</b> · Ya los tienes: <b>'+(j.duplicados||0)+'</b></div>'+
+          (j.nuevos>0?'<button id="buzon-imp" style="padding:8px 18px;border:none;border-radius:8px;background:#0F6E56;color:#fff;cursor:pointer;font-weight:700">Importar '+j.nuevos+' nuevos</button>':'<div style="color:#0F6E56;font-size:13px;font-weight:700">✅ Nada nuevo: ya está todo importado.</div>');
+        var bi=document.getElementById('buzon-imp'); if(bi) bi.onclick=async function(){ bi.disabled=true; bi.textContent='Importando…';
+          var ji=await fetch(BRIDGE_URL_C+'/banco/importar',{method:'POST',headers:HP,body:JSON.stringify({contenido:full,banco:banco,dedup_por:'fecha_importe',simular:false})}).then(function(r){return r.json();});
+          nr.innerHTML = ji.ok? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Importados '+(ji.nuevos||0)+' movimientos. Ya están en Tesorería.</div>' : '<div style="color:#dc2626">'+(ji.error||'Error')+'</div>'; };
+      }catch(e){ nr.innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; }
+    };
+  } else if(tipo==='pdf'){
+    res.innerHTML=badge('📄 Factura (PDF) detectada','#faeeda')+'<div style="margin:12px 0;font-size:13px">La guardo en el <b>cajón</b> y se clasificará sola al ordenar el cajón.</div><button id="buzon-pdf" style="padding:8px 18px;border:none;border-radius:8px;background:#854F0B;color:#fff;cursor:pointer;font-weight:700">Guardar en el cajón</button><div id="buzon-pdfres" style="margin-top:8px"></div>';
+    document.getElementById('buzon-pdf').onclick=async function(){ var b=document.getElementById('buzon-pdf'); b.disabled=true; b.textContent='Guardando…';
+      try{ var b64=await buzonB64(file);
+        var j=await fetch(BRIDGE_URL_C+'/proveedores/subir_doc',{method:'POST',headers:HP,body:JSON.stringify({nombre:file.name, archivo_base64:b64})}).then(function(r){return r.json();});
+        document.getElementById('buzon-pdfres').innerHTML = j.ok? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Guardada en el cajón. Ve a 📥 Facturas recibidas → ordenar el cajón cuando quieras.</div>' : '<div style="color:#dc2626;font-size:13px">'+(j.error||'Error')+'</div>';
+      }catch(e){ document.getElementById('buzon-pdfres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; } };
+  } else if(tipo==='remesa'){
+    var full=await file.text(); var recibos=full.split(/\r?\n/).filter(function(l){return l.slice(0,2)==='03';}).length;
+    res.innerHTML=badge('🧩 Remesa SEPA detectada','#ede9fe')+'<div style="margin:12px 0;font-size:13px">Fichero de remesa con <b>'+recibos+' recibos</b>. Para cuadrarla factura a factura, ve a <b>Tesorería</b> y concilia el abono del banco con este fichero. (La conciliación automática del fichero llega en la próxima versión.)</div>';
+  } else if(tipo==='csv'){
+    res.innerHTML=badge('📊 CSV / informe detectado','#e1f5ee')+'<div style="margin:12px 0;font-size:13px">Parece un informe (¿Amazon?). El importador automático de informes llega pronto.</div>';
+  } else {
+    res.innerHTML=badge('❓ No lo reconozco','#f1efe8')+'<div style="margin:12px 0;font-size:13px">No identifico este archivo. Si es una factura PDF, su nombre debería acabar en .pdf; si es un extracto N43 o una remesa, revisa que sea el fichero correcto.</div>';
   }
 }
 

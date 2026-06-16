@@ -4326,11 +4326,13 @@ async function plVerificarRemesa(){
 
 // 📤 REMESISAR — genera el fichero de remesa SEPA norma 19.14 con el VERDE verificado.
 // Clona los mandatos reales (referencia única, vto = creación+1). Se sube por Ficheros → Enviar ficheros.
-async function remesisarAbrir(){
+async function remesisarAbrir(banco){
+  banco = banco || 'Sabadell'; window._remesisarBanco = banco;
   var ex=document.getElementById('rem-ov'); if(ex) ex.remove();
   var ov=document.createElement('div'); ov.id='rem-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:10070;background:rgba(15,31,92,.55);display:flex;align-items:center;justify-content:center;padding:16px';
-  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px;max-width:680px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.32)"><div style="font-size:16px;font-weight:800">📤 REMESISAR — remesa SEPA Sabadell</div><div id="rem-body" style="margin-top:12px;color:#666;font-size:13px"><span class="spinner"></span> Preparando la remesa con el verde verificado…</div><div style="margin-top:16px;text-align:right"><button onclick="document.getElementById(\'rem-ov\').remove()" style="padding:6px 14px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:12px">Cerrar</button></div></div>';
+  var _tab=function(b){return '<button onclick="remesisarAbrir(\''+b+'\')" style="padding:4px 12px;border-radius:8px;border:1.5px solid '+(banco===b?'#1a7a3f':'#ccc')+';background:'+(banco===b?'#1a7a3f':'#fff')+';color:'+(banco===b?'#fff':'#555')+';font-weight:700;font-size:12px;cursor:pointer">🏦 '+b+'</button>';};
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px;max-width:680px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.32)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div style="font-size:16px;font-weight:800">📤 REMESISAR — remesa SEPA</div><div style="display:flex;gap:6px">'+_tab('Sabadell')+_tab('Bankinter')+'</div></div><div id="rem-body" style="margin-top:12px;color:#666;font-size:13px"><span class="spinner"></span> Preparando la remesa de '+banco+' con el verde verificado…</div><div style="margin-top:16px;text-align:right"><button onclick="document.getElementById(\'rem-ov\').remove()" style="padding:6px 14px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:12px">Cerrar</button></div></div>';
   ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
   document.body.appendChild(ov);
   var H={'ngrok-skip-browser-warning':'true'};
@@ -4343,25 +4345,26 @@ async function remesisarAbrir(){
     (jf.documentos||[]).forEach(function(d){var cu=d.Customer||{};byFac[norm(d.Serie+'-'+d.Number)]={cliente:cu.FiscalName||cu.BusinessName||'',nif:cu.Cif||cu.Id||''};});
     var recibos=(g.verde||[]).map(function(v){var m=byFac[norm(v.fact)]||{};return {cliente:m.cliente||v.cliente,nif:m.nif||'',importe:+v.importe,facturas:[v.fact],concepto:'COBRO '+v.fact};});
     window._remesisarRecibos=recibos;
-    var sim=await fetch(BRIDGE_URL_C+'/remesa/generar',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},H),body:JSON.stringify({banco:'Sabadell',recibos:recibos})}).then(function(r){return r.json();});
+    var sim=await fetch(BRIDGE_URL_C+'/remesa/generar',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},H),body:JSON.stringify({banco:banco,recibos:recibos})}).then(function(r){return r.json();});
     if(!sim.ok){ document.getElementById('rem-body').innerHTML='<div style="color:#dc2626">Error: '+(sim.error||'?')+'</div>'; return; }
     var ok=sim.recibos_ok||[], faltan=sim.faltan_mandato||[];
-    var html='<div style="background:#e1f5ee;border:1px solid #bfe8d8;border-radius:9px;padding:10px 12px;margin-bottom:10px;color:#0F6E56;font-size:13px">Remesa Sabadell (norma 19.14): <b>'+ok.length+' recibos · '+eur(sim.total)+'</b> · vencimiento <b>'+sim.fecha_cobro+'</b> (creación + 1 día).</div>';
+    var html='<div style="background:#e1f5ee;border:1px solid #bfe8d8;border-radius:9px;padding:10px 12px;margin-bottom:10px;color:#0F6E56;font-size:13px">Remesa '+banco+' ('+(sim.formato||'')+'): <b>'+ok.length+' recibos · '+eur(sim.total)+'</b> · vencimiento <b>'+sim.fecha_cobro+'</b> (creación + 1 día).</div>';
     html+='<div style="max-height:230px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:6px 10px;margin-bottom:10px">'+
       ok.map(function(x){return '<div style="display:flex;gap:8px;font-size:12.5px;padding:3px 0;border-bottom:1px solid #f4f4f4"><span style="flex:1">'+(x.cliente||'')+'</span><span style="font-weight:600">'+eur(x.importe)+'</span></div>';}).join('')+'</div>';
     if(faltan.length) html+='<div style="background:#faeeda;border:1px solid #fac775;border-radius:9px;padding:9px 12px;margin-bottom:10px;color:#854F0B;font-size:12.5px">⚠️ Fuera ('+faltan.length+', sin mandato en Sabadell): '+faltan.map(function(x){return x.cliente;}).join(', ')+'. Suelen ser de Bankinter, transferencia o cliente nuevo.</div>';
     html+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px">'+
-      '<div style="font-size:11.5px;color:#888">Tras descargar: Sabadell → <b>Ficheros → Enviar ficheros</b> → adjunta el .txt → revisa y firma. (Yo nunca firmo.)</div>'+
+      '<div style="font-size:11.5px;color:#888">Tras descargar: '+banco+' → <b>Ficheros → Enviar ficheros</b> → adjunta el fichero → revisa y firma. (Yo nunca firmo.)</div>'+
       '<button onclick="remesisarGenerar()" style="padding:8px 16px;background:#1a7a3f;color:#fff;border:none;border-radius:9px;cursor:pointer;font-size:13px;font-weight:700;white-space:nowrap">📥 Generar y descargar</button></div>';
     document.getElementById('rem-body').innerHTML=html;
   }catch(e){ var b=document.getElementById('rem-body'); if(b) b.innerHTML='<div style="color:#dc2626">Error: '+e.message+'</div>'; }
 }
 async function remesisarGenerar(){
   var recibos=window._remesisarRecibos||[]; if(!recibos.length) return;
+  var banco=window._remesisarBanco||'Sabadell';
   var H={'Content-Type':'application/json','ngrok-skip-browser-warning':'true'};
   var body=document.getElementById('rem-body');
   try{
-    var j=await fetch(BRIDGE_URL_C+'/remesa/generar',{method:'POST',headers:H,body:JSON.stringify({banco:'Sabadell',confirmar:1,recibos:recibos})}).then(function(r){return r.json();});
+    var j=await fetch(BRIDGE_URL_C+'/remesa/generar',{method:'POST',headers:H,body:JSON.stringify({banco:banco,confirmar:1,recibos:recibos})}).then(function(r){return r.json();});
     if(j.contenido_b64){
       var bin=atob(j.contenido_b64);var by=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)by[i]=bin.charCodeAt(i);
       var blob=new Blob([by],{type:'text/plain'});var url=URL.createObjectURL(blob);

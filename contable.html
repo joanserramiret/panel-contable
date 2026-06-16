@@ -2636,6 +2636,7 @@ function actualizarCobros() {
     const dias = Math.floor((hoy - new Date(f.Date)) / 86400000);
     const b = dias <= 30 ? '0-30' : dias <= 60 ? '31-60' : dias <= 90 ? '61-90' : '+90';
     buckets[b][0]++; buckets[b][1] += t;
+    if (window._cobAging && b !== window._cobAging) return;   // filtro de antigüedad por botón (las tarjetas siguen contando todo)
     const cli = f.Customer ? (f.Customer.BusinessName || f.Customer.FiscalName || '(sin nombre)') : '(sin nombre)';
     const clave = bkNormClave(f.Serie + '-' + f.Number);
     const devuelta = !!(banco && banco.devueltas.has(clave));
@@ -2652,12 +2653,18 @@ function actualizarCobros() {
                    total: t, dias: dias, devuelta: devuelta, recibo: recibo });
   });
   const colB = { '0-30': '#1a7a3f', '31-60': '#c96a10', '61-90': '#c0392b', '+90': '#7b241c' };
+  const _af = window._cobAging || null;
   let html = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
-    Object.entries(buckets).map(([b, [n, s]]) =>
-      '<div style="flex:1;min-width:110px;background:#f7f9fd;border:1px solid var(--borde);border-radius:10px;padding:8px 12px;text-align:center">' +
-      '<div style="font-size:11px;color:var(--texto-suave)">' + b + ' días</div>' +
+    Object.entries(buckets).map(([b, [n, s]]) => {
+      const on = _af === b;
+      return '<div onclick="cobAgingToggle(\'' + b + '\')" title="Filtrar las columnas por esta antigüedad (clic para activar/quitar)" style="flex:1;min-width:110px;background:' + (on ? '#eef4ff' : '#f7f9fd') + ';border:' + (on ? '2px solid ' + colB[b] : '1px solid var(--borde)') + ';border-radius:10px;padding:8px 12px;text-align:center;cursor:pointer;transition:.1s">' +
+      '<div style="font-size:11px;color:var(--texto-suave)">' + b + ' días' + (on ? ' ✓' : '') + '</div>' +
       '<div style="font-weight:800;font-size:15px;color:' + colB[b] + '">' + s.toFixed(2) + '€</div>' +
-      '<div style="font-size:11px;color:var(--texto-suave)">' + n + ' fra.</div></div>').join('') + '</div>';
+      '<div style="font-size:11px;color:var(--texto-suave)">' + n + ' fra.</div></div>';
+    }).join('') +
+    (_af ? '<div onclick="cobAgingToggle(null)" title="Quitar el filtro de antigüedad" style="display:flex;align-items:center;justify-content:center;min-width:90px;background:#fff;border:1.5px dashed #c0cbea;border-radius:10px;padding:8px 12px;cursor:pointer;font-size:12px;font-weight:700;color:var(--azul)">✕ Ver todas</div>' : '') +
+    '</div>' +
+    (_af ? '<div style="font-size:11.5px;color:var(--texto-suave);margin:-8px 0 10px">Mostrando solo facturas de <b>' + _af + ' días</b>. Las tarjetas de arriba siguen sumando el total.</div>' : '');
 
   carteraGruposIdx = [];
   const pintaColumna = (destino, titulo, sub, color) => {
@@ -2676,11 +2683,12 @@ function actualizarCobros() {
       const _imps = {}; g.facts.forEach(x => { const k = (Number(x.total)||0).toFixed(2); _imps[k] = (_imps[k]||0) + 1; });
       const _recurBadge = Object.values(_imps).some(n => n >= 2) ? '<span title="Recibos del mismo importe en meses distintos = cuota mensual recurrente, NO duplicados" style="background:#eef0fb;color:#3b3a6b;border-radius:5px;padding:1px 6px;font-size:10px;font-weight:700">🔁 recurrente</span>' : '';
       return '<details style="border:1px solid var(--borde);border-radius:8px;padding:7px 10px;margin-bottom:6px">' +
-        '<summary style="cursor:pointer;display:flex;gap:8px;align-items:center;font-size:12.5px">' +
-        '<span style="flex:1;display:flex;align-items:center;gap:6px;min-width:0"><b style="color:' + colorCli + ';overflow:hidden;text-overflow:ellipsis">' + cli + '</b>' + _recurBadge + '</span>' +
-        '<span style="color:var(--texto-suave);font-size:11px">' + g.facts.length + ' fra. · hasta ' + g.maxDias + 'd</span>' +
-        '<b>' + g.total.toFixed(2) + '€</b>' +
-        '<button onclick="event.preventDefault();carteraMoverGrupo(' + gi + ')" title="Mover TODAS las facturas de este cliente a la otra columna (se recuerda)" style="padding:2px 8px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:6px;font-size:10.5px;font-weight:700;cursor:pointer">⇄ ' + etqOtro + '</button></summary>' +
+        '<summary style="cursor:pointer;display:flex;gap:7px;align-items:center;font-size:12.5px">' +
+        '<b style="flex:1;min-width:0;color:' + colorCli + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + cli + '</b>' +
+        _recurBadge +
+        '<span style="color:var(--texto-suave);font-size:10.5px;flex-shrink:0;white-space:nowrap">' + g.facts.length + ' · ' + g.maxDias + 'd</span>' +
+        '<b style="flex-shrink:0">' + g.total.toFixed(2) + '€</b>' +
+        '<button onclick="event.preventDefault();carteraMoverGrupo(' + gi + ')" title="Mover TODAS las facturas de ' + cli.replace(/[<>"]/g,'') + ' → «' + etqOtro + '»" style="flex-shrink:0;padding:2px 8px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:6px;font-size:14px;font-weight:700;line-height:1;cursor:pointer">⇄</button></summary>' +
         g.facts.sort((a, b) => b.dias - a.dias).map(x =>
           '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0 5px 10px;border-bottom:1px solid #f3f3f3;font-size:12px">' +
           '<span style="flex:1"><b style="color:var(--azul)">' + x.num + '</b> · ' + x.fecha +
@@ -4309,9 +4317,9 @@ function plMail(cli, imp, tono){
   var lista=facs.length? facs.map(function(f){return '  - Factura '+(f.serie||'F')+'-'+f.numero+(f.fecha?' ('+f.fecha+')':'')+': '+eur(+f.importe||0);}).join('\n') : '  - Importe pendiente: '+eur(total);
   var firma='\n\nUn saludo,\nJS Technology Menorca SL\nNIF B57841140';
   var asunto, ini, cierre;
-  if(tono==='cordial'){ asunto='Recordatorio de pago — JS Technology Menorca';
-    ini='Estimados '+cli+',\n\nEsperamos que todo vaya bien. Os recordamos amablemente que figuran pendientes de pago las siguientes facturas, ya vencidas:';
-    cierre='\n\nAgradeceríamos que pudierais regularizarlo cuando os sea posible. Si ya lo habéis abonado, disculpad el aviso y os rogamos nos lo confirméis.'; }
+  if(tono==='cordial'){ asunto='Factura pendiente — JS Technology Menorca';
+    ini='Hola '+cli+',\n\nNos consta que tenéis pendientes de pago las siguientes facturas:';
+    cierre='\n\nSi ya las habéis abonado, avisadnos y lo cuadramos. Si no, os agradecemos que lo gestionéis cuando podáis. Cualquier cosa, aquí estamos.'; }
   else if(tono==='serio'){ asunto='Reclamación de pago pendiente — '+eur(total);
     ini='Estimados '+cli+',\n\nLes escribimos para reclamar el pago de las siguientes facturas vencidas:';
     cierre='\n\nLes rogamos procedan a su abono en los próximos días y nos confirmen la fecha de pago. Quedamos a la espera.'; }

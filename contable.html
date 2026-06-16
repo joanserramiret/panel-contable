@@ -769,7 +769,10 @@
         <div class="card">
           <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
             <span>Facturas pendientes de cobro</span>
+            <div style="display:flex;gap:8px">
+            <button onclick="plVerificarRemesa()" title="Antes de generar una remesa SEPA, verifica que cada recibo a girar es seguro: no cobrado, no abonado, no duplicado. Para no cargar la cuenta de un cliente que no debe." style="padding:5px 12px;background:#0f766e;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🛡️ Verificar antes de girar</button>
             <button onclick="auditarCartera()" title="Para cada factura pendiente, busca la pista de dónde puede estar su cobro: remesa sin importar, abono sin conciliar, anulación..." style="padding:5px 12px;background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🩺 Auditar cartera</button>
+            </div>
           </div>
           <div id="cob-resumen-banco" style="margin:6px 0 10px"></div>
           <div id="cobros-pendientes"><div style="color:var(--texto-suave);font-size:13px">Carga los datos primero.</div></div>
@@ -4171,6 +4174,34 @@ async function cargarPulso(){
   }catch(e){
     const a=document.getElementById('pl-alertas'); if(a) a.innerHTML='<div style="color:#dc2626;font-size:13px">No pude cargar el Pulso: '+e.message+'</div>';
   }
+}
+
+// 🛡️ Verificar antes de girar una remesa — guardarraíl
+async function plVerificarRemesa(){
+  var ex=document.getElementById('pl-ver-ov'); if(ex) ex.remove();
+  var ov=document.createElement('div'); ov.id='pl-ver-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:10060;background:rgba(15,31,92,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px;max-width:660px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.32)"><div style="font-size:16px;font-weight:800">🛡️ Verificar antes de girar</div><div id="pl-ver-body" style="margin-top:12px;color:#666;font-size:13px">Comprobando cada recibo a girar…</div><div style="margin-top:16px;text-align:right"><button onclick="document.getElementById(\'pl-ver-ov\').remove()" style="padding:6px 14px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:12px">Cerrar</button></div></div>';
+  ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
+  try{
+    var j=await fetch(BRIDGE_URL_C+'/remesa/verificar?anio=2026&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();});
+    var eur=function(v){return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0)+' €';};
+    var R=j.resumen||{}, T=j.totales||{};
+    var head='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'+
+      '<span style="background:#e1f5ee;color:#0F6E56;padding:5px 11px;border-radius:8px;font-size:12.5px;font-weight:700">🟢 '+(R.verde||0)+' seguras · '+eur(T.verde)+'</span>'+
+      '<span style="background:#e6f1fb;color:#185FA5;padding:5px 11px;border-radius:8px;font-size:12.5px;font-weight:700">🔄 '+(R.regirar||0)+' devueltas (re-girar)</span>'+
+      '<span style="background:#faeeda;color:#854F0B;padding:5px 11px;border-radius:8px;font-size:12.5px;font-weight:700">🟡 '+(R.ambar||0)+' revisar</span>'+
+      '<span style="background:#fceaea;color:#A32D2D;padding:5px 11px;border-radius:8px;font-size:12.5px;font-weight:700">🔴 '+(R.rojo||0)+' NO girar</span></div>';
+    function tabla(arr,col,tit){ if(!arr||!arr.length) return '';
+      return '<div style="margin-top:10px"><div style="font-size:13px;font-weight:700;color:'+col+';margin-bottom:4px">'+tit+'</div>'+
+        arr.map(function(x){ return '<div style="display:flex;gap:8px;font-size:12.5px;padding:3px 0;border-bottom:1px solid #f3f3f3"><span style="width:74px;color:#888">'+x.fact+'</span><span style="flex:1">'+(x.cliente||'')+'</span><span style="font-weight:600">'+eur(x.importe)+'</span>'+(x.motivo?'<span style="color:#999;width:210px;text-align:right">'+x.motivo+'</span>':'')+'</div>'; }).join('')+'</div>'; }
+    var ver = (R.rojo>0)? '<div style="background:#fceaea;border:1px solid #f0999b;border-radius:9px;padding:10px 12px;margin-bottom:6px;color:#791F1F;font-size:13px">⚠️ Hay <b>'+R.rojo+'</b> recibo(s) que NO debes girar (ya cobrados o con abono). Quítalos de la remesa antes de generarla.</div>'
+      : '<div style="background:#e1f5ee;border:1px solid #bfe8d8;border-radius:9px;padding:10px 12px;margin-bottom:6px;color:#0F6E56;font-size:13px">✅ Ningún recibo cobrado o cancelado se colaría. La remesa es segura'+(R.ambar>0?' — repasa solo los 🟡 por si acaso.':'.')+'</div>';
+    document.getElementById('pl-ver-body').innerHTML = head+ver+
+      tabla(j.rojo,'#A32D2D','🔴 NO girar')+tabla(j.ambar,'#854F0B','🟡 Revisar — mismo cliente+importe (suele ser legítimo)')+tabla(j.regirar,'#185FA5','🔄 Devueltas a re-girar (correcto)')+
+      '<div style="margin-top:12px;font-size:11px;color:#999">Total a girar: '+eur(j.total_a_girar)+' en '+(j.n_a_girar||0)+' recibos.</div>';
+  }catch(e){ var b=document.getElementById('pl-ver-body'); if(b) b.innerHTML='<div style="color:#dc2626">Error: '+e.message+'</div>'; }
 }
 
 // Reclamar cobro por email — menú de tono

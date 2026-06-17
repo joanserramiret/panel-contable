@@ -4037,7 +4037,8 @@ function renderPagos() {
         '<td style="white-space:nowrap">' +
           '<button onclick="provVerDoc(\'' + re + '\')" title="Ver la factura" style="padding:2px 7px;background:#475569;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">👁</button> ' +
           '<button onclick="pagosEditar(\'' + re + '\')" title="Corregir vencimiento / domiciliación" style="padding:2px 7px;background:#6d28d9;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">✎</button> ' +
-          '<button onclick="pagosExterno(\'' + re + '\')" title="Marcar como PAGADO FUERA del banco (efectivo / tarjeta personal / aplazada) → sale del rojo y se lista aparte" style="padding:2px 7px;background:#0e7490;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">💳</button>' +
+          '<button onclick="pagosExterno(\'' + re + '\')" title="Marcar como PAGADO FUERA del banco (efectivo / tarjeta personal / aplazada) → sale del rojo y se lista aparte" style="padding:2px 7px;background:#0e7490;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">💳</button> ' +
+          '<button onclick="marcarNoFactura(\'' + re + '\',\'cargarPagos\')" title="No es una factura de proveedor (contrato, ticket, de otro titular…) → sale del cómputo. Te pregunto el motivo para entrenar el filtro." style="padding:2px 7px;background:#fde8e8;color:#c0392b;border:1px solid #e0b0b0;border-radius:5px;font-size:11px;cursor:pointer">🚫</button>' +
         '</td></tr>';
     }).join('') + '</table>' + _extHtml(todas);
 }
@@ -4063,6 +4064,18 @@ async function pagosExterno(rutaEnc, quitar) {
   try {
     await fetch(BRIDGE_URL_C + '/contabilidad/pagos/externo', { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }, body: JSON.stringify({ rutas: [ruta], metodo: metodo }) });
     cargarPagos();
+  } catch (e) { alert('✗ ' + e.message); }
+}
+// 🚫 Marcar un documento mal clasificado como NO factura — pregunta el motivo y entrena el filtro.
+async function marcarNoFactura(rutaEnc, recargar) {
+  const ruta = decodeURIComponent(rutaEnc);
+  const motivo = prompt('🚫 Esto NO es una factura de proveedor. ¿Por qué?\n(me ayuda a entrenar el filtro para que no se vuelva a colar)\n\nEj: contrato · ticket nuestro · de otro titular · albarán · aviso de pago · publicidad · presupuesto', '');
+  if (motivo === null) return;
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/proveedores/no_factura', { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }, body: JSON.stringify({ ruta: ruta, motivo: (motivo || '').trim() }) });
+    const j = await r.json();
+    if (!j.ok) { alert('✗ ' + (j.error || 'no se pudo marcar')); return; }
+    if (recargar && typeof window[recargar] === 'function') window[recargar]();
   } catch (e) { alert('✗ ' + e.message); }
 }
 async function pagosEditar(rutaEnc) {
@@ -7047,7 +7060,8 @@ function pvRender() {
           '<button onclick="pvCambiarTipo(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + (dat.tipo || 'factura') + '\')" title="Corregir el tipo (factura/albarán/aviso/otro) — tu corrección manda sobre el clasificador" style="padding:3px 8px;background:#fff3e0;border:1px solid #e8b27a;border-radius:6px;font-size:11px;cursor:pointer;margin-right:4px">' + (dat.tipo === 'albaran' ? '📋' : dat.tipo === 'aviso' ? '🔔' : dat.tipo === 'otro' ? '📦' : (!dat.tipo || dat.tipo === 'factura') ? '🧾' : '🏷') + (dat.tipo_manual ? '✓' : '') + '</button>' +
           '<a href="' + url + '" target="_blank" style="padding:3px 10px;background:#1a2e6e;color:#fff;border-radius:6px;font-size:11px;font-weight:700;text-decoration:none">👁 Ver</a>' +
           '<button onclick="pvSustituir(\'' + ruta.replace(/'/g, "\\'") + '\')" title="Sustituir por la versión rectificada: el original va a PARA BORRAR y la nueva ocupa su lugar" style="padding:3px 8px;background:#fff3e0;border:1px solid #e8b27a;color:#b45309;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">🔄</button>' +
-          '<button onclick="pvBorrar(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + a.nombre.replace(/'/g, "\\'") + '\')" title="Mover a PARA BORRAR (se cuela y no debería estar)" style="padding:3px 8px;background:#fde8e8;border:1px solid #e0b0b0;color:#c0392b;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">🗑</button></td></tr>';
+          '<button onclick="pvBorrar(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + a.nombre.replace(/'/g, "\\'") + '\')" title="Mover a PARA BORRAR (se cuela y no debería estar)" style="padding:3px 8px;background:#fde8e8;border:1px solid #e0b0b0;color:#c0392b;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">🗑</button>' +
+          '<button onclick="marcarNoFactura(\'' + encodeURIComponent(ruta) + '\',\'pvCargar\')" title="No es una factura (contrato, ticket, de otro titular…) → sale del cómputo. Te pregunto el motivo para entrenar el filtro." style="padding:3px 8px;background:#f3e8ff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">🚫</button></td></tr>';
     }).join('');
     return '<div style="font-weight:800;font-size:13px;color:#1a2e6e;margin:12px 0 4px">' + mes + ' <span style="font-weight:400;color:#888">(' + porMes[mes].length + ')</span></div>' +
       '<table style="width:100%;border-collapse:collapse;font-size:12.5px">' +

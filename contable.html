@@ -4654,8 +4654,8 @@ function plMail(cli, imp, tono){
 }
 async function plCompose(cli, asunto, cuerpo){
   var ex=document.getElementById('pl-comp-ov'); if(ex) ex.remove();
-  var email='';
-  try{ var j=await fetch(BRIDGE_URL_C+'/clientes/email?cliente='+encodeURIComponent(cli)+'&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();}); email=j.email||''; }catch(e){}
+  var email='', tel='';
+  try{ var j=await fetch(BRIDGE_URL_C+'/clientes/email?cliente='+encodeURIComponent(cli)+'&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();}); email=j.email||''; tel=j.tel||''; }catch(e){}
   var ov=document.createElement('div'); ov.id='pl-comp-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:10080;background:rgba(15,31,92,.55);display:flex;align-items:center;justify-content:center;padding:16px';
   ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:20px;max-width:580px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.32)">'+
@@ -4669,11 +4669,24 @@ async function plCompose(cli, asunto, cuerpo){
     '<textarea id="pl-comp-cuerpo" style="width:100%;height:210px;padding:8px;border:1px solid #ddd;border-radius:8px;margin:3px 0 6px;font-size:12.5px;font-family:inherit"></textarea>'+
     '<label style="font-size:12.5px;display:flex;align-items:center;gap:6px;margin:2px 0 8px;cursor:pointer"><input type="checkbox" id="pl-comp-adj" checked> 📎 Adjuntar las '+((window._plComposeFacs||[]).length)+' factura(s) en PDF</label>'+
     '<div id="pl-comp-res" style="font-size:12.5px;margin-bottom:8px"></div>'+
-    '<div style="display:flex;gap:8px;justify-content:flex-end"><button onclick="document.getElementById(\'pl-comp-ov\').remove()" style="padding:7px 16px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">Cancelar</button>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">'+
+    '<button onclick="plWhatsapp(\''+tel.replace(/[^0-9+]/g,'')+'\')" title="Abre WhatsApp con el mensaje listo'+(tel?' · tel '+tel:' (te pedirá el número)')+'" style="margin-right:auto;padding:7px 16px;border:none;border-radius:8px;background:#25D366;color:#fff;cursor:pointer;font-weight:700;font-size:13px">📱 WhatsApp</button>'+
+    '<button onclick="document.getElementById(\'pl-comp-ov\').remove()" style="padding:7px 16px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">Cancelar</button>'+
     '<button id="pl-comp-enviar" onclick="plEnviar(decodeURIComponent(\''+encodeURIComponent(cli)+'\'))" style="padding:7px 18px;border:none;border-radius:8px;background:#0F6E56;color:#fff;cursor:pointer;font-weight:700;font-size:13px">📨 Enviar</button></div>'+
-    '<div style="margin-top:8px;font-size:11px;color:#999">Revisa el destinatario y el texto antes de enviar. El email del cliente se guarda para la próxima vez.</div></div>';
+    '<div style="margin-top:8px;font-size:11px;color:#999">Revísalo antes de enviar. 📧 por correo (con PDFs) o 📱 por WhatsApp (más directo). El email se guarda para la próxima.</div></div>';
   document.body.appendChild(ov);
   document.getElementById('pl-comp-cuerpo').value=cuerpo;
+}
+
+// 📱 Abre WhatsApp (wa.me) con el texto de la reclamación ya redactado. Limpia el número y, si es español de
+// 9 dígitos, le antepone 34. Si no hay teléfono en Ágora, lo pide. El mensaje se coge del cuadro editable.
+function plWhatsapp(tel){
+  var msg=(document.getElementById('pl-comp-cuerpo')||{}).value||'';
+  var num=(tel||'').replace(/[^0-9]/g,'');
+  if(num.length===9) num='34'+num;
+  if(!num){ num=(prompt('Número de WhatsApp del cliente (con prefijo de país, ej. 34XXXXXXXXX):','34')||'').replace(/[^0-9]/g,''); }
+  if(!num) return;
+  window.open('https://wa.me/'+num+'?text='+encodeURIComponent(msg),'_blank');
 }
 async function plEnviar(cli){
   var para=(document.getElementById('pl-comp-para').value||'').trim();

@@ -4409,10 +4409,15 @@ async function cargarPulso(){
     document.getElementById('pl-interanual').innerHTML=ih;
     // ALERTAS
     const al=[];
+    // ⏰ Pagos a proveedor VENCIDOS (vencimiento pasado, sin pagar, no cajón por clasificar)
+    let pVenc=0,pVencN=0; (((jpag&&jpag.pagos)||[])).forEach(p=>{ if(p.estado==='pagada'||p.clasificar)return; const v=p.vencimiento?new Date(p.vencimiento):null; if(v&&v<hoy){ pVenc+=(+p.pendiente||+p.a_pagar||0); pVencN++; } });
+    if(pVencN) al.push({ic:'⏰',txt:'<b>'+pVencN+'</b> pagos a proveedor VENCIDOS · <b>'+eur(pVenc)+'</b>',act:"switchTabC('pagos')",cta:'Pagar'});
     let v60=0,v60n=0; for(const f of pend){ const dd=Math.floor((hoy-new Date(f.fecha))/86400000); if(dd>60){v60+=(+f.importe||0);v60n++;} }
     if(v60n) al.push({ic:'🔴',txt:'<b>'+v60n+'</b> facturas vencidas +60 días · <b>'+eur(v60)+'</b>',act:"switchTabC('cobros')",cta:'Perseguir'});
     const byc={}; for(const f of pend){ const c=(f.cliente||'?'); byc[c]=(byc[c]||0)+(+f.importe||0); }
     Object.entries(byc).sort((a,b)=>b[1]-a[1]).slice(0,3).forEach(function(e){ al.push({ic:'👤',txt:'<b>'+e[0]+'</b> debe <b>'+eur(e[1])+'</b>',act:"switchTabC('cobros')",cta:'Ver',cli:e[0],imp:e[1]}); });
+    // 🧾 IVA del trimestre a pagar (si es significativo) → revisar cuotas para afinarlo
+    if(jiva&&jiva.ok&&(jiva.resultado||0)>300) al.push({ic:'🧾',txt:'IVA T'+jiva.trimestre+' estimado <b>a pagar '+eur(jiva.resultado)+'</b>'+(jiva.n_estimadas?' · '+jiva.n_estimadas+' cuotas sin afinar':''),act:"ivaDudosas("+jiva.trimestre+","+jiva.anio+")",cta:'Revisar'});
     document.getElementById('pl-alertas').innerHTML = al.length? al.map(function(a){
       var rec = a.cli ? '<button onclick="plReclamar(decodeURIComponent(\''+encodeURIComponent(a.cli)+'\'),'+Math.round(a.imp)+')" title="Reclamar el cobro por email" style="padding:4px 10px;border:1px solid #c4b5fd;border-radius:7px;background:#ede9fe;color:#6d28d9;cursor:pointer;font-size:12px;margin-right:6px">✉️ Reclamar</button>' : '';
       return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid #f0f0f0">'+

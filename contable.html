@@ -4678,15 +4678,37 @@ async function plCompose(cli, asunto, cuerpo){
   document.getElementById('pl-comp-cuerpo').value=cuerpo;
 }
 
-// 📱 Abre WhatsApp (wa.me) con el texto de la reclamación ya redactado. Limpia el número y, si es español de
-// 9 dígitos, le antepone 34. Si no hay teléfono en Ágora, lo pide. El mensaje se coge del cuadro editable.
-function plWhatsapp(tel){
+// 📱 WhatsApp con los PDFs de las facturas. En MÓVIL usa navigator.share (hoja de Compartir → WhatsApp con el
+// PDF adjunto DE VERDAD). En ESCRITORIO (sin compartir ficheros) descarga los PDFs + abre el chat para arrastrarlos.
+async function plWhatsapp(tel){
   var msg=(document.getElementById('pl-comp-cuerpo')||{}).value||'';
-  var num=(tel||'').replace(/[^0-9]/g,'');
-  if(num.length===9) num='34'+num;
-  if(!num){ num=(prompt('Número de WhatsApp del cliente (con prefijo de país, ej. 34XXXXXXXXX):','34')||'').replace(/[^0-9]/g,''); }
-  if(!num) return;
-  window.open('https://wa.me/'+num+'?text='+encodeURIComponent(msg),'_blank');
+  var num=(tel||'').replace(/[^0-9]/g,''); if(num.length===9) num='34'+num;
+  var res=document.getElementById('pl-comp-res');
+  var files=[];
+  try{
+    var facs=window._plComposeFacs||[];
+    if(facs.length){
+      if(res) res.innerHTML='<span style="color:#666">Generando PDFs…</span>';
+      var docs=(typeof todasFacturasC!=='undefined' && todasFacturasC && todasFacturasC.length)? todasFacturasC : null;
+      if(!docs){ try{ var jf=await fetch(BRIDGE_URL_C+'/agora/facturas?anio=2026&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();}); docs=jf.documentos||[]; }catch(e){ docs=[]; } }
+      for(var i=0;i<facs.length;i++){ var fc=facs[i];
+        var d=(docs||[]).find(function(x){ return x.Serie===(fc.serie||'F') && String(x.Number)===String(fc.numero); });
+        if(!d) continue;
+        try{ var bl=await generarPDFBlobC(d); files.push(new File([bl], d.Serie+'-'+d.Number+'.pdf', {type:'application/pdf'})); }catch(e){}
+      }
+      if(res) res.innerHTML='';
+    }
+  }catch(e){ if(res) res.innerHTML=''; }
+  // MÓVIL: compartir nativo → WhatsApp con el PDF adjunto
+  if(files.length && navigator.canShare && navigator.canShare({files:files})){
+    try{ await navigator.share({files:files, text:msg}); return; }
+    catch(e){ if(e && e.name==='AbortError') return; }
+  }
+  // ESCRITORIO / sin soporte: descarga los PDFs + abre el chat con el texto (arrástralos)
+  files.forEach(function(f){ var a=document.createElement('a'); a.href=URL.createObjectURL(f); a.download=f.name; document.body.appendChild(a); a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},1500); });
+  if(!num){ num=(prompt('Número de WhatsApp del cliente (con prefijo, ej. 34XXXXXXXXX):','34')||'').replace(/[^0-9]/g,''); }
+  if(num) window.open('https://wa.me/'+num+'?text='+encodeURIComponent(msg),'_blank');
+  else if(files.length) alert('PDFs descargados. Abre el chat de WhatsApp y arrástralos.');
 }
 async function plEnviar(cli){
   var para=(document.getElementById('pl-comp-para').value||'').trim();

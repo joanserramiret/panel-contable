@@ -3839,7 +3839,7 @@ async function ctaDetalle(tipo, entidad) {
 
 // ✏️ CUOTAS DUDOSAS DE IVA — facturas del trimestre con IVA estimado (sin cuota OCR) → meter la cuota real a
 // mano. Se guarda en la factura, así deja de estimarse para siempre y el IVA converge a lo real. [2026-06-17]
-async function ivaDudosas(tri, anio) {
+async function ivaDudosas(tri, anio, todas) {
   const old = document.getElementById('iva-dud-modal'); if (old) old.remove();
   const ov = document.createElement('div');
   ov.id = 'iva-dud-modal';
@@ -3849,27 +3849,31 @@ async function ivaDudosas(tri, anio) {
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
     '<b style="font-size:15px;color:#1a2e6e">✏️ Cuotas de IVA a revisar · T' + tri + ' ' + anio + '</b>' +
     '<button onclick="document.getElementById(\'iva-dud-modal\').remove()" style="border:none;background:#eee;border-radius:6px;padding:4px 10px;cursor:pointer">✕</button></div>' +
-    '<div style="display:flex;gap:5px;margin-bottom:8px">' + [1, 2, 3, 4].map(n => '<button onclick="ivaDudosas(' + n + ',' + anio + ')" style="padding:4px 12px;border-radius:7px;border:1.5px solid ' + (n === tri ? '#1a2e6e' : '#dde') + ';background:' + (n === tri ? '#1a2e6e' : '#fff') + ';color:' + (n === tri ? '#fff' : '#1a2e6e') + ';cursor:pointer;font-size:12px;font-weight:' + (n === tri ? '700' : '500') + '">T' + n + '</button>').join('') + '</div>' +
-    '<div style="font-size:11.5px;color:#888;margin-bottom:10px">Estas facturas no traían la cuota de IVA en el OCR (se estima al 21%). Mira el PDF (👁), corrige la cuota real y pulsa ✓ — se guarda y deja de estimarse.</div>' +
+    '<div style="display:flex;gap:5px;margin-bottom:8px;align-items:center;flex-wrap:wrap">' + [1, 2, 3, 4].map(n => '<button onclick="ivaDudosas(' + n + ',' + anio + ',' + (todas ? 'true' : 'false') + ')" style="padding:4px 12px;border-radius:7px;border:1.5px solid ' + (n === tri ? '#1a2e6e' : '#dde') + ';background:' + (n === tri ? '#1a2e6e' : '#fff') + ';color:' + (n === tri ? '#fff' : '#1a2e6e') + ';cursor:pointer;font-size:12px;font-weight:' + (n === tri ? '700' : '500') + '">T' + n + '</button>').join('') +
+    '<label style="margin-left:auto;font-size:11.5px;color:#555;cursor:pointer;display:flex;align-items:center;gap:5px"><input type="checkbox"' + (todas ? ' checked' : '') + ' onchange="ivaDudosas(' + tri + ',' + anio + ',this.checked)"/> Ver también las ya corregidas (editar)</label></div>' +
+    '<div style="font-size:11.5px;color:#888;margin-bottom:10px">Estas facturas no traían la cuota de IVA en el OCR (se estima al 21%). Mira el PDF (👁), corrige la cuota real y pulsa ✓ — se guarda y deja de estimarse. Las ✓ verdes ya están puestas (puedes reeditarlas o ↺ volver a estimar).</div>' +
     '<div id="iva-dud-body" style="font-size:12.5px;color:#555">Cargando…</div></div>';
   document.body.appendChild(ov);
   try {
-    const d = await fetch(BRIDGE_URL_C + '/contabilidad/iva/dudosas?anio=' + anio + '&trimestre=' + tri + '&_=' + Date.now(), { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
+    const d = await fetch(BRIDGE_URL_C + '/contabilidad/iva/dudosas?anio=' + anio + '&trimestre=' + tri + (todas ? '&todas=1' : '') + '&_=' + Date.now(), { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
     const fmt = x => new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(x || 0);
     let h = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
       '<th style="padding:6px;text-align:left">Proveedor</th><th style="padding:6px;text-align:left">Fecha</th><th style="padding:6px;text-align:right">Total</th><th style="padding:6px;text-align:right">Cuota IVA</th><th style="padding:6px"></th></tr></thead><tbody>';
     h += ((d.facturas || []).map((f, i) => {
       const re = encodeURIComponent(f.ruta);
-      return '<tr id="ivd-' + i + '" style="border-bottom:1px solid #eee">' +
-        '<td style="padding:6px">' + (f.proveedor || '') + '<div style="font-size:10px;color:#999">' + ((f.nombre || '').split('/').slice(-1)[0]) + '</div></td>' +
+      const fij = f.fijada;
+      return '<tr id="ivd-' + i + '" style="border-bottom:1px solid #eee' + (fij ? ';background:#f3fbf5' : '') + '">' +
+        '<td style="padding:6px">' + (fij ? '<span title="ya puesta" style="color:#16a34a;font-weight:700">✓ </span>' : '') + (f.proveedor || '') + '<div style="font-size:10px;color:#999">' + ((f.nombre || '').split('/').slice(-1)[0]) + '</div></td>' +
         '<td style="padding:6px">' + (f.fecha || '') + '</td>' +
         '<td style="padding:6px;text-align:right">' + fmt(f.total) + ' €</td>' +
-        '<td style="padding:6px;text-align:right"><input id="ivc-' + i + '" type="number" step="0.01" value="' + f.cuota_estimada + '" style="width:82px;padding:3px 5px;border:1.5px solid #e8b27a;border-radius:5px;text-align:right;font-size:12px" title="Estimado al 21% — corrígelo a mano"/></td>' +
+        '<td style="padding:6px;text-align:right"><input id="ivc-' + i + '" type="number" step="0.01" value="' + f.cuota_actual + '" style="width:82px;padding:3px 5px;border:1.5px solid ' + (fij ? '#16a34a' : '#e8b27a') + ';border-radius:5px;text-align:right;font-size:12px" title="' + (fij ? 'Cuota ya puesta — puedes editarla' : 'Estimado al 21% — corrígelo a mano') + '"/></td>' +
         '<td style="padding:6px;white-space:nowrap;text-align:right">' +
         '<button onclick="provVerDoc(\'' + re + '\')" title="Ver el PDF" style="padding:3px 7px;border:none;border-radius:5px;background:#475569;color:#fff;cursor:pointer;font-size:11px;margin-right:3px">👁</button>' +
+        '<button onclick="document.getElementById(\'ivc-' + i + '\').value=0;ivaGuardarCuota(\'' + re + '\',' + i + ')" title="Sujeto pasivo / exenta → cuota 0 (no estima)" style="padding:3px 7px;border:1px solid #c0cbea;border-radius:5px;background:#f0f4fb;color:#1a2e6e;cursor:pointer;font-size:10.5px;margin-right:3px">0 S.P.</button>' +
         '<button onclick="ivaGuardarCuota(\'' + re + '\',' + i + ')" title="Guardar la cuota" style="padding:3px 9px;border:none;border-radius:5px;background:#16a34a;color:#fff;cursor:pointer;font-size:11px;font-weight:700">✓</button>' +
+        (fij ? '<button onclick="ivaRevertirCuota(\'' + re + '\',' + i + ')" title="Quitar la cuota → vuelve a estimar al 21%" style="padding:3px 7px;border:1px solid #e8b27a;border-radius:5px;background:#fff7ed;color:#b45309;cursor:pointer;font-size:11px;margin-left:3px">↺</button>' : '') +
         '</td></tr>';
-    }).join('')) || '<tr><td colspan="5" style="padding:10px;color:#1b7a3d">✓ No hay cuotas dudosas en este trimestre.</td></tr>';
+    }).join('')) || '<tr><td colspan="5" style="padding:10px;color:#1b7a3d">✓ Nada que revisar en este trimestre.</td></tr>';
     h += '</tbody></table>';
     h += '<div style="margin-top:12px;text-align:right"><button onclick="document.getElementById(\'iva-dud-modal\').remove();cargarPulso()" style="padding:8px 16px;border:none;border-radius:8px;background:#1a2e6e;color:#fff;cursor:pointer;font-size:12px;font-weight:700">↻ Recalcular IVA y cerrar</button></div>';
     document.getElementById('iva-dud-body').innerHTML = h;
@@ -3884,8 +3888,21 @@ async function ivaGuardarCuota(rutaEnc, i) {
       body: JSON.stringify({ ruta: decodeURIComponent(rutaEnc), cuota: inp.value })
     }).then(x => x.json());
     if (!r.ok) throw new Error(r.error || 'no se pudo guardar');
-    const row = document.getElementById('ivd-' + i); if (row) { row.style.background = '#e7f6ec'; row.style.opacity = '.65'; }
+    const row = document.getElementById('ivd-' + i); if (row) { row.style.background = '#e7f6ec'; }
     inp.style.border = '1.5px solid #16a34a';
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ↺ Quitar la cuota puesta a mano → vuelve a estimarse al 21% (por si se metió mal).
+async function ivaRevertirCuota(rutaEnc, i) {
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/contabilidad/iva/cuota', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ ruta: decodeURIComponent(rutaEnc), cuota: null })
+    }).then(x => x.json());
+    if (!r.ok) throw new Error(r.error || 'no se pudo');
+    const row = document.getElementById('ivd-' + i); if (row) { row.style.background = '#fff7ed'; }
+    const inp = document.getElementById('ivc-' + i); if (inp) inp.style.border = '1.5px solid #e8b27a';
   } catch (e) { alert('Error: ' + e.message); }
 }
 

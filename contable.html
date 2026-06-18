@@ -4288,12 +4288,13 @@ async function cargarPulso(){
   const eur=x=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(Math.round(x||0))+' €';
   const S=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
   try{
-    const [jp,jpag,jt,js,jiva]=await Promise.all([
+    const [jp,jpag,jt,js,jiva,jmov]=await Promise.all([
       fetch(BRIDGE_URL_C+'/contabilidad/clientes_pendientes?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/contabilidad/pagos?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/agora/totales_mensuales?anios=2025,2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/banco/eb/saldos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({saldos:[]})),
-      fetch(BRIDGE_URL_C+'/contabilidad/iva?_='+Date.now(),H).then(r=>r.json()).catch(()=>({}))
+      fetch(BRIDGE_URL_C+'/contabilidad/iva?_='+Date.now(),H).then(r=>r.json()).catch(()=>({})),
+      fetch(BRIDGE_URL_C+'/banco/movimientos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({movimientos:[]}))
     ]);
     const pend=jp.facturas||[]; window._plPend=pend;
     const deben=jp.total||0;
@@ -4367,10 +4368,18 @@ async function cargarPulso(){
       '<span style="font-size:16px">'+a.ic+'</span><span style="font-size:13.5px;flex:1">'+a.txt+'</span>'+rec+
       '<button onclick="'+a.act+'" style="padding:4px 12px;border:1px solid #ddd;border-radius:7px;background:#fff;cursor:pointer;font-size:12px">'+a.cta+' →</button></div>'; }).join('')
       : '<div style="color:#16a34a;font-size:13px">✅ Todo en orden, sin alertas.</div>';
+    // ESTA SEMANA: entradas en cuenta (últimos 7d) + pagos que vencen (próx. 7d) + a perseguir
+    const _en7=new Date(hoy.getTime()+7*86400000), _hace7=new Date(hoy.getTime()-7*86400000);
+    let cobSem=0,cobSemN=0;
+    (((jmov&&jmov.movimientos)||[])).forEach(m=>{ if(!m.conciliado||(+m.importe||0)<=0)return; const f=m.fecha?new Date(m.fecha):null; if(f&&f>=_hace7&&f<=hoy){ cobSem+=(+m.importe||0); cobSemN++; } });
+    let pagSem=0,pagSemN=0;
+    (((jpag&&jpag.pagos)||[])).forEach(p=>{ if(p.estado==='pagada')return; const v=p.vencimiento?new Date(p.vencimiento):null; if(v&&v>=_hace7&&v<=_en7){ pagSem+=(+p.pendiente||+p.a_pagar||0); pagSemN++; } });
+    const _semRow=(ic,txt,val,act,col)=>'<div onclick="'+act+'" style="display:flex;gap:8px;align-items:center;margin:5px 0;font-size:12.5px;cursor:pointer" title="Ir">'+ic+' '+txt+'<span style="margin-left:auto;font-weight:700'+(col?';color:'+col:'')+'">'+eur(val)+'</span></div>';
     const _sem=document.getElementById('pl-semana'); if(_sem) _sem.innerHTML=
-      '<div style="display:flex;gap:8px;align-items:center;margin:4px 0;font-size:12.5px">🔴 A perseguir (+60d)<span style="margin-left:auto;font-weight:700">'+eur(v60)+'</span></div>'+
-      '<div style="display:flex;gap:8px;align-items:center;margin:4px 0;font-size:12.5px">⏳ Deuda +90 días<span style="margin-left:auto;font-weight:700">'+eur(tr.d)+'</span></div>'+
-      '<div style="margin-top:6px;font-size:11px;color:var(--texto-suave)">Cobros entrados y próximos vencimientos: próximamente.</div>';
+      _semRow('📥','Entradas en cuenta (7 días) · '+cobSemN, cobSem, "switchTabC('cobros')", '#16a34a')+
+      _semRow('📤','Pagos que vencen (próx. 7d) · '+pagSemN, pagSem, "switchTabC('pagos')", pagSem>0?'#b45309':null)+
+      _semRow('✋','A perseguir (+60 días)', v60, "switchTabC('cobros')", v60>0?'#dc2626':null)+
+      '<div style="margin-top:6px;font-size:11px;color:var(--texto-suave)">Lo que ha entrado y lo que toca pagar/cobrar estos días.</div>';
   }catch(e){
     const a=document.getElementById('pl-alertas'); if(a) a.innerHTML='<div style="color:#dc2626;font-size:13px">No pude cargar el Pulso: '+e.message+'</div>';
   }

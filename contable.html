@@ -4206,11 +4206,12 @@ async function cargarPulso(){
   const eur=x=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(Math.round(x||0))+' €';
   const S=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
   try{
-    const [jp,jpag,jt,js]=await Promise.all([
+    const [jp,jpag,jt,js,jiva]=await Promise.all([
       fetch(BRIDGE_URL_C+'/contabilidad/clientes_pendientes?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/contabilidad/pagos?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/agora/totales_mensuales?anios=2025,2026&_='+Date.now(),H).then(r=>r.json()),
-      fetch(BRIDGE_URL_C+'/banco/eb/saldos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({saldos:[]}))
+      fetch(BRIDGE_URL_C+'/banco/eb/saldos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({saldos:[]})),
+      fetch(BRIDGE_URL_C+'/contabilidad/iva?_='+Date.now(),H).then(r=>r.json()).catch(()=>({}))
     ]);
     const pend=jp.facturas||[]; window._plPend=pend;
     const deben=jp.total||0;
@@ -4225,6 +4226,24 @@ async function cargarPulso(){
     S('pl-tesoreria-desc', hayBanco?'saldo bancos + nos deben − debemos':'circulante (sin bancos) · saldo por cargar');
     S('pl-saldo', hayBanco?eur(saldoBancos):'por conectar');
     const _st=document.getElementById('pl-stamp'); if(_st) _st.textContent='Actualizado '+new Date().toLocaleString('es-ES');
+    // IVA DEL TRIMESTRE (repercutido exacto de Ágora − soportado de las facturas de proveedor)
+    try{
+      const _pi=document.getElementById('pl-iva');
+      if(_pi){
+        if(!jiva||!jiva.ok){ _pi.innerHTML='<span style="color:var(--texto-suave)">No disponible (¿bridge sin reiniciar?)</span>'; }
+        else{
+          const eur2=x=>new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(x||0)+' €';
+          const rep=jiva.repercutido||0, sop=jiva.soportado||0, res=jiva.resultado||0, aPagar=res>=0;
+          let ivh='<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px"><span style="font-size:20px;font-weight:800;color:'+(aPagar?'#dc2626':'#16a34a')+'">'+(aPagar?'A pagar ':'A favor ')+eur2(Math.abs(res))+'</span><span style="font-size:11px;color:var(--texto-suave)">T'+jiva.trimestre+' '+jiva.anio+'</span></div>';
+          ivh+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--borde)"><span style="color:var(--texto-suave)">Repercutido (ventas)</span><b>'+eur2(rep)+'</b></div>';
+          ivh+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--borde)"><span style="color:var(--texto-suave)">Soportado (compras)</span><b>−'+eur2(sop)+'</b></div>';
+          ivh+='<div style="display:flex;justify-content:space-between;padding:5px 0;font-weight:800"><span>Resultado</span><span style="color:'+(aPagar?'#dc2626':'#16a34a')+'">'+(aPagar?'':'+')+eur2(res)+'</span></div>';
+          if(jiva.n_estimadas>0) ivh+='<div style="margin-top:5px;font-size:10.5px;color:#b45309">⚠ '+jiva.n_estimadas+' factura(s) con IVA estimado al 21% ('+eur2(jiva.soportado_estimado)+'). Es una guía, no el 303 oficial (eso lo lleva SisConta).</div>';
+          else ivh+='<div style="margin-top:5px;font-size:10.5px;color:var(--texto-suave)">'+jiva.n_ventas+' ventas · '+jiva.n_compras+' compras. Guía, no el 303 oficial.</div>';
+          _pi.innerHTML=ivh;
+        }
+      }
+    }catch(e){}
     // AGING
     const hoy=new Date(); const tr={a:0,b:0,c:0,d:0}, trn={a:0,b:0,c:0,d:0};
     for(const f of pend){ const dd=Math.floor((hoy-new Date(f.fecha))/86400000);

@@ -956,6 +956,7 @@
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;font-size:12px">
           <input type="file" id="pv-subir" accept=".pdf,.xls,.xlsx,.jpg,.jpeg,.png,.webp,.gif" multiple style="display:none" onchange="pvSubirManual(this.files)"/>
           <button onclick="document.getElementById('pv-subir').click()" title="Subir facturas a mano (PDF, Excel, JPG, PNG) — van al cajón IA y de ahí a su mes" style="padding:7px 14px;background:#1a2e6e;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">➕ Subir factura</button>
+          <button onclick="(function(){var d=new Date();ivaDudosas(Math.floor(d.getMonth()/3)+1,d.getFullYear());})()" title="Facturas cuyo IVA va estimado al 21% (sin cuota en el OCR) — pon la cuota real mirando el PDF; se guarda y deja de estimarse. Mejora el IVA del trimestre en Pulso." style="padding:7px 14px;background:#fff7ed;color:#b45309;border:1.5px solid #e8b27a;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">✏️ Cuotas de IVA a revisar</button>
           <span style="color:var(--texto-suave);font-size:11px">📨 El correo y el orden del cajón se hacen solos cada noche (21:00).</span>
           <details style="margin-left:auto">
             <summary style="cursor:pointer;color:#6d28d9;font-weight:700;background:#ede9fe;border:1px solid #c4b5fd;border-radius:8px;padding:6px 12px;display:inline-block">⚙ Avanzado</summary>
@@ -3818,6 +3819,7 @@ async function ivaDudosas(tri, anio) {
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
     '<b style="font-size:15px;color:#1a2e6e">✏️ Cuotas de IVA a revisar · T' + tri + ' ' + anio + '</b>' +
     '<button onclick="document.getElementById(\'iva-dud-modal\').remove()" style="border:none;background:#eee;border-radius:6px;padding:4px 10px;cursor:pointer">✕</button></div>' +
+    '<div style="display:flex;gap:5px;margin-bottom:8px">' + [1, 2, 3, 4].map(n => '<button onclick="ivaDudosas(' + n + ',' + anio + ')" style="padding:4px 12px;border-radius:7px;border:1.5px solid ' + (n === tri ? '#1a2e6e' : '#dde') + ';background:' + (n === tri ? '#1a2e6e' : '#fff') + ';color:' + (n === tri ? '#fff' : '#1a2e6e') + ';cursor:pointer;font-size:12px;font-weight:' + (n === tri ? '700' : '500') + '">T' + n + '</button>').join('') + '</div>' +
     '<div style="font-size:11.5px;color:#888;margin-bottom:10px">Estas facturas no traían la cuota de IVA en el OCR (se estima al 21%). Mira el PDF (👁), corrige la cuota real y pulsa ✓ — se guarda y deja de estimarse.</div>' +
     '<div id="iva-dud-body" style="font-size:12.5px;color:#555">Cargando…</div></div>';
   document.body.appendChild(ov);

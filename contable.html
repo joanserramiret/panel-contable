@@ -3806,6 +3806,57 @@ async function ctaDetalle(tipo, entidad) {
   } catch (e) { document.getElementById('cta-det-body').innerHTML = '<div style="color:red">Error: ' + e.message + '</div>'; }
 }
 
+// ✏️ CUOTAS DUDOSAS DE IVA — facturas del trimestre con IVA estimado (sin cuota OCR) → meter la cuota real a
+// mano. Se guarda en la factura, así deja de estimarse para siempre y el IVA converge a lo real. [2026-06-17]
+async function ivaDudosas(tri, anio) {
+  const old = document.getElementById('iva-dud-modal'); if (old) old.remove();
+  const ov = document.createElement('div');
+  ov.id = 'iva-dud-modal';
+  ov.style = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:760px;width:100%;max-height:88vh;overflow:auto;padding:18px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+    '<b style="font-size:15px;color:#1a2e6e">✏️ Cuotas de IVA a revisar · T' + tri + ' ' + anio + '</b>' +
+    '<button onclick="document.getElementById(\'iva-dud-modal\').remove()" style="border:none;background:#eee;border-radius:6px;padding:4px 10px;cursor:pointer">✕</button></div>' +
+    '<div style="font-size:11.5px;color:#888;margin-bottom:10px">Estas facturas no traían la cuota de IVA en el OCR (se estima al 21%). Mira el PDF (👁), corrige la cuota real y pulsa ✓ — se guarda y deja de estimarse.</div>' +
+    '<div id="iva-dud-body" style="font-size:12.5px;color:#555">Cargando…</div></div>';
+  document.body.appendChild(ov);
+  try {
+    const d = await fetch(BRIDGE_URL_C + '/contabilidad/iva/dudosas?anio=' + anio + '&trimestre=' + tri + '&_=' + Date.now(), { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
+    const fmt = x => new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(x || 0);
+    let h = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
+      '<th style="padding:6px;text-align:left">Proveedor</th><th style="padding:6px;text-align:left">Fecha</th><th style="padding:6px;text-align:right">Total</th><th style="padding:6px;text-align:right">Cuota IVA</th><th style="padding:6px"></th></tr></thead><tbody>';
+    h += ((d.facturas || []).map((f, i) => {
+      const re = encodeURIComponent(f.ruta);
+      return '<tr id="ivd-' + i + '" style="border-bottom:1px solid #eee">' +
+        '<td style="padding:6px">' + (f.proveedor || '') + '<div style="font-size:10px;color:#999">' + ((f.nombre || '').split('/').slice(-1)[0]) + '</div></td>' +
+        '<td style="padding:6px">' + (f.fecha || '') + '</td>' +
+        '<td style="padding:6px;text-align:right">' + fmt(f.total) + ' €</td>' +
+        '<td style="padding:6px;text-align:right"><input id="ivc-' + i + '" type="number" step="0.01" value="' + f.cuota_estimada + '" style="width:82px;padding:3px 5px;border:1.5px solid #e8b27a;border-radius:5px;text-align:right;font-size:12px" title="Estimado al 21% — corrígelo a mano"/></td>' +
+        '<td style="padding:6px;white-space:nowrap;text-align:right">' +
+        '<button onclick="provVerDoc(\'' + re + '\')" title="Ver el PDF" style="padding:3px 7px;border:none;border-radius:5px;background:#475569;color:#fff;cursor:pointer;font-size:11px;margin-right:3px">👁</button>' +
+        '<button onclick="ivaGuardarCuota(\'' + re + '\',' + i + ')" title="Guardar la cuota" style="padding:3px 9px;border:none;border-radius:5px;background:#16a34a;color:#fff;cursor:pointer;font-size:11px;font-weight:700">✓</button>' +
+        '</td></tr>';
+    }).join('')) || '<tr><td colspan="5" style="padding:10px;color:#1b7a3d">✓ No hay cuotas dudosas en este trimestre.</td></tr>';
+    h += '</tbody></table>';
+    h += '<div style="margin-top:12px;text-align:right"><button onclick="document.getElementById(\'iva-dud-modal\').remove();cargarPulso()" style="padding:8px 16px;border:none;border-radius:8px;background:#1a2e6e;color:#fff;cursor:pointer;font-size:12px;font-weight:700">↻ Recalcular IVA y cerrar</button></div>';
+    document.getElementById('iva-dud-body').innerHTML = h;
+  } catch (e) { document.getElementById('iva-dud-body').innerHTML = '<div style="color:red">Error: ' + e.message + '</div>'; }
+}
+
+async function ivaGuardarCuota(rutaEnc, i) {
+  const inp = document.getElementById('ivc-' + i); if (!inp) return;
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/contabilidad/iva/cuota', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ ruta: decodeURIComponent(rutaEnc), cuota: inp.value })
+    }).then(x => x.json());
+    if (!r.ok) throw new Error(r.error || 'no se pudo guardar');
+    const row = document.getElementById('ivd-' + i); if (row) { row.style.background = '#e7f6ec'; row.style.opacity = '.65'; }
+    inp.style.border = '1.5px solid #16a34a';
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
 async function cargarSemaforo(tipo) {
   try {
     const res = await fetch(`${BRIDGE_URL_C}/contabilidad/semaforo?anio=2026&tipo=${tipo}&nocache=${Date.now()}`, {
@@ -4238,8 +4289,9 @@ async function cargarPulso(){
           ivh+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--borde)"><span style="color:var(--texto-suave)">Repercutido (ventas)</span><b>'+eur2(rep)+'</b></div>';
           ivh+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--borde)"><span style="color:var(--texto-suave)">Soportado (compras)</span><b>−'+eur2(sop)+'</b></div>';
           ivh+='<div style="display:flex;justify-content:space-between;padding:5px 0;font-weight:800"><span>Resultado</span><span style="color:'+(aPagar?'#dc2626':'#16a34a')+'">'+(aPagar?'':'+')+eur2(res)+'</span></div>';
-          if(jiva.n_estimadas>0) ivh+='<div style="margin-top:5px;font-size:10.5px;color:#b45309">⚠ '+jiva.n_estimadas+' factura(s) con IVA estimado al 21% ('+eur2(jiva.soportado_estimado)+'). Es una guía, no el 303 oficial (eso lo lleva SisConta).</div>';
-          else ivh+='<div style="margin-top:5px;font-size:10.5px;color:var(--texto-suave)">'+jiva.n_ventas+' ventas · '+jiva.n_compras+' compras. Guía, no el 303 oficial.</div>';
+          if(jiva.n_estimadas>0) ivh+='<div style="margin-top:5px;font-size:10.5px;color:#b45309">⚠ '+jiva.n_estimadas+' factura(s) con IVA estimado al 21% ('+eur2(jiva.soportado_estimado)+'). Es una guía, no el 303 oficial (SisConta).</div>'+
+            '<button onclick="ivaDudosas('+jiva.trimestre+','+jiva.anio+')" style="margin-top:7px;padding:6px 12px;border:1.5px solid #e8b27a;border-radius:7px;background:#fff7ed;color:#b45309;cursor:pointer;font-size:11.5px;font-weight:700">✏️ Revisar '+jiva.n_estimadas+' cuotas a mano</button>';
+          else ivh+='<div style="margin-top:5px;font-size:10.5px;color:var(--texto-suave)">'+jiva.n_ventas+' ventas · '+jiva.n_compras+' compras · todas con cuota real. Guía, no el 303 oficial.</div>';
           _pi.innerHTML=ivh;
         }
       }

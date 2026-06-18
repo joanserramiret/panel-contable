@@ -563,6 +563,14 @@
 
     <!-- DASHBOARD TAB -->
     <div class="tab-content active" id="ctc-dashboard">
+      <div onclick="switchTabC('pulso')" style="cursor:pointer;background:linear-gradient(135deg,#0f1f5c,#1e1b4b);border-radius:14px;padding:16px 22px;margin-bottom:16px;color:#fff;display:flex;align-items:center;gap:14px;flex-wrap:wrap" title="Abre el centro de mando">
+        <div style="font-size:26px">🩺</div>
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:17px;font-weight:800;letter-spacing:-.3px">Centro de mando · Pulso</div>
+          <div style="font-size:12px;color:rgba(255,255,255,.65)">Tesorería real, alertas, IVA del trimestre e interanual — la salud de un vistazo</div>
+        </div>
+        <div style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:9px;padding:9px 16px;font-size:13px;font-weight:700;white-space:nowrap">Abrir Pulso →</div>
+      </div>
       <div class="kpi-grid">
         <div class="kpi-card azul" onclick="irAFacturas('')" style="cursor:pointer" title="Ver todas las facturas emitidas">
           <div class="kpi-icon">🧾</div>
@@ -587,6 +595,12 @@
           <div class="kpi-label">Vencidas +30 días</div>
           <div class="kpi-value rojo" id="kpi-vencidas">—</div>
           <div class="kpi-sub" id="kpi-vencidas-n">— facturas</div>
+        </div>
+        <div class="kpi-card" onclick="switchTabC('pagos')" style="cursor:pointer" title="Lo que debemos a proveedores (deuda real 2026)">
+          <div class="kpi-icon">💸</div>
+          <div class="kpi-label">Debemos a proveedores</div>
+          <div class="kpi-value" id="kpi-debemos" style="color:#b45309">—</div>
+          <div class="kpi-sub" id="kpi-debemos-n">deuda real 2026</div>
         </div>
       </div>
 
@@ -1576,6 +1590,20 @@ function fcEnPeriodo(f) {
   return true;
 }
 
+// 💸 Debemos a proveedores (deuda real 2026) para el Resumen — mismo dato que Pulso (tot_deuda_real).
+let _debemosDashEnCurso = false;
+async function cargarDebemosDash() {
+  const el = document.getElementById('kpi-debemos'); if (!el || _debemosDashEnCurso) return;
+  _debemosDashEnCurso = true;
+  try {
+    const j = await fetch(BRIDGE_URL_C + '/contabilidad/pagos?anio=2026&_=' + Date.now(), { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
+    const deb = (j.tot_deuda_real != null ? j.tot_deuda_real : (j.total || 0));
+    el.textContent = (deb || 0).toFixed(2) + '€';
+    const n = document.getElementById('kpi-debemos-n'); if (n) n.textContent = 'deuda real 2026' + (j.tot_clasificar ? ' · +' + (j.tot_clasificar).toFixed(0) + '€ por clasificar' : '');
+  } catch (e) { el.textContent = '—'; }
+  _debemosDashEnCurso = false;
+}
+
 function actualizarDashboard() {
   // La verdad bancaria se carga una vez y se repinta al llegar
   if (bkCobradasBanco === null) { bkCobradasBanco = 'cargando'; cargarCobradasBanco().then(actualizarDashboard); }
@@ -1655,6 +1683,7 @@ function actualizarDashboard() {
   document.getElementById('kpi-pendiente-n').textContent = nPendientes + ' facturas' + (nDevueltas ? ' · ' + nDevueltas + ' con recibo devuelto ↩' : '');
   document.getElementById('kpi-vencidas').textContent = vencidas.toFixed(2) + '€';
   document.getElementById('kpi-vencidas-n').textContent = nVencidas + ' facturas';
+  cargarDebemosDash();
 
   // Pago breakdown
   const pbEl = document.getElementById('pago-breakdown');

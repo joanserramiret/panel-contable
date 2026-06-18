@@ -971,6 +971,7 @@
           <input type="file" id="pv-subir" accept=".pdf,.xls,.xlsx,.jpg,.jpeg,.png,.webp,.gif" multiple style="display:none" onchange="pvSubirManual(this.files)"/>
           <button onclick="document.getElementById('pv-subir').click()" title="Subir facturas a mano (PDF, Excel, JPG, PNG) — van al cajón IA y de ahí a su mes" style="padding:7px 14px;background:#1a2e6e;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">➕ Subir factura</button>
           <button onclick="(function(){var d=new Date();ivaDudosas(Math.floor(d.getMonth()/3)+1,d.getFullYear());})()" title="Facturas cuyo IVA va estimado al 21% (sin cuota en el OCR) — pon la cuota real mirando el PDF; se guarda y deja de estimarse. Mejora el IVA del trimestre en Pulso." style="padding:7px 14px;background:#fff7ed;color:#b45309;border:1.5px solid #e8b27a;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">✏️ Cuotas de IVA a revisar</button>
+          <button onclick="exportarAbrir()" title="Descarga las facturas (PDF en ZIP) o las tablas en CSV, con filtros — backup y portabilidad para no depender del Dropbox" style="padding:7px 14px;background:#ecfdf5;color:#047857;border:1.5px solid #6ee7b7;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">📤 Exportar / descargar</button>
           <span style="color:var(--texto-suave);font-size:11px">📨 El correo y el orden del cajón se hacen solos cada noche (21:00).</span>
           <details style="margin-left:auto">
             <summary style="cursor:pointer;color:#6d28d9;font-weight:700;background:#ede9fe;border:1px solid #c4b5fd;border-radius:8px;padding:6px 12px;display:inline-block">⚙ Avanzado</summary>
@@ -3886,6 +3887,56 @@ async function ivaGuardarCuota(rutaEnc, i) {
     const row = document.getElementById('ivd-' + i); if (row) { row.style.background = '#e7f6ec'; row.style.opacity = '.65'; }
     inp.style.border = '1.5px solid #16a34a';
   } catch (e) { alert('Error: ' + e.message); }
+}
+
+// 📤 EXPORTAR / MULTIDESCARGA — ZIP de facturas de proveedor (PDFs + index.csv) o CSV de tablas. Backup /
+// portabilidad: soltar el Dropbox. Descarga vía blob (manda el header de ngrok). [2026-06-17]
+async function exportarDescarga(url, filename, btn) {
+  const t0 = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Preparando…'; }
+  try {
+    const r = await fetch(BRIDGE_URL_C + url, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } catch (e) { alert('No se pudo exportar: ' + e.message); }
+  if (btn) { btn.disabled = false; btn.textContent = t0; }
+}
+
+function exportarAbrir() {
+  const old = document.getElementById('exp-modal'); if (old) old.remove();
+  const yr = new Date().getFullYear();
+  const ov = document.createElement('div');
+  ov.id = 'exp-modal';
+  ov.style = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:520px;width:100%;padding:20px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:15px;color:#1a2e6e">📤 Exportar / descargar</b>' +
+    '<button onclick="document.getElementById(\'exp-modal\').remove()" style="border:none;background:#eee;border-radius:6px;padding:4px 10px;cursor:pointer">✕</button></div>' +
+    '<div style="font-size:12px;color:#888;margin-bottom:12px">Backup y portabilidad. Filtra y descarga las facturas (PDF en ZIP, con índice) o las tablas en CSV (Excel).</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center">' +
+    '<label style="font-size:12px">Año <input id="exp-anio" value="' + yr + '" style="width:66px;padding:5px;border:1.5px solid #dde;border-radius:6px"/></label>' +
+    '<label style="font-size:12px">Proveedor <input id="exp-prov" placeholder="(todos)" style="width:120px;padding:5px;border:1.5px solid #dde;border-radius:6px"/></label>' +
+    '<label style="font-size:12px">Desde <input id="exp-desde" type="date" style="padding:4px;border:1.5px solid #dde;border-radius:6px"/></label>' +
+    '<label style="font-size:12px">Hasta <input id="exp-hasta" type="date" style="padding:4px;border:1.5px solid #dde;border-radius:6px"/></label>' +
+    '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:8px">' +
+    '<button onclick="exportarHacer(\'zip\',this)" style="padding:10px;border:none;border-radius:8px;background:#1a2e6e;color:#fff;cursor:pointer;font-size:13px;font-weight:700">📦 Facturas recibidas (ZIP de PDFs + índice)</button>' +
+    '<div style="display:flex;gap:8px"><button onclick="exportarHacer(\'csv-recibidas\',this)" style="flex:1;padding:8px;border:1.5px solid #c0cbea;border-radius:8px;background:#f0f4fb;color:#1a2e6e;cursor:pointer;font-size:12px;font-weight:700">📄 CSV recibidas</button>' +
+    '<button onclick="exportarHacer(\'csv-emitidas\',this)" style="flex:1;padding:8px;border:1.5px solid #c0cbea;border-radius:8px;background:#f0f4fb;color:#1a2e6e;cursor:pointer;font-size:12px;font-weight:700">📄 CSV ventas</button>' +
+    '<button onclick="exportarHacer(\'csv-banco\',this)" style="flex:1;padding:8px;border:1.5px solid #c0cbea;border-radius:8px;background:#f0f4fb;color:#1a2e6e;cursor:pointer;font-size:12px;font-weight:700">📄 CSV banco</button></div>' +
+    '</div></div>';
+  document.body.appendChild(ov);
+}
+
+function exportarHacer(que, btn) {
+  const g = id => encodeURIComponent((document.getElementById(id).value || '').trim());
+  const anio = g('exp-anio'), prov = g('exp-prov'), desde = g('exp-desde'), hasta = g('exp-hasta');
+  const q = '?anio=' + anio + '&desde=' + desde + '&hasta=' + hasta;
+  if (que === 'zip') exportarDescarga('/proveedores/exportar' + q + '&proveedor=' + prov, 'facturas_recibidas_' + (document.getElementById('exp-anio').value || '') + '.zip', btn);
+  else { const tipo = que.split('-')[1]; exportarDescarga('/contabilidad/exportar_csv?tipo=' + tipo + q, tipo + '_' + (document.getElementById('exp-anio').value || '') + '.csv', btn); }
 }
 
 async function cargarSemaforo(tipo) {

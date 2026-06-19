@@ -4523,12 +4523,60 @@ async function buzonDetectado(file, tipo, txt){
       }catch(e){ document.getElementById('buzon-pdfres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; } };
   } else if(tipo==='remesa'){
     var full=await file.text(); var recibos=full.split(/\r?\n/).filter(function(l){return l.slice(0,2)==='03';}).length;
-    res.innerHTML=badge('🧩 Remesa SEPA detectada','#ede9fe')+'<div style="margin:12px 0;font-size:13px">Fichero de remesa con <b>'+recibos+' recibos</b>. Para cuadrarla factura a factura, ve a <b>Tesorería</b> y concilia el abono del banco con este fichero. (La conciliación automática del fichero llega en la próxima versión.)</div>';
+    res.innerHTML=badge('🧩 Remesa SEPA detectada','#ede9fe')+
+      '<div style="margin:12px 0;font-size:13px">Fichero de remesa con <b>'+recibos+' recibos</b>. La casaré contra el abono del banco y te enseñaré el desglose <b>antes</b> de conciliar nada.</div>'+
+      '<button id="buzon-rem-sim" style="padding:8px 18px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-weight:700">Cuadrar con el banco (simular)</button>'+
+      '<div id="buzon-remres" style="margin-top:12px"></div>';
+    document.getElementById('buzon-rem-sim').onclick=async function(){
+      var b=document.getElementById('buzon-rem-sim'), rr=document.getElementById('buzon-remres');
+      b.disabled=true; b.textContent='Procesando…'; rr.innerHTML='<div style="color:#666;font-size:13px">Archivando la remesa y casándola con el banco…</div>';
+      try{
+        var b64=await buzonB64(file);
+        var pj=await fetch(BRIDGE_URL_C+'/remesas/parse_pdf',{method:'POST',headers:HP,body:JSON.stringify({pdf_base64:b64, nombre:file.name})}).then(function(r){return r.json();});
+        if(!pj.ok || !pj.doc){ rr.innerHTML='<div style="color:#dc2626;font-size:13px">'+(pj.error||'No pude archivar/parsear la remesa')+'</div>'; b.disabled=false; b.textContent='Cuadrar con el banco (simular)'; return; }
+        window._buzonRemDoc=pj.doc;
+        var sj=await fetch(BRIDGE_URL_C+'/remesas/importar_archivado?ruta='+encodeURIComponent(pj.doc)+'&confirmar=0&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();});
+        rr.innerHTML=buzonRemPreview(sj); b.style.display='none';
+      }catch(e){ rr.innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Cuadrar con el banco (simular)'; }
+    };
   } else if(tipo==='csv'){
     res.innerHTML=badge('📊 CSV / informe detectado','#e1f5ee')+'<div style="margin:12px 0;font-size:13px">Parece un informe (¿Amazon?). El importador automático de informes llega pronto.</div>';
   } else {
     res.innerHTML=badge('❓ No lo reconozco','#f1efe8')+'<div style="margin:12px 0;font-size:13px">No identifico este archivo. Si es una factura PDF, su nombre debería acabar en .pdf; si es un extracto N43 o una remesa, revisa que sea el fichero correcto.</div>';
   }
+}
+
+// 🧩 Buzón v2 — previsualización de la conciliación de una remesa (simular) antes de confirmar.
+function buzonRemPreview(sj){
+  var eur=function(v){return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0)+' €';};
+  if(!sj || !sj.ok){ return '<div style="color:#dc2626;font-size:13px">⚠ '+((sj&&sj.error)||'No se pudo cuadrar con el banco')+'</div>'; }
+  var rs=sj.resultados||[]; var h='';
+  rs.forEach(function(r){
+    var m=r.mov||{};
+    h+='<div style="border:1px solid #e5e5e5;border-radius:9px;padding:10px;margin-bottom:8px">'+
+      '<div style="font-weight:700;font-size:13px">Abono banco #'+m.id+' · '+(m.fecha||'')+' · '+eur(m.importe)+' '+(m.banco||'')+'</div>'+
+      '<div style="font-size:12.5px;color:#555;margin-top:4px">'+(r.n_entradas||0)+' líneas · suma '+eur(r.suma_desglose)+' · '+(r.cuadra?'<b style="color:#0F6E56">✓ cuadra</b>':'<b style="color:#dc2626">✗ NO cuadra</b>')+'</div>'+
+      ((r.refs_no_halladas_en_agora&&r.refs_no_halladas_en_agora.length)?'<div style="font-size:11.5px;color:#b45309;margin-top:3px">⚠ Refs no encontradas en Ágora: '+r.refs_no_halladas_en_agora.join(', ')+'</div>':'')+
+      (r.sin_referencia?'<div style="font-size:11.5px;color:#b45309;margin-top:3px">⚠ '+r.sin_referencia+' recibo(s) sin nº de factura</div>':'')+
+      '</div>';
+  });
+  h+='<div style="margin-top:6px">'+
+    (sj.cuadra?'<div style="font-size:12px;color:#0F6E56;margin-bottom:6px">Todo cuadra. Revísalo y concilia.</div>':'<div style="font-size:12px;color:#b45309;margin-bottom:6px">Hay descuadre o refs sin encontrar — revísalo antes de conciliar.</div>')+
+    '<button id="buzon-rem-conf" style="padding:8px 18px;border:none;border-radius:8px;background:'+(sj.cuadra?'#0F6E56':'#b45309')+';color:#fff;cursor:pointer;font-weight:700">✓ Conciliar esta remesa</button>'+
+    '<div id="buzon-remconf" style="margin-top:8px"></div></div>';
+  setTimeout(function(){ var c=document.getElementById('buzon-rem-conf'); if(c) c.onclick=buzonRemConciliar; },0);
+  return h;
+}
+async function buzonRemConciliar(){
+  var c=document.getElementById('buzon-rem-conf'), o=document.getElementById('buzon-remconf');
+  if(!window._buzonRemDoc) return;
+  if(!confirm('¿Conciliar esta remesa con el abono del banco?\n\nEs reversible (se puede desconciliar en Tesorería).')) return;
+  c.disabled=true; c.textContent='Conciliando…';
+  try{
+    var j=await fetch(BRIDGE_URL_C+'/remesas/importar_archivado?ruta='+encodeURIComponent(window._buzonRemDoc)+'&confirmar=1&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();});
+    o.innerHTML = j.ok? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Remesa conciliada'+(j.cuadra?' (cuadra)':'')+'. Ya está en Tesorería.</div>' : '<div style="color:#dc2626;font-size:13px">'+(j.error||'Error')+'</div>';
+    if(j.ok){ c.style.display='none'; }
+  }catch(e){ o.innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; c.disabled=false; c.textContent='✓ Conciliar esta remesa'; }
 }
 
 // 🛡️ Verificar antes de girar una remesa — guardarraíl

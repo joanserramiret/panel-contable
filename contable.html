@@ -4463,10 +4463,10 @@ async function cargarPulso(){
     try{ var _pf=document.getElementById('pl-flujo'); if(_pf){
       var mesA=new Date().toISOString().slice(0,7); var ent=0,sal=0;
       ((jmov&&jmov.movimientos)||[]).forEach(function(m){ if((m.fecha||'').slice(0,7)!==mesA)return; var v=+m.importe||0; if(v>0)ent+=v; else sal+=Math.abs(v); });
-      var neto=ent-sal;
+      var _netoMes=ent-sal;
       _pf.innerHTML='<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:#0F6E56">📥 Entra</span><b style="color:#0F6E56">'+eur(ent)+'</b></div>'+
         '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:#b45309">📤 Sale</span><b style="color:#b45309">−'+eur(sal)+'</b></div>'+
-        '<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--borde);font-weight:800"><span>Neto</span><span style="color:'+(neto>=0?'#0F6E56':'#dc2626')+'">'+(neto>=0?'+':'')+eur(neto)+'</span></div>';
+        '<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--borde);font-weight:800"><span>Neto</span><span style="color:'+(_netoMes>=0?'#0F6E56':'#dc2626')+'">'+(_netoMes>=0?'+':'')+eur(_netoMes)+'</span></div>';
     }}catch(e){}
     // 📉 MOROSIDAD (% devuelto sobre lo girado en remesas)
     try{ var _pm=document.getElementById('pl-moros'); if(_pm){

@@ -4356,14 +4356,15 @@ async function cargarPulso(){
   const eur=x=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(Math.round(x||0))+' €';
   const S=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
   try{
-    const [jp,jpag,jt,js,jiva,jmov,jver]=await Promise.all([
+    const [jp,jpag,jt,js,jiva,jmov,jver,jprov]=await Promise.all([
       fetch(BRIDGE_URL_C+'/contabilidad/clientes_pendientes?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/contabilidad/pagos?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/agora/totales_mensuales?anios=2023,2024,2025,2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/banco/eb/saldos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({saldos:[]})),
       fetch(BRIDGE_URL_C+'/contabilidad/iva?_='+Date.now(),H).then(r=>r.json()).catch(()=>({})),
       fetch(BRIDGE_URL_C+'/banco/movimientos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({movimientos:[]})),
-      fetch(BRIDGE_URL_C+'/remesa/verificar?anio=2026&_='+Date.now(),H).then(r=>r.json()).catch(()=>({}))
+      fetch(BRIDGE_URL_C+'/remesa/verificar?anio=2026&_='+Date.now(),H).then(r=>r.json()).catch(()=>({})),
+      fetch(BRIDGE_URL_C+'/contabilidad/proveedores?anio=2026&_='+Date.now(),H).then(r=>r.json()).catch(()=>({}))
     ]);
     const pend=jp.facturas||[]; window._plPend=pend;
     const deben=jp.total||0;
@@ -4435,6 +4436,12 @@ async function cargarPulso(){
     // 🔄 Recibos devueltos que aún no se han vuelto a girar (dinero que rebotó y hay que recobrar)
     var _reg=(jver&&jver.resumen&&jver.resumen.regirar)||0, _regT=(jver&&jver.totales&&jver.totales.regirar)||0;
     if(_reg) al.push({ic:'🔄',txt:'<b>'+_reg+'</b> recibos devueltos SIN re-girar · <b>'+eur(_regT)+'</b>',act:"switchTabC('cobros')",cta:'Re-girar'});
+    // 💢 Sobrepago a proveedor (pagado > facturado → ¿falta factura?) — excluye cajones genéricos/por clasificar
+    var _sob=((jprov&&jprov.proveedores)||[]).filter(function(p){ return (p.saldo||0) < -20 && !/contabili|clasificar|gen[eé]rica|^pdte|^pte\b/i.test((p.proveedor||'').trim()); });
+    if(_sob.length){ var _sobT=_sob.reduce(function(a,p){return a+Math.abs(p.saldo||0);},0); al.push({ic:'💢',txt:'<b>'+_sob.length+'</b> proveedor(es) con SOBREPAGO (¿falta factura?) · <b>'+eur(_sobT)+'</b>',act:"switchTabC('ctaprov')",cta:'Revisar'}); }
+    // ⚠️ Remesas con el desglose descuadrado (suma de las facturas ≠ abono del banco)
+    var _descR=0; ((jmov&&jmov.movimientos)||[]).forEach(function(m){ if(!m.conciliado||!/REMESA|REM\. RECIBOS/i.test(m.concepto||''))return; var c; try{c=JSON.parse(typeof m.conciliado==='string'?m.conciliado:JSON.stringify(m.conciliado));}catch(e){return;} if(!Array.isArray(c)||!c.length)return; var s=c.reduce(function(a,e){return a+(+e.importe||0);},0); if(Math.abs(s-(+m.importe||0))>0.02)_descR++; });
+    if(_descR) al.push({ic:'⚠️',txt:'<b>'+_descR+'</b> remesa(s) con el desglose DESCUADRADO',act:"switchTabC('banco')",cta:'Revisar'});
     let v60=0,v60n=0; for(const f of pend){ const dd=Math.floor((hoy-new Date(f.fecha))/86400000); if(dd>60){v60+=(+f.importe||0);v60n++;} }
     if(v60n) al.push({ic:'🔴',txt:'<b>'+v60n+'</b> facturas vencidas +60 días · <b>'+eur(v60)+'</b>',act:"switchTabC('cobros')",cta:'Perseguir'});
     const byc={}; for(const f of pend){ const c=(f.cliente||'?'); byc[c]=(byc[c]||0)+(+f.importe||0); }

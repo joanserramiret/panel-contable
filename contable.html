@@ -4721,7 +4721,19 @@ async function remesisarAbrir(banco){
       return {cliente:m.cliente||v.cliente,nif:m.nif||'',importe:imp,facturas:[v.fact],concepto:con,fact:v.fact,tipo:tipo,gastos:gas,base:+v.importe,bancoDev:v.banco_dev||'',_sel:true};};
     var nuevas=(g.verde||[]).filter(function(v){return !yaRem[norm(v.fact)];}).map(function(v){return mk(v,'nueva');});
     var regir=(g.regirar||[]).map(function(v){return mk(v,'regirar');});
-    window._consRecibos=regir.concat(nuevas);
+    // 🆕 clientes con MANDATO MANUAL nuevo (firmaron SEPA) cuyas facturas Ágora aún marca transferencia → ya son girables
+    var jm=await fetch(BRIDGE_URL_C+'/remesa/mandato_manual?_='+Date.now(),{headers:H}).then(function(r){return r.json();}).catch(function(){return {mandatos:{}};});
+    var manNIF={}; Object.keys(jm.mandatos||{}).forEach(function(k){manNIF[norm(k)]=true;});
+    var conMandato=[];
+    if(Object.keys(manNIF).length){
+      var jp=await fetch(BRIDGE_URL_C+'/contabilidad/clientes_pendientes?anio=2026&_='+Date.now(),{headers:H}).then(function(r){return r.json();}).catch(function(){return {facturas:[]};});
+      var yaEn={}; (g.verde||[]).concat(g.regirar||[]).forEach(function(v){yaEn[norm(v.fact)]=true;});
+      (jp.facturas||[]).forEach(function(f){var fc=(f.serie||'F')+'-'+f.numero; var fk=norm(fc); var m=byFac[fk]||{};
+        if(manNIF[norm(m.nif)] && !yaEn[fk] && !yaRem[fk] && (+f.importe)>0){
+          conMandato.push(mk({fact:fc,cliente:m.cliente||f.cliente,importe:+f.importe,fecha:f.fecha},'mandato'));
+        }});
+    }
+    window._consRecibos=regir.concat(conMandato).concat(nuevas);
     var nRem=Object.keys(yaRem).length;
     var row=function(r,i,col){return '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:4px 2px;border-bottom:1px solid #f4f4f4;cursor:pointer"><input type="checkbox" '+(r._sel?'checked':'')+' onchange="window._consRecibos['+i+']._sel=this.checked;consTotal()"><span style="width:70px;color:'+col+';font-weight:600">'+r.fact+'</span><span style="flex:1">'+(r.cliente||'(sin nombre)')+(r.gastos>0?' <span style="color:#185FA5;font-size:11px">+ '+eur(r.gastos)+' gastos dev'+(r.bancoDev?' '+r.bancoDev:'')+'</span>':'')+(r.nif?'':' <span style=\'color:#c00\'>⚠ sin NIF</span>')+'</span><span style="font-weight:600">'+eur(r.importe)+'</span></label>';};
     var html='';
@@ -4729,6 +4741,7 @@ async function remesisarAbrir(banco){
     else{
       var idx=0;
       if(regir.length){ html+='<div style="font-size:13px;font-weight:800;color:#185FA5;margin:6px 0 2px">🔄 Re-girar (devueltas) · '+regir.length+'</div><div style="border:1px solid #d6e6f6;border-radius:8px;padding:4px 10px;background:#f5faff">'; regir.forEach(function(r){html+=row(r,idx,'#185FA5');idx++;}); html+='</div>'; }
+      if(conMandato.length){ html+='<div style="font-size:13px;font-weight:800;color:#6b21a8;margin:12px 0 2px">🆕 Con mandato nuevo (antes transferencia) · '+conMandato.length+'</div><div style="border:1px solid #e6d6f6;border-radius:8px;padding:4px 10px;background:#faf5ff">'; conMandato.forEach(function(r){html+=row(r,idx,'#6b21a8');idx++;}); html+='</div>'; }
       if(nuevas.length){ html+='<div style="font-size:13px;font-weight:800;color:#0F6E56;margin:12px 0 2px">🆕 Nuevas a girar · '+nuevas.length+'</div><div style="border:1px solid #cdeadd;border-radius:8px;padding:4px 10px;background:#f4fbf7">'; nuevas.forEach(function(r){html+=row(r,idx,'#0F6E56');idx++;}); html+='</div>'; }
       html+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">'+
         '<div style="font-size:12px;color:#666">Seleccionado: <b id="cons-tot">—</b>'+(nRem?' · <span style="color:#999">'+nRem+' ya en remesa (ocultas)</span>':'')+'</div>'+

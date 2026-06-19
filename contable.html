@@ -679,6 +679,15 @@
         <div class="card"><div class="card-title">🧾 IVA trimestre</div>
           <div id="pl-iva" style="font-size:12px;color:var(--texto-suave)">Próximamente — repercutido − soportado del 303.</div></div>
       </div>
+
+      <div style="display:grid;grid-template-columns:1.2fr 0.9fr 0.9fr;gap:16px;margin-top:12px">
+        <div class="card"><div class="card-title">👑 Concentración de clientes</div>
+          <div id="pl-concentra"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div></div>
+        <div class="card"><div class="card-title">💸 Flujo del mes (banco)</div>
+          <div id="pl-flujo"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div></div>
+        <div class="card"><div class="card-title">📉 Morosidad</div>
+          <div id="pl-moros"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div></div>
+      </div>
     </div>
 
     <!-- FACTURAS TAB -->
@@ -4356,7 +4365,7 @@ async function cargarPulso(){
   const eur=x=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(Math.round(x||0))+' €';
   const S=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
   try{
-    const [jp,jpag,jt,js,jiva,jmov,jver,jprov]=await Promise.all([
+    const [jp,jpag,jt,js,jiva,jmov,jver,jprov,jcli]=await Promise.all([
       fetch(BRIDGE_URL_C+'/contabilidad/clientes_pendientes?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/contabilidad/pagos?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/agora/totales_mensuales?anios=2023,2024,2025,2026&_='+Date.now(),H).then(r=>r.json()),
@@ -4364,7 +4373,8 @@ async function cargarPulso(){
       fetch(BRIDGE_URL_C+'/contabilidad/iva?_='+Date.now(),H).then(r=>r.json()).catch(()=>({})),
       fetch(BRIDGE_URL_C+'/banco/movimientos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({movimientos:[]})),
       fetch(BRIDGE_URL_C+'/remesa/verificar?anio=2026&_='+Date.now(),H).then(r=>r.json()).catch(()=>({})),
-      fetch(BRIDGE_URL_C+'/contabilidad/proveedores?anio=2026&_='+Date.now(),H).then(r=>r.json()).catch(()=>({}))
+      fetch(BRIDGE_URL_C+'/contabilidad/proveedores?anio=2026&_='+Date.now(),H).then(r=>r.json()).catch(()=>({})),
+      fetch(BRIDGE_URL_C+'/contabilidad/clientes?anio=2026&_='+Date.now(),H).then(r=>r.json()).catch(()=>({}))
     ]);
     const pend=jp.facturas||[]; window._plPend=pend;
     const deben=jp.total||0;
@@ -4428,6 +4438,40 @@ async function cargarPulso(){
     });
     ih+='<div style="margin-top:8px;font-size:11px;color:var(--texto-suave)">Facturación <b>ene–jun</b> de cada año (comparable). 2026 en curso.</div>';
     document.getElementById('pl-interanual').innerHTML=ih;
+    // 👑 CONCENTRACIÓN DE CLIENTES (top 5 por facturación + su % del total)
+    try{ var _pc=document.getElementById('pl-concentra'); if(_pc){
+      var cl=((jcli&&jcli.clientes)||[]).slice().sort(function(a,b){return (b.facturado||0)-(a.facturado||0);});
+      var totC=cl.reduce(function(a,c){return a+(c.facturado||0);},0)||1;
+      var t5=cl.slice(0,5), sum5=t5.reduce(function(a,c){return a+(c.facturado||0);},0);
+      var ph='<div style="font-size:12px;color:var(--texto-suave);margin-bottom:8px">Top 5 = <b style="color:#1a2e6e">'+Math.round(sum5/totC*100)+'%</b> de la facturación · '+cl.length+' clientes</div>';
+      t5.forEach(function(c){ var p=Math.round((c.facturado||0)/totC*100);
+        ph+='<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(c.cliente||'?')+'</span>'+
+          '<div style="width:64px;background:#eee;border-radius:4px;height:10px"><div style="width:'+p+'%;height:100%;background:#534AB7;border-radius:4px"></div></div>'+
+          '<span style="width:34px;text-align:right;font-weight:700">'+p+'%</span></div>';
+      });
+      _pc.innerHTML=ph;
+    }}catch(e){}
+    // 💸 FLUJO DEL MES (entradas vs salidas en el banco, mes en curso)
+    try{ var _pf=document.getElementById('pl-flujo'); if(_pf){
+      var mesA=new Date().toISOString().slice(0,7); var ent=0,sal=0;
+      ((jmov&&jmov.movimientos)||[]).forEach(function(m){ if((m.fecha||'').slice(0,7)!==mesA)return; var v=+m.importe||0; if(v>0)ent+=v; else sal+=Math.abs(v); });
+      var neto=ent-sal;
+      _pf.innerHTML='<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:#0F6E56">📥 Entra</span><b style="color:#0F6E56">'+eur(ent)+'</b></div>'+
+        '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:#b45309">📤 Sale</span><b style="color:#b45309">−'+eur(sal)+'</b></div>'+
+        '<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--borde);font-weight:800"><span>Neto</span><span style="color:'+(neto>=0?'#0F6E56':'#dc2626')+'">'+(neto>=0?'+':'')+eur(neto)+'</span></div>';
+    }}catch(e){}
+    // 📉 MOROSIDAD (% devuelto sobre lo girado en remesas)
+    try{ var _pm=document.getElementById('pl-moros'); if(_pm){
+      var girado=0,devuelto=0;
+      ((jmov&&jmov.movimientos)||[]).forEach(function(m){ var v=+m.importe||0, c=(m.concepto||'');
+        if(v>0 && /ABONO REMESA|REM\. RECIBOS|REMESA RECIBOS/i.test(c)) girado+=v;
+        if(v<0 && /DEV.*DEVOL|DEVOLUCION RECIBO/i.test(c)) devuelto+=Math.abs(v);
+      });
+      var pctM=girado?Math.round(devuelto/girado*1000)/10:0;
+      _pm.innerHTML='<div style="font-size:24px;font-weight:800;color:'+(pctM<5?'#0F6E56':(pctM<12?'#b45309':'#dc2626'))+'">'+pctM+'%</div>'+
+        '<div style="font-size:11.5px;color:var(--texto-suave);margin-top:2px">recibos devueltos sobre lo girado</div>'+
+        '<div style="font-size:11px;color:var(--texto-suave);margin-top:6px">Girado '+eur(girado)+' · devuelto '+eur(devuelto)+'</div>';
+    }}catch(e){}
     // ALERTAS
     const al=[];
     // ⏰ Pagos a proveedor VENCIDOS (vencimiento pasado, sin pagar, no cajón por clasificar)

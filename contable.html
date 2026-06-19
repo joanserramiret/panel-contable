@@ -794,7 +794,7 @@
             <span>Facturas pendientes de cobro</span>
             <div style="display:flex;gap:8px">
             <button onclick="plVerificarRemesa()" title="Antes de generar una remesa SEPA, verifica que cada recibo a girar es seguro: no cobrado, no abonado, no duplicado. Para no cargar la cuenta de un cliente que no debe." style="padding:5px 12px;background:#0f766e;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🛡️ Verificar antes de girar</button>
-            <button onclick="remesisarAbrir()" title="Genera el fichero de remesa SEPA (norma 19.14) con el VERDE verificado (sin rojos, sin duplicados). Clona tus mandatos reales. Lo subes por Ficheros → Enviar ficheros en Sabadell." style="padding:5px 12px;background:#1a7a3f;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">📤 REMESISAR</button>
+            <button onclick="remesisarAbrir()" title="Constructor de remesa SEPA: junta las 🔄 re-girar (devueltas) y las 🆕 nuevas a girar (verde verificado), eliges banco (Sabadell/Bankinter) y marcas cuáles incluir. Las incluidas se marcan 'remesada' para no girarlas dos veces. Lo subes por Ficheros → Enviar ficheros." style="padding:5px 12px;background:#1a7a3f;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">📤 Constructor remesa</button>
             <button onclick="auditarCartera()" title="Para cada factura pendiente, busca la pista de dónde puede estar su cobro: remesa sin importar, abono sin conciliar, anulación..." style="padding:5px 12px;background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🩺 Auditar cartera</button>
             </div>
           </div>
@@ -4693,15 +4693,16 @@ async function plVerificarRemesa(){
   }catch(e){ var b=document.getElementById('pl-ver-body'); if(b) b.innerHTML='<div style="color:#dc2626">Error: '+e.message+'</div>'; }
 }
 
-// 📤 REMESISAR — genera el fichero de remesa SEPA norma 19.14 con el VERDE verificado.
-// Clona los mandatos reales (referencia única, vto = creación+1). Se sube por Ficheros → Enviar ficheros.
+// 📤 CONSTRUCTOR DE REMESA — junta 🔄 re-girar (devueltas) + 🆕 nuevas (verde verificado) con casillas.
+// Selector de banco. Al generar marca las incluidas como 'remesada' (no se vuelven a colar) y excluye las
+// ya remesadas (esperando cobro). Se sube por Ficheros → Enviar ficheros. Clona los mandatos reales.
 async function remesisarAbrir(banco){
   banco = banco || 'Sabadell'; window._remesisarBanco = banco;
   var ex=document.getElementById('rem-ov'); if(ex) ex.remove();
   var ov=document.createElement('div'); ov.id='rem-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:10070;background:rgba(15,31,92,.55);display:flex;align-items:center;justify-content:center;padding:16px';
   var _tab=function(b){return '<button onclick="remesisarAbrir(\''+b+'\')" style="padding:4px 12px;border-radius:8px;border:1.5px solid '+(banco===b?'#1a7a3f':'#ccc')+';background:'+(banco===b?'#1a7a3f':'#fff')+';color:'+(banco===b?'#fff':'#555')+';font-weight:700;font-size:12px;cursor:pointer">🏦 '+b+'</button>';};
-  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px;max-width:680px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.32)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div style="font-size:16px;font-weight:800">📤 REMESISAR — remesa SEPA</div><div style="display:flex;gap:6px">'+_tab('Sabadell')+_tab('Bankinter')+'</div></div><div id="rem-body" style="margin-top:12px;color:#666;font-size:13px"><span class="spinner"></span> Preparando la remesa de '+banco+' con el verde verificado…</div><div style="margin-top:16px;text-align:right"><button onclick="document.getElementById(\'rem-ov\').remove()" style="padding:6px 14px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:12px">Cerrar</button></div></div>';
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px;max-width:700px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.32)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div style="font-size:16px;font-weight:800">📤 Constructor de remesa</div><div style="display:flex;gap:6px">'+_tab('Sabadell')+_tab('Bankinter')+'</div></div><div id="rem-body" style="margin-top:12px;color:#666;font-size:13px"><span class="spinner"></span> Reuniendo girables de '+banco+'…</div><div style="margin-top:16px;text-align:right"><button onclick="document.getElementById(\'rem-ov\').remove()" style="padding:6px 14px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:12px">Cerrar</button></div></div>';
   ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
   document.body.appendChild(ov);
   var H={'ngrok-skip-browser-warning':'true'};
@@ -4709,36 +4710,53 @@ async function remesisarAbrir(banco){
   var eur=function(v){return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0)+' €';};
   try{
     var g=await fetch(BRIDGE_URL_C+'/remesa/verificar?anio=2026&_='+Date.now(),{headers:H}).then(function(r){return r.json();});
+    var rm=await fetch(BRIDGE_URL_C+'/remesa/remesada?_='+Date.now(),{headers:H}).then(function(r){return r.json();}).catch(function(){return {claves:[]};});
     var jf=await fetch(BRIDGE_URL_C+'/agora/facturas?anio=2026&_='+Date.now(),{headers:H}).then(function(r){return r.json();});
     var byFac={};
     (jf.documentos||[]).forEach(function(d){var cu=d.Customer||{};byFac[norm(d.Serie+'-'+d.Number)]={cliente:cu.FiscalName||cu.BusinessName||'',nif:cu.Cif||cu.Id||''};});
-    var recibos=(g.verde||[]).map(function(v){var m=byFac[norm(v.fact)]||{};return {cliente:m.cliente||v.cliente,nif:m.nif||'',importe:+v.importe,facturas:[v.fact],concepto:'COBRO '+v.fact};});
-    window._remesisarRecibos=recibos;
-    var sim=await fetch(BRIDGE_URL_C+'/remesa/generar',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},H),body:JSON.stringify({banco:banco,recibos:recibos})}).then(function(r){return r.json();});
-    if(!sim.ok){ document.getElementById('rem-body').innerHTML='<div style="color:#dc2626">Error: '+(sim.error||'?')+'</div>'; return; }
-    var ok=sim.recibos_ok||[], faltan=sim.faltan_mandato||[];
-    var html='<div style="background:#e1f5ee;border:1px solid #bfe8d8;border-radius:9px;padding:10px 12px;margin-bottom:10px;color:#0F6E56;font-size:13px">Remesa '+banco+' ('+(sim.formato||'')+'): <b>'+ok.length+' recibos · '+eur(sim.total)+'</b> · vencimiento <b>'+sim.fecha_cobro+'</b> (creación + 1 día).</div>';
-    html+='<div style="max-height:230px;overflow:auto;border:1px solid #eee;border-radius:8px;padding:6px 10px;margin-bottom:10px">'+
-      ok.map(function(x){return '<div style="display:flex;gap:8px;font-size:12.5px;padding:3px 0;border-bottom:1px solid #f4f4f4"><span style="flex:1">'+(x.cliente||'')+'</span><span style="font-weight:600">'+eur(x.importe)+'</span></div>';}).join('')+'</div>';
-    if(faltan.length) html+='<div style="background:#faeeda;border:1px solid #fac775;border-radius:9px;padding:9px 12px;margin-bottom:10px;color:#854F0B;font-size:12.5px">⚠️ Fuera ('+faltan.length+', sin mandato en Sabadell): '+faltan.map(function(x){return x.cliente;}).join(', ')+'. Suelen ser de Bankinter, transferencia o cliente nuevo.</div>';
-    html+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px">'+
-      '<div style="font-size:11.5px;color:#888">Tras descargar: '+banco+' → <b>Ficheros → Enviar ficheros</b> → adjunta el fichero → revisa y firma. (Yo nunca firmo.)</div>'+
-      '<button onclick="remesisarGenerar()" style="padding:8px 16px;background:#1a7a3f;color:#fff;border:none;border-radius:9px;cursor:pointer;font-size:13px;font-weight:700;white-space:nowrap">📥 Generar y descargar</button></div>';
-    document.getElementById('rem-body').innerHTML=html;
+    var yaRem={}; (rm.claves||[]).forEach(function(k){yaRem[norm(k)]=true;});
+    var mk=function(v,tipo){var m=byFac[norm(v.fact)]||{};return {cliente:m.cliente||v.cliente,nif:m.nif||'',importe:+v.importe,facturas:[v.fact],concepto:'COBRO '+v.fact,fact:v.fact,tipo:tipo,_sel:true};};
+    var nuevas=(g.verde||[]).filter(function(v){return !yaRem[norm(v.fact)];}).map(function(v){return mk(v,'nueva');});
+    var regir=(g.regirar||[]).map(function(v){return mk(v,'regirar');});
+    window._consRecibos=regir.concat(nuevas);
+    var nRem=Object.keys(yaRem).length;
+    var row=function(r,i,col){return '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:4px 2px;border-bottom:1px solid #f4f4f4;cursor:pointer"><input type="checkbox" '+(r._sel?'checked':'')+' onchange="window._consRecibos['+i+']._sel=this.checked;consTotal()"><span style="width:70px;color:'+col+';font-weight:600">'+r.fact+'</span><span style="flex:1">'+(r.cliente||'(sin nombre)')+(r.nif?'':' <span style=\'color:#c00\'>⚠ sin NIF</span>')+'</span><span style="font-weight:600">'+eur(r.importe)+'</span></label>';};
+    var html='';
+    if(!window._consRecibos.length){ html='<div style="background:#f3f6fb;border-radius:9px;padding:14px;color:#555;font-size:13px">No hay nada que girar ahora mismo. Cuando emitas facturas domiciliadas o haya devoluciones, aparecerán aquí.'+(nRem?' ('+nRem+' ya en remesa esperando cobro.)':'')+'</div>'; }
+    else{
+      var idx=0;
+      if(regir.length){ html+='<div style="font-size:13px;font-weight:800;color:#185FA5;margin:6px 0 2px">🔄 Re-girar (devueltas) · '+regir.length+'</div><div style="border:1px solid #d6e6f6;border-radius:8px;padding:4px 10px;background:#f5faff">'; regir.forEach(function(r){html+=row(r,idx,'#185FA5');idx++;}); html+='</div>'; }
+      if(nuevas.length){ html+='<div style="font-size:13px;font-weight:800;color:#0F6E56;margin:12px 0 2px">🆕 Nuevas a girar · '+nuevas.length+'</div><div style="border:1px solid #cdeadd;border-radius:8px;padding:4px 10px;background:#f4fbf7">'; nuevas.forEach(function(r){html+=row(r,idx,'#0F6E56');idx++;}); html+='</div>'; }
+      html+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">'+
+        '<div style="font-size:12px;color:#666">Seleccionado: <b id="cons-tot">—</b>'+(nRem?' · <span style="color:#999">'+nRem+' ya en remesa (ocultas)</span>':'')+'</div>'+
+        '<div style="display:flex;gap:8px"><button onclick="consToggleAll(true)" style="padding:5px 10px;border:1px solid #ccc;border-radius:7px;background:#fff;cursor:pointer;font-size:11.5px">Todas</button><button onclick="consToggleAll(false)" style="padding:5px 10px;border:1px solid #ccc;border-radius:7px;background:#fff;cursor:pointer;font-size:11.5px">Ninguna</button>'+
+        '<button onclick="remesisarGenerar()" style="padding:8px 16px;background:#1a7a3f;color:#fff;border:none;border-radius:9px;cursor:pointer;font-size:13px;font-weight:700">📥 Generar '+banco+'</button></div></div>'+
+        '<div style="font-size:11px;color:#999;margin-top:8px">Tras descargar: '+banco+' → <b>Ficheros → Enviar ficheros</b> → adjunta → revisa y firma. (Yo nunca firmo.) Las incluidas se marcan ✅ remesada para no colarlas dos veces.</div>';
+    }
+    document.getElementById('rem-body').innerHTML=html; consTotal();
   }catch(e){ var b=document.getElementById('rem-body'); if(b) b.innerHTML='<div style="color:#dc2626">Error: '+e.message+'</div>'; }
 }
+function consTotal(){ var a=window._consRecibos||[]; var t=0,n=0; a.forEach(function(r){if(r._sel!==false){t+=+r.importe;n++;}}); var el=document.getElementById('cons-tot'); if(el) el.textContent=new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(t)+' € · '+n+' recibos'; }
+function consToggleAll(v){ (window._consRecibos||[]).forEach(function(r){r._sel=v;}); document.querySelectorAll('#rem-body input[type=checkbox]').forEach(function(c){c.checked=v;}); consTotal(); }
 async function remesisarGenerar(){
-  var recibos=window._remesisarRecibos||[]; if(!recibos.length) return;
+  var all=window._consRecibos||[];
+  var recibos=all.filter(function(r){return r._sel!==false;});
+  if(!recibos.length){ alert('No has marcado ningún recibo.'); return; }
   var banco=window._remesisarBanco||'Sabadell';
   var H={'Content-Type':'application/json','ngrok-skip-browser-warning':'true'};
   var body=document.getElementById('rem-body');
+  var norm=function(s){return (s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');};
   try{
     var j=await fetch(BRIDGE_URL_C+'/remesa/generar',{method:'POST',headers:H,body:JSON.stringify({banco:banco,confirmar:1,recibos:recibos})}).then(function(r){return r.json();});
     if(j.contenido_b64){
       var bin=atob(j.contenido_b64);var by=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)by[i]=bin.charCodeAt(i);
       var blob=new Blob([by],{type:'text/plain'});var url=URL.createObjectURL(blob);
-      var a=document.createElement('a');a.href=url;a.download=j.fichero||'REMESISAR_Sabadell.txt';document.body.appendChild(a);a.click();a.remove();
-      if(body) body.insertAdjacentHTML('afterbegin','<div style="background:#e8f7ef;border:1px solid #a7d7b8;border-radius:8px;padding:9px 12px;margin-bottom:10px;color:#1b7a3d;font-size:13px;font-weight:700">✅ Descargado <b>'+j.fichero+'</b> · '+j.n+' recibos · '+new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(j.total)+' €. Súbelo por Ficheros → Enviar ficheros.</div>');
+      var a=document.createElement('a');a.href=url;a.download=j.fichero||('REMESISAR_'+banco+'.txt');document.body.appendChild(a);a.click();a.remove();
+      // marcar 'remesada' SOLO las que entraron (no las que faltó mandato)
+      var faltN={}; (j.faltan_mandato||[]).forEach(function(x){faltN[norm(x.nif)]=true;});
+      var facturas=[]; recibos.forEach(function(r){ if(faltN[norm(r.nif)]) return; (r.facturas||[]).forEach(function(f){var p=(''+f).split('-'); facturas.push({serie:p[0]||'F',numero:p[1]||p[0]});}); });
+      try{ await fetch(BRIDGE_URL_C+'/remesa/remesada',{method:'POST',headers:H,body:JSON.stringify({facturas:facturas,fichero:j.fichero,banco:banco})}); }catch(e){}
+      if(body) body.insertAdjacentHTML('afterbegin','<div style="background:#e8f7ef;border:1px solid #a7d7b8;border-radius:8px;padding:9px 12px;margin-bottom:10px;color:#1b7a3d;font-size:13px;font-weight:700">✅ Descargado <b>'+j.fichero+'</b> · '+j.n+' recibos · '+new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(j.total)+' € · marcadas como remesada. Súbelo por Ficheros → Enviar ficheros.</div>');
     } else if(body){ body.insertAdjacentHTML('afterbegin','<div style="color:#dc2626">Error: '+(j.error||'no se generó el fichero')+'</div>'); }
   }catch(e){ if(body) body.insertAdjacentHTML('afterbegin','<div style="color:#dc2626">Error: '+e.message+'</div>'); }
 }

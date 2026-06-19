@@ -4715,12 +4715,15 @@ async function remesisarAbrir(banco){
     var byFac={};
     (jf.documentos||[]).forEach(function(d){var cu=d.Customer||{};byFac[norm(d.Serie+'-'+d.Number)]={cliente:cu.FiscalName||cu.BusinessName||'',nif:cu.Cif||cu.Id||''};});
     var yaRem={}; (rm.claves||[]).forEach(function(k){yaRem[norm(k)]=true;});
-    var mk=function(v,tipo){var m=byFac[norm(v.fact)]||{};return {cliente:m.cliente||v.cliente,nif:m.nif||'',importe:+v.importe,facturas:[v.fact],concepto:'COBRO '+v.fact,fact:v.fact,tipo:tipo,_sel:true};};
+    var mk=function(v,tipo){var m=byFac[norm(v.fact)]||{};var gas=+(v.gastos||0);
+      var imp=(tipo==='regirar'&&gas>0)?(+(v.total_regirar||((+v.importe)+gas))):(+v.importe);
+      var con='COBRO '+v.fact+((tipo==='regirar'&&gas>0)?(' + gastos dev '+gas.toFixed(2)):'');
+      return {cliente:m.cliente||v.cliente,nif:m.nif||'',importe:imp,facturas:[v.fact],concepto:con,fact:v.fact,tipo:tipo,gastos:gas,base:+v.importe,bancoDev:v.banco_dev||'',_sel:true};};
     var nuevas=(g.verde||[]).filter(function(v){return !yaRem[norm(v.fact)];}).map(function(v){return mk(v,'nueva');});
     var regir=(g.regirar||[]).map(function(v){return mk(v,'regirar');});
     window._consRecibos=regir.concat(nuevas);
     var nRem=Object.keys(yaRem).length;
-    var row=function(r,i,col){return '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:4px 2px;border-bottom:1px solid #f4f4f4;cursor:pointer"><input type="checkbox" '+(r._sel?'checked':'')+' onchange="window._consRecibos['+i+']._sel=this.checked;consTotal()"><span style="width:70px;color:'+col+';font-weight:600">'+r.fact+'</span><span style="flex:1">'+(r.cliente||'(sin nombre)')+(r.nif?'':' <span style=\'color:#c00\'>⚠ sin NIF</span>')+'</span><span style="font-weight:600">'+eur(r.importe)+'</span></label>';};
+    var row=function(r,i,col){return '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:4px 2px;border-bottom:1px solid #f4f4f4;cursor:pointer"><input type="checkbox" '+(r._sel?'checked':'')+' onchange="window._consRecibos['+i+']._sel=this.checked;consTotal()"><span style="width:70px;color:'+col+';font-weight:600">'+r.fact+'</span><span style="flex:1">'+(r.cliente||'(sin nombre)')+(r.gastos>0?' <span style="color:#185FA5;font-size:11px">+ '+eur(r.gastos)+' gastos dev'+(r.bancoDev?' '+r.bancoDev:'')+'</span>':'')+(r.nif?'':' <span style=\'color:#c00\'>⚠ sin NIF</span>')+'</span><span style="font-weight:600">'+eur(r.importe)+'</span></label>';};
     var html='';
     if(!window._consRecibos.length){ html='<div style="background:#f3f6fb;border-radius:9px;padding:14px;color:#555;font-size:13px">No hay nada que girar ahora mismo. Cuando emitas facturas domiciliadas o haya devoluciones, aparecerán aquí.'+(nRem?' ('+nRem+' ya en remesa esperando cobro.)':'')+'</div>'; }
     else{

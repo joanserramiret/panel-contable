@@ -2679,7 +2679,7 @@ function actualizarCobros() {
     const dias = Math.floor((hoy - new Date(f.Date)) / 86400000);
     const b = dias <= 30 ? '0-30' : dias <= 60 ? '31-60' : dias <= 90 ? '61-90' : '+90';
     buckets[b][0]++; buckets[b][1] += t;
-    if (window._cobAging && b !== window._cobAging) return;   // filtro de antigüedad por botón (las tarjetas siguen contando todo)
+    if (window._cobAging && Object.keys(window._cobAging).length && !window._cobAging[b]) return;   // filtro multi-toggle de antigüedad (las tarjetas siguen contando todo)
     const cli = f.Customer ? (f.Customer.BusinessName || f.Customer.FiscalName || '(sin nombre)') : '(sin nombre)';
     const clave = bkNormClave(f.Serie + '-' + f.Number);
     const devuelta = !!(banco && banco.devueltas.has(clave));
@@ -2696,18 +2696,18 @@ function actualizarCobros() {
                    total: t, dias: dias, devuelta: devuelta, recibo: recibo });
   });
   const colB = { '0-30': '#1a7a3f', '31-60': '#c96a10', '61-90': '#c0392b', '+90': '#7b241c' };
-  const _af = window._cobAging || null;
+  const _ag = window._cobAging || {}; const _anyAg = Object.keys(_ag).length > 0;
   let html = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
     Object.entries(buckets).map(([b, [n, s]]) => {
-      const on = _af === b;
-      return '<div onclick="cobAgingToggle(\'' + b + '\')" title="Filtrar las columnas por esta antigüedad (clic para activar/quitar)" style="flex:1;min-width:110px;background:' + (on ? '#eef4ff' : '#f7f9fd') + ';border:' + (on ? '2px solid ' + colB[b] : '1px solid var(--borde)') + ';border-radius:10px;padding:8px 12px;text-align:center;cursor:pointer;transition:.1s">' +
+      const on = !!_ag[b];
+      return '<div onclick="cobAgingToggle(\'' + b + '\')" title="Filtrar por esta antigüedad (se pueden activar varias a la vez)" style="flex:1;min-width:110px;background:' + (on ? '#eef4ff' : '#f7f9fd') + ';border:' + (on ? '2px solid ' + colB[b] : '1px solid var(--borde)') + ';border-radius:10px;padding:8px 12px;text-align:center;cursor:pointer;transition:.1s">' +
       '<div style="font-size:11px;color:var(--texto-suave)">' + b + ' días' + (on ? ' ✓' : '') + '</div>' +
       '<div style="font-weight:800;font-size:15px;color:' + colB[b] + '">' + s.toFixed(2) + '€</div>' +
       '<div style="font-size:11px;color:var(--texto-suave)">' + n + ' fra.</div></div>';
     }).join('') +
-    (_af ? '<div onclick="cobAgingToggle(null)" title="Quitar el filtro de antigüedad" style="display:flex;align-items:center;justify-content:center;min-width:90px;background:#fff;border:1.5px dashed #c0cbea;border-radius:10px;padding:8px 12px;cursor:pointer;font-size:12px;font-weight:700;color:var(--azul)">✕ Ver todas</div>' : '') +
+    (_anyAg ? '<div onclick="cobAgingToggle(null)" title="Quitar el filtro de antigüedad" style="display:flex;align-items:center;justify-content:center;min-width:90px;background:#fff;border:1.5px dashed #c0cbea;border-radius:10px;padding:8px 12px;cursor:pointer;font-size:12px;font-weight:700;color:var(--azul)">✕ Ver todas</div>' : '') +
     '</div>' +
-    (_af ? '<div style="font-size:11.5px;color:var(--texto-suave);margin:-8px 0 10px">Mostrando solo facturas de <b>' + _af + ' días</b>. Las tarjetas de arriba siguen sumando el total.</div>' : '');
+    (_anyAg ? '<div style="font-size:11.5px;color:var(--texto-suave);margin:-8px 0 10px">Mostrando solo: <b>' + Object.keys(_ag).join(' · ') + ' días</b>. Las tarjetas de arriba siguen sumando el total.</div>' : '');
 
   carteraGruposIdx = [];
   const pintaColumna = (destino, titulo, sub, color) => {
@@ -2790,6 +2790,14 @@ const _GUARD_STYLE = {
 };
 function _guardEstado(num) { const m = window._cobGuard || {}; return m[(num || '').toUpperCase().replace(/[^A-Z0-9]/g, '')] || null; }
 function _guardRank(num) { const e = _guardEstado(num); return e === 'rojo' ? 2 : e === 'ambar' ? 1 : 0; }  // rojo y ámbar al fondo
+// 🚦 Filtro de antigüedad de Cobros — MULTI-TOGGLE (como el semáforo de Pagos): cada bucket on/off independiente.
+function cobAgingToggle(b) {
+  if (!window._cobAging) window._cobAging = {};
+  if (b === null) { window._cobAging = {}; }
+  else if (window._cobAging[b]) { delete window._cobAging[b]; }
+  else { window._cobAging[b] = true; }
+  actualizarCobros();
+}
 
 async function cargarCarteraDestinos() {
   try {
@@ -4541,7 +4549,10 @@ function buzonFile(file){
   var rd=new FileReader();
   rd.onload=function(){
     var txt=(rd.result||''); var head=txt.replace(/^\s+/,'').slice(0,400); var tipo='desconocido';
-    if(/\.pdf$/i.test(file.name)||head.slice(0,4)==='%PDF') tipo='pdf';
+    if(/\.pdf$/i.test(file.name)||head.slice(0,4)==='%PDF'){
+      // PDF de banco (adeudos / devoluciones / listado de remesa) → al flujo de remesa, no al cajón
+      tipo = /adeudo|devoluci|listado de adeudos|cumovements|remesa|impagad/i.test(file.name) ? 'remesa' : 'pdf';
+    }
     else if(/^0119143/.test(head)) tipo='remesa';
     else if(/\.n43$/i.test(file.name)||/^(11|00)\d{6}/.test(head)) tipo='n43';
     else if(/\n/.test(txt)&&/[;,].*[;,]/.test(head)) tipo='csv';
@@ -4579,9 +4590,10 @@ async function buzonDetectado(file, tipo, txt){
         document.getElementById('buzon-pdfres').innerHTML = j.ok? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Guardada en el cajón. Ve a 📥 Facturas recibidas → ordenar el cajón cuando quieras.</div>' : '<div style="color:#dc2626;font-size:13px">'+(j.error||'Error')+'</div>';
       }catch(e){ document.getElementById('buzon-pdfres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; } };
   } else if(tipo==='remesa'){
-    var full=await file.text(); var recibos=full.split(/\r?\n/).filter(function(l){return l.slice(0,2)==='03';}).length;
-    res.innerHTML=badge('🧩 Remesa SEPA detectada','#ede9fe')+
-      '<div style="margin:12px 0;font-size:13px">Fichero de remesa con <b>'+recibos+' recibos</b>. La casaré contra el abono del banco y te enseñaré el desglose <b>antes</b> de conciliar nada.</div>'+
+    var esPdf=/\.pdf$/i.test(file.name); var recibos=0;
+    if(!esPdf){ var full=await file.text(); recibos=full.split(/\r?\n/).filter(function(l){return l.slice(0,2)==='03';}).length; }
+    res.innerHTML=badge('🧩 '+(esPdf?'Documento de banco (adeudos/remesa)':'Remesa SEPA')+' detectado','#ede9fe')+
+      '<div style="margin:12px 0;font-size:13px">'+(esPdf?'Documento de banco — lo leo y lo caso contra el abono.':'Fichero de remesa con <b>'+recibos+' recibos</b>.')+' Te enseño el desglose <b>antes</b> de conciliar nada.</div>'+
       '<button id="buzon-rem-sim" style="padding:8px 18px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-weight:700">Cuadrar con el banco (simular)</button>'+
       '<div id="buzon-remres" style="margin-top:12px"></div>';
     document.getElementById('buzon-rem-sim').onclick=async function(){
@@ -4597,7 +4609,24 @@ async function buzonDetectado(file, tipo, txt){
       }catch(e){ rr.innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Cuadrar con el banco (simular)'; }
     };
   } else if(tipo==='csv'){
-    res.innerHTML=badge('📊 CSV / informe detectado','#e1f5ee')+'<div style="margin:12px 0;font-size:13px">Parece un informe (¿Amazon?). El importador automático de informes llega pronto.</div>';
+    res.innerHTML=badge('📊 CSV de Amazon detectado','#e1f5ee')+
+      '<div style="margin:12px 0;font-size:13px">Informe de pedidos de Amazon Business. Lo importo como facturas del proveedor AMAZON (con su IVA real), <b>saltando las que ya tengas</b>. Primero te enseño qué entraría.</div>'+
+      '<button id="buzon-amz-sim" style="padding:8px 18px;border:none;border-radius:8px;background:#0F6E56;color:#fff;cursor:pointer;font-weight:700">Comprobar (simular)</button>'+
+      '<div id="buzon-amzres" style="margin-top:12px"></div>';
+    var fullCsv=await file.text();
+    document.getElementById('buzon-amz-sim').onclick=async function(){
+      var b=document.getElementById('buzon-amz-sim'), rr=document.getElementById('buzon-amzres');
+      b.disabled=true; b.textContent='Comprobando…'; rr.innerHTML='<div style="color:#666;font-size:13px">Leyendo el CSV…</div>';
+      try{
+        var j=await fetch(BRIDGE_URL_C+'/proveedores/importar_amazon_csv',{method:'POST',headers:HP,body:JSON.stringify({contenido:fullCsv,confirmar:false})}).then(function(r){return r.json();});
+        if(!j.ok){ rr.innerHTML='<div style="color:#dc2626;font-size:13px">'+(j.error||'Error')+'</div>'; b.disabled=false; b.textContent='Comprobar (simular)'; return; }
+        rr.innerHTML='<div style="font-size:13px;margin-bottom:8px">Nuevas: <b style="color:#0F6E56">'+j.n_nuevos+'</b> ('+(j.total_nuevos||0).toFixed(2)+' €) · Ya registradas: <b>'+j.ya_registrados+'</b></div>'+
+          (j.n_nuevos>0?'<button id="buzon-amz-imp" style="padding:8px 18px;border:none;border-radius:8px;background:#0F6E56;color:#fff;cursor:pointer;font-weight:700">Importar '+j.n_nuevos+' facturas Amazon</button>':'<div style="color:#0F6E56;font-size:13px;font-weight:700">✅ Nada nuevo: ya está todo.</div>');
+        var bi=document.getElementById('buzon-amz-imp'); if(bi) bi.onclick=async function(){ bi.disabled=true; bi.textContent='Importando…';
+          var ji=await fetch(BRIDGE_URL_C+'/proveedores/importar_amazon_csv',{method:'POST',headers:HP,body:JSON.stringify({contenido:fullCsv,confirmar:true})}).then(function(r){return r.json();});
+          rr.innerHTML = ji.ok? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Importadas '+(ji.creados||0)+' facturas de Amazon. Ya cuentan en el saldo de proveedores.</div>' : '<div style="color:#dc2626;font-size:13px">'+(ji.error||'Error')+'</div>'; };
+      }catch(e){ rr.innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Comprobar (simular)'; }
+    };
   } else {
     res.innerHTML=badge('❓ No lo reconozco','#f1efe8')+'<div style="margin:12px 0;font-size:13px">No identifico este archivo. Si es una factura PDF, su nombre debería acabar en .pdf; si es un extracto N43 o una remesa, revisa que sea el fichero correcto.</div>';
   }

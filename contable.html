@@ -470,6 +470,7 @@
     <div class="nav-tab tab-simple" onclick="switchTabC('buscar')" id="ctab-buscar">🔎 Buscar</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('facturas')" id="ctab-facturas">🧾 Facturas emitidas</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('proveedores')" id="ctab-proveedores">📥 Facturas recibidas</div>
+    <div class="nav-tab tab-clasico" onclick="switchTabC('pendcont')" id="ctab-pendcont" style="background:#0e7490;color:#fff;font-weight:700">⏳ Pendiente contabilizar</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('banco')" id="ctab-banco">🏦 Tesorería</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('remesas')" id="ctab-remesas">🧩 Remesas y efectos</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('ctaprov')" id="ctab-ctaprov">📒 Proveedores</div>
@@ -1020,6 +1021,34 @@
           </span>
         </div>
         <div id="nom-lista"><div style="color:var(--texto-suave);font-size:13px">Pulsa ⟳ para cargar las nóminas del año.</div></div>
+      </div>
+    </div>
+
+    <!-- PENDIENTE CONTABILIZAR TAB (zona Raquel) -->
+    <div class="tab-content" id="ctc-pendcont">
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <span>⏳ Pendiente de contabilizar <span style="font-weight:400;font-size:12px;color:var(--texto-suave)">— facturas que Raquel aún no ha puenteado a SisConta (siguen en la carpeta «PENDENT CONTABILITZAR»)</span></span>
+          <span style="display:flex;gap:8px;align-items:center">
+            <select id="pc-anio" onchange="cargarPendCont()" style="padding:6px 10px;border:1.5px solid #dde;border-radius:8px;font-size:12px;font-family:inherit"></select>
+            <button onclick="cargarPendCont()" style="padding:6px 12px;border:none;border-radius:8px;background:#0e7490;color:#fff;cursor:pointer;font-size:12px;font-weight:600">⟳ Actualizar</button>
+          </span>
+        </div>
+        <div style="font-size:12px;color:var(--texto-suave);margin-top:6px">Cuando una factura sale de esa carpeta (recibidas → carpeta del proveedor; emitidas → fuera de «PENDENT CONTABILITZAR») se considera contabilizada y desaparece sola de aquí. Solo cuenta 2026 en adelante.</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" id="pc-grid">
+        <div class="card">
+          <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+            <span>🧾 Emitidas (ventas)</span><span id="pc-emi-tot" style="font-size:13px;font-weight:700;color:#0e7490"></span>
+          </div>
+          <div id="pc-emi"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+            <span>📥 Recibidas (compras)</span><span id="pc-rec-tot" style="font-size:13px;font-weight:700;color:#0e7490"></span>
+          </div>
+          <div id="pc-rec"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div>
+        </div>
       </div>
     </div>
 
@@ -4365,6 +4394,61 @@ function switchTabC(tab) {
   if (tab === 'cuadrar') cuadrarCargar();
   if (tab === 'buscar') { const bq = document.getElementById('busc-q'); if (bq) bq.focus(); }
   if (tab === 'pulso') cargarPulso();
+  if (tab === 'pendcont') cargarPendCont();
+}
+
+// ===== PENDIENTE DE CONTABILIZAR (zona Raquel) =====
+function cargarPendCont(){
+  const H={headers:{'ngrok-skip-browser-warning':'true'}};
+  const eur=x=>(x==null?'—':new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(x||0)+' €');
+  const sel=document.getElementById('pc-anio');
+  if(sel && !sel.options.length){ const y=new Date().getFullYear(); for(let a=y;a>=2026;a--){const o=document.createElement('option');o.value=a;o.textContent=a;sel.appendChild(o);} }
+  const anio=(sel&&sel.value)||new Date().getFullYear();
+  const emi=document.getElementById('pc-emi'), rec=document.getElementById('pc-rec');
+  emi.innerHTML=rec.innerHTML='<div style="color:var(--texto-suave);font-size:13px">Cargando…</div>';
+  fetch(BRIDGE_URL_C+'/contabilidad/pendiente_contabilizar?anio='+anio+'&_='+Date.now(),H).then(r=>r.json()).then(j=>{
+    if(!j||!j.ok){ emi.innerHTML=rec.innerHTML='<div style="color:#c00;font-size:13px">Error al cargar (¿bridge reiniciado?)</div>'; return; }
+    document.getElementById('pc-emi-tot').textContent=(j.emitidas.n||0)+' fac · '+eur(j.emitidas.total);
+    document.getElementById('pc-rec-tot').textContent=(j.recibidas.n||0)+' fac · '+eur(j.recibidas.total);
+    // EMITIDAS
+    if(!j.emitidas.n){
+      emi.innerHTML = j.emitidas.raiz_existe
+        ? '<div style="color:var(--texto-suave);font-size:13px;padding:6px 0">✓ Nada pendiente. Todas las ventas están contabilizadas.</div>'
+        : '<div style="color:var(--texto-suave);font-size:12.5px;padding:6px 0;line-height:1.5">Aún no existe la carpeta de ventas. Cuando vuelques desde Ágora, crea:<br><code style="font-size:11px">'+j.emitidas.raiz+'\\'+anio+'\\&lt;mes&gt;\\&lt;día&gt;\\PENDENT CONTABILITZAR\\</code><br>y deja ahí los PDF (el Excel resumen, suelto en la carpeta del día).</div>';
+    } else { emi.innerHTML=j.emitidas.meses.map(m=>pcMes(m,'emi')).join(''); }
+    // RECIBIDAS
+    rec.innerHTML = j.recibidas.n ? j.recibidas.meses.map(m=>pcMes(m,'rec')).join('')
+      : '<div style="color:var(--texto-suave);font-size:13px;padding:6px 0">✓ Nada pendiente. Raquel ya las ha contabilizado todas.</div>';
+  }).catch(()=>{ emi.innerHTML=rec.innerHTML='<div style="color:#c00;font-size:13px">No se pudo conectar.</div>'; });
+}
+function pcEnt(s){ // oculta el nombre de la carpeta genérica como si fuese el proveedor (aún sin clasificar)
+  if(!s) return '—';
+  return /contabiliz|pendent|\bpdte\b|\bpte\b|varios|sin\s*clasific/i.test(s) ? '—' : s;
+}
+function pcMes(m, tipo){
+  const eur=x=>(x==null?'—':new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(x||0)+' €');
+  const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let filas=m.facturas.map(f=>{
+    const ver = tipo==='emi'
+      ? '<button onclick="pcVerEmi(\''+encodeURIComponent(f.ruta)+'\')" style="padding:3px 8px;border:none;border-radius:5px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁</button>'
+      : '<button onclick="provVerDoc(\''+encodeURIComponent(f.ruta)+'\')" style="padding:3px 8px;border:none;border-radius:5px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁</button>';
+    const dia = (tipo==='emi'&&f.dia)?('<span style="color:var(--texto-suave);font-size:10.5px"> · '+esc(f.dia)+'</span>'):'';
+    return '<tr style="border-bottom:1px solid #eee">'+
+      '<td style="padding:5px 6px;font-size:12px">'+esc(pcEnt(f.entidad))+dia+'</td>'+
+      '<td style="padding:5px 6px;font-size:11px;color:#666">'+esc(f.nombre||'')+'</td>'+
+      '<td style="padding:5px 6px;font-size:11px;color:#666;white-space:nowrap">'+esc(f.fecha||'')+'</td>'+
+      '<td style="padding:5px 6px;text-align:right;font-size:12px;white-space:nowrap">'+eur(f.total)+'</td>'+
+      '<td style="padding:5px 6px;text-align:right">'+ver+'</td></tr>';
+  }).join('');
+  return '<div style="margin-bottom:10px">'+
+    '<div style="font-weight:700;font-size:13px;background:#ecfeff;padding:5px 8px;border-radius:6px;display:flex;justify-content:space-between">'+
+    '<span>'+esc(m.mes)+'</span><span style="color:#0e7490">'+m.n+' · '+eur(m.total)+'</span></div>'+
+    '<table style="width:100%;border-collapse:collapse;margin-top:4px">'+filas+'</table></div>';
+}
+function pcVerEmi(rutaEnc){
+  const ruta=decodeURIComponent(rutaEnc);
+  if(!ruta){ alert('Sin documento.'); return; }
+  window.open(BRIDGE_URL_C+'/contabilidad/emitida_abrir?ruta='+encodeURIComponent(ruta)+'&ngrok-skip-browser-warning=true','_blank');
 }
 
 // ===== PULSO — cuadro de salud =====

@@ -4232,9 +4232,17 @@ function renderPagos() {
     if (_esClasif(p)) { _tClas += p.pendiente || 0; _nClas++; }
     else { _tReal += p.pendiente || 0; _nReal++; if (p.domiciliado) _tDom += p.pendiente || 0; }
   });
-  if (res) res.innerHTML = '<b>💼 Deuda real a proveedor: <span style="color:#c0392b">' + bkFmt(_tReal) + '</span></b> en ' + _nReal + ' facturas · de ellas ⚡ domiciliado <b>' + bkFmt(_tDom) + '</b>' +
-    '<br><span style="color:var(--texto-suave);font-size:12px">📂 Por clasificar (Raquel/SisConta, <b>no es deuda</b>): ' + bkFmt(_tClas) + ' en ' + _nClas + ' facturas' +
-    (_nExt ? ' · 💳 <b>Pagado fuera del banco</b> (efectivo/tarjeta personal/aplazada): ' + bkFmt(_tExt) + ' en ' + _nExt : '') + '</span>';
+  // CALENDARIO (modelo Joan): la alarma de verdad = lo ACCIONABLE (manual + revisar). Lo PROGRAMADO (domiciliado
+  // por girar) no es alarma, se gira solo. Usa los totales del backend; si no vienen (bridge viejo), cae a la deuda real.
+  const _acc = (pagosDatos.tot_accionable != null ? pagosDatos.tot_accionable : _tReal);
+  const _prog = (pagosDatos.tot_programado != null ? pagosDatos.tot_programado : 0);
+  const _rev = (pagosDatos.tot_revisar != null ? pagosDatos.tot_revisar : 0);
+  if (res) res.innerHTML =
+    '<b>🔴 A pagar (acción tuya): <span style="color:#c0392b">' + bkFmt(_acc) + '</span></b>' +
+    ' · <span style="color:#0e7490">🔵 Programado <b>' + bkFmt(_prog) + '</b></span> <span style="color:var(--texto-suave);font-size:11px">(domiciliado, se gira solo en su fecha)</span>' +
+    (_rev ? ' · <span style="color:#b45309">⚠️ Revisar <b>' + bkFmt(_rev) + '</b></span> <span style="color:var(--texto-suave);font-size:11px">(giro vencido sin cubrir)</span>' : '') +
+    '<br><span style="color:var(--texto-suave);font-size:12px">💼 Deuda real total ' + bkFmt(_tReal) + ' en ' + _nReal + ' fac · 📂 Por clasificar (Raquel/SisConta, <b>no es deuda</b>): ' + bkFmt(_tClas) + ' en ' + _nClas +
+    (_nExt ? ' · 💳 Pagado fuera del banco: ' + bkFmt(_tExt) + ' en ' + _nExt : '') + '</span>';
   const chip = (k, lbl, col, bg, n) => { const on = _pagFiltro[k]; return '<button onclick="pagToggle(\'' + k + '\')" style="padding:4px 10px;border-radius:7px;border:1px solid ' + (on ? col : '#dde') + ';background:' + (on ? bg : '#fff') + ';color:' + (on ? col : '#999') + ';cursor:pointer;font-size:11.5px;font-weight:' + (on ? '700' : '500') + '">' + lbl + ' ' + n + '</button>'; };
   const barra = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">' +
     chip('pendiente', '🔴 Pendiente', '#a32d2d', '#fcebeb', c.pendiente || 0) +
@@ -4249,13 +4257,22 @@ function renderPagos() {
   if (!vis.length) { cont.innerHTML = barra + '<div style="color:var(--texto-suave);font-size:13px;padding:10px">Nada que mostrar con los colores activos.</div>'; return; }
   const hoy = new Date().toISOString().slice(0, 10);
   const colEstado = { pendiente: '#e24b4a', parcial: '#ef9f27', pagada: '#1d9e75' };
+  // Semáforo de CALENDARIO (campo p.cal del backend): 🟢 pagada · 🔵 programada (domiciliado por girar) ·
+  // 🔴 a pagar (manual, acción) · ⚠️ revisar (domiciliado con giro vencido sin cubrir).
+  const calMeta = {
+    pagada:     { ic: '🟢', lbl: 'pagada',     t: 'Pagada',                                                          col: '#1b7a3d' },
+    programada: { ic: '🔵', lbl: 'programado', t: 'Programado · domiciliado, se gira solo en su fecha (controlado)', col: '#0e7490' },
+    a_pagar:    { ic: '🔴', lbl: 'a pagar',    t: 'A pagar · pago manual, requiere acción tuya',                     col: '#a32d2d' },
+    revisar:    { ic: '⚠️', lbl: 'revisar',    t: 'Revisar · domiciliado con giro vencido sin cubrir (posible devolución/bote)', col: '#b45309' }
+  };
   cont.innerHTML = barra + '<table style="width:100%;font-size:12.5px;border-collapse:collapse">' +
     '<tr style="color:var(--texto-suave);text-align:left"><th style="padding:4px;width:14px"></th><th>Vence</th><th>Proveedor</th><th>Factura</th><th style="text-align:right">Importe</th><th></th></tr>' +
     vis.map(p => {
       const vencido = p.estado !== 'pagada' && p.vencimiento && p.vencimiento < hoy;
       const venc = fechaES2(p.vencimiento) + (p.fuente_venc === 'estimado' ? ' <span title="Vencimiento estimado (fecha+30); revísalo con ✎" style="color:#c96a10;font-weight:700">~</span>' : '');
-      const metodo = p.domiciliado ? '<span title="Domiciliado: te lo cargan automáticamente" style="color:#0e7490;font-weight:700;font-size:11px">⚡ auto</span>' : '<span title="Pago manual: lo lanzas tú" style="color:#b45309;font-weight:700;font-size:11px">✋ manual</span>';
-      const pip = '<span title="' + p.estado + '" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + (colEstado[p.estado] || '#999') + '"></span>';
+      const cm = calMeta[p.cal] || calMeta[p.estado === 'pagada' ? 'pagada' : 'a_pagar'];
+      const metodo = '<span title="' + cm.t + '" style="color:' + cm.col + ';font-weight:700;font-size:11px">' + cm.ic + ' ' + cm.lbl + '</span>';
+      const pip = '<span title="' + (p.cal || p.estado) + '" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + cm.col + '"></span>';
       const impTxt = p.estado === 'pagada' ? '<span style="color:#1b7a3d">' + bkFmt(p.total) + ' ✓</span>' : (p.estado === 'parcial' ? bkFmt(p.pendiente) + ' <span style="color:#c96a10;font-size:10.5px">de ' + bkFmt(p.total) + '</span>' : bkFmt(p.pendiente));
       const re = encodeURIComponent(p.ruta || '');
       return '<tr style="border-top:1px solid var(--borde)' + (vencido ? ';background:#fdeeee' : '') + (p.estado === 'pagada' ? ';opacity:.55' : '') + '">' +

@@ -62,6 +62,17 @@
   .modal .row{ display:flex; justify-content:space-between; gap:10px; font-size:14px; padding:7px 0; border-bottom:1px solid var(--line); }
   .modal .row small{ color:var(--mut); }
   .note{ background:#f0f9ff; border:1px solid #bae6fd; color:#075985; border-radius:10px; padding:10px 12px; font-size:13px; margin-top:12px; }
+  .vnav{ display:flex; gap:8px; margin:4px 0 14px; }
+  .hcard{ background:#fff; border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:10px; }
+  .hhead{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+  .hname{ font-weight:700; font-size:15px; }
+  .hsub{ font-size:12px; color:var(--mut); margin-top:2px; }
+  .htot{ font-weight:700; white-space:nowrap; }
+  .st{ display:inline-flex; gap:3px; align-items:center; border-radius:6px; padding:2px 8px; font-size:11px; font-weight:600; margin:6px 5px 0 0; }
+  .st.on{ background:#dcfce7; color:#166534; } .st.off{ background:#f1f5f9; color:#94a3b8; }
+  .hbtns{ display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+  .hbtns .btn{ padding:6px 11px; font-size:12px; }
+  .hbar{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
   @media(max-width:520px){ .ln{ grid-template-columns: 1fr 70px 46px 28px; } }
 </style>
 </head>
@@ -78,13 +89,20 @@
 </header>
 
 <div class="wrap">
-  <div class="toolbar">
-    <button class="btn gho" id="bAll">✓ Marcar todas</button>
-    <button class="btn gho" id="bNone">▢ Desmarcar</button>
-    <button class="btn gho" id="bProp">↺ Solo propuestas</button>
-    <span class="muted" id="diasInfo"></span>
+  <div class="vnav">
+    <button class="btn pri" id="navProp">📝 Propuesta</button>
+    <button class="btn gho" id="navHist">📋 Histórico</button>
   </div>
-  <div id="list"><div class="loading">Cargando propuesta…</div></div>
+  <div id="propView">
+    <div class="toolbar">
+      <button class="btn gho" id="bAll">✓ Marcar todas</button>
+      <button class="btn gho" id="bNone">▢ Desmarcar</button>
+      <button class="btn gho" id="bProp">↺ Solo propuestas</button>
+      <span class="muted" id="diasInfo"></span>
+    </div>
+    <div id="list"><div class="loading">Cargando propuesta…</div></div>
+  </div>
+  <div id="histView" style="display:none"><div class="loading">Cargando histórico…</div></div>
 </div>
 
 <div class="foot">
@@ -224,36 +242,147 @@ $('#bNone').onclick = ()=>{ PROPS.forEach(p=>p.sel=false); render(); };
 $('#bProp').onclick = ()=>{ PROPS.forEach(p=>p.sel=p.propon!==undefined?p.propon:!p.aviso); render(); };
 $('#mes').onchange = cargar;
 
+function selPayload(){
+  return PROPS.filter(p=>p.sel && p.lineas.length).map(p=>({
+    cliente:p.cliente, cif:p.cif, customer_id:p.customer_id, centro:p.centro,
+    forma_pago_id:p.forma_pago_id, mes_destino:MESDEST, total:Number(propTotal(p).toFixed(2)),
+    lineas:p.lineas.map(l=>({saleformat:l.saleformat, pid:l.pid, nombre:l.nombre, precio:l.precio,
+                             cantidad:l.cantidad, vatid:l.vatid, vatrate:l.vatrate, nota:l.nota}))
+  }));
+}
 $('#bEmit').onclick = ()=>{
-  const sel = PROPS.filter(p=>p.sel && p.lineas.length);
+  const sel = selPayload();
   if(!sel.length){ alert('No hay cuotas seleccionadas.'); return; }
-  const tot = sel.reduce((s,p)=>s+propTotal(p),0);
+  const tot = sel.reduce((s,p)=>s+p.total,0);
   let rows = sel.map(p=>'<div class="row"><span>'+esc(p.cliente)+(p.centro?' · <small>'+esc(p.centro)+'</small>':'')
-      +' <small>('+FORMAS[p.forma_pago_id]+')</small></span><span>'+eur(propTotal(p))+'</span></div>').join('');
-  $('#mbox').innerHTML = '<h3>Revisar emisión</h3>'
-    + '<div class="muted">'+sel.length+' facturas de cuota · serie F · '+nombreMes(MESDEST)+'</div>'
-    + '<div style="margin-top:10px">'+rows+'</div>'
+      +' <small>('+FORMAS[p.forma_pago_id]+')</small></span><span>'+eur(p.total)+'</span></div>').join('');
+  $('#mbox').innerHTML = '<h3>Emitir facturas</h3>'
+    + '<div class="muted">'+sel.length+' facturas · serie F · '+nombreMes(MESDEST)+'</div>'
+    + '<div style="margin-top:10px;max-height:42vh;overflow:auto">'+rows+'</div>'
     + '<div class="row" style="border:0;font-weight:700"><span>TOTAL</span><span>'+eur(tot)+'</span></div>'
-    + '<div class="note">La emisión real en Ágora (serie F numerada por Ágora, vía el canal del TPV) es el <b>último paso</b> que estamos terminando. '
-    + 'De momento esta pantalla deja la propuesta lista y revisada. Pulsa <b>Copiar</b> para guardar la selección.</div>'
+    + '<div class="note">⚠️ Se emitirán facturas <b>fiscales reales</b> en Ágora, numeradas por Ágora. No se pueden borrar.</div>'
     + '<div class="toolbar" style="margin-top:14px;justify-content:flex-end">'
-    +   '<button class="btn sec" onclick="cerrarModal()">Cerrar</button>'
-    +   '<button class="btn pri" onclick="copiarSel()">Copiar propuesta</button>'
+    +   '<button class="btn sec" onclick="cerrarModal()">Cancelar</button>'
+    +   '<button class="btn pri" id="bEmitGo">Emitir '+sel.length+' · '+eur(tot)+'</button>'
     + '</div>';
   $('#mbg').style.display='flex';
+  $('#bEmitGo').onclick = ()=>emitirReal(sel);
 };
-function cerrarModal(){ $('#mbg').style.display='none'; }
-function copiarSel(){
-  const sel = PROPS.filter(p=>p.sel && p.lineas.length).map(p=>({
-    cliente:p.cliente, cif:p.cif, customer_id:p.customer_id, centro:p.centro, forma_pago_id:p.forma_pago_id,
-    mes_destino:MESDEST, total:Number(propTotal(p).toFixed(2)),
-    lineas:p.lineas.map(l=>({pid:l.pid, nombre:l.nombre, precio:l.precio, cantidad:l.cantidad, nota:l.nota}))
-  }));
-  const txt = JSON.stringify(sel,null,2);
-  navigator.clipboard.writeText(txt).then(()=>{ alert('Propuesta copiada ('+sel.length+' facturas).'); },
-    ()=>{ alert('No se pudo copiar.'); });
+async function emitirReal(sel){
+  const btn = $('#bEmitGo'); if(btn){ btn.disabled=true; btn.textContent='Emitiendo…'; }
+  try{
+    const r = await fetch(API+'/facturacion/emitir',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({confirmar:true, cuotas:sel})}).then(r=>r.json());
+    const det = (r.resultados||[]).map(x=>'<div class="row"><span>'+(x.ok?'✅ ':'❌ ')+esc(x.cliente||'')
+      +(x.centro?' · '+esc(x.centro):'')+'</span><span>'+(x.ok?(x.serie+'-'+x.numero):esc((x.error||'').slice(0,42)))+'</span></div>').join('');
+    $('#mbox').innerHTML='<h3>Resultado</h3><div class="muted">Emitidas '+(r.emitidas||0)+' · fallidas '+(r.fallidas||0)+'</div>'
+      +'<div style="margin-top:10px;max-height:52vh;overflow:auto">'+det+'</div>'
+      +'<div class="toolbar" style="margin-top:14px;justify-content:flex-end">'
+      +'<button class="btn pri" onclick="cerrarModal();switchView(\'hist\')">Ver histórico →</button></div>';
+  }catch(e){
+    $('#mbox').innerHTML='<h3>Error</h3><div class="note">'+esc(e.message)+'</div>'
+      +'<div class="toolbar" style="justify-content:flex-end"><button class="btn sec" onclick="cerrarModal()">Cerrar</button></div>';
+  }
 }
+function cerrarModal(){ $('#mbg').style.display='none'; }
 $('#mbg').onclick = e=>{ if(e.target===$('#mbg')) cerrarModal(); };
+
+// ── Histórico ──
+let HIST=[];
+function switchView(v){
+  const prop = v!=='hist';
+  $('#propView').style.display = prop?'':'none';
+  $('#histView').style.display = prop?'none':'';
+  $('#navProp').className='btn '+(prop?'pri':'gho');
+  $('#navHist').className='btn '+(prop?'gho':'pri');
+  document.querySelector('.foot').style.display = prop?'flex':'none';
+  if(!prop) cargarHist();
+}
+$('#navProp').onclick=()=>switchView('prop');
+$('#navHist').onclick=()=>switchView('hist');
+async function cargarHist(){
+  $('#histView').innerHTML='<div class="loading">Cargando histórico…</div>';
+  try{
+    const j = await fetch(API+'/facturacion/historico?nocache='+Date.now()).then(r=>r.json());
+    HIST = j.facturas||[]; renderHist(j);
+  }catch(e){ $('#histView').innerHTML='<div class="loading">Error: '+esc(e.message)+'</div>'; }
+}
+function renderHist(j){
+  if(!HIST.length){ $('#histView').innerHTML='<div class="loading">Aún no hay facturas emitidas desde el panel.</div>'; return; }
+  const domic = HIST.filter(f=>f.forma_pago_id==8 && !f.remesada);
+  const pend = HIST.filter(f=>!f.email_enviado);
+  let bar='<div class="hbar"><span class="pill" style="background:#0f1f5c;color:#fff"><b>'+j.n+'</b> facturas · '+eur(j.total)+'</span>';
+  if(pend.length) bar+='<button class="btn pri" id="bMailAll">✉️ Enviar todas pendientes ('+pend.length+')</button>';
+  if(domic.length) bar+='<button class="btn pri" id="bRemesa">🏦 Generar remesa ('+domic.length+')</button>';
+  bar+='</div>';
+  $('#histView').innerHTML = bar + HIST.map(hcard).join('');
+  const br=$('#bRemesa'); if(br) br.onclick=generarRemesa;
+  const bm=$('#bMailAll'); if(bm) bm.onclick=enviarTodas;
+}
+async function enviarTodas(){
+  const pend = HIST.filter(f=>!f.email_enviado);
+  if(!pend.length){ alert('No hay pendientes de enviar.'); return; }
+  if(!confirm('Enviar por email las '+pend.length+' facturas pendientes? (se manda el PDF a cada cliente)')) return;
+  const bm=$('#bMailAll'); if(bm){ bm.disabled=true; bm.textContent='Enviando…'; }
+  try{
+    const r = await fetch(API+'/facturacion/email_lote',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({})}).then(r=>r.json());
+    let msg = '✅ Enviadas: '+r.n_enviadas;
+    if((r.sin_email||[]).length){ msg += '\n\n⚠️ Sin email ('+r.sin_email.length+') — ponlo a mano con ✉️:\n'
+      + r.sin_email.map(x=>'· '+x.ref+' '+x.cliente).join('\n'); }
+    if((r.errores||[]).length){ msg += '\n\n❌ Errores:\n'+r.errores.map(x=>'· '+x.ref+': '+x.error).join('\n'); }
+    alert(msg);
+    cargarHist();
+  }catch(e){ alert('Error: '+e.message); cargarHist(); }
+}
+function hcard(f){
+  const em=f.email_enviado, re=f.remesada, co=f.cobrada;
+  const fp=f.forma_pago_id==8?'Recibo':'Transferencia';
+  return '<div class="hcard"><div class="hhead"><div style="min-width:0">'
+    +'<div class="hname">'+esc(f.serie+'-'+f.numero)+' · '+esc(f.cliente)+'</div>'
+    +'<div class="hsub">'+(f.centro?esc(f.centro)+' · ':'')+(f.fecha||'').slice(0,10)+' · '+fp+'</div>'
+    +'<div><span class="st '+(em?'on':'off')+'">📧 '+(em?'enviada':'sin enviar')+'</span>'
+    +(f.forma_pago_id==8?'<span class="st '+(re?'on':'off')+'">🏦 '+(re?'remesada':'sin remesar')+'</span>':'')
+    +'<span class="st '+(co?'on':'off')+'">✅ '+(co?'cobrada':'pendiente')+'</span></div></div>'
+    +'<div class="htot">'+eur(f.total)+'</div></div>'
+    +'<div class="hbtns"><a class="btn gho" href="'+API+'/facturacion/factura_pdf?id='+f.id+'" target="_blank">👁 PDF</a>'
+    +'<button class="btn pri" onclick="emailDe('+f.id+')">✉️ '+(em?'reenviar':'enviar')+'</button></div></div>';
+}
+async function emailDe(id){
+  const f = HIST.find(x=>x.id===id); if(!f) return;
+  const para = prompt('Email del cliente para '+f.serie+'-'+f.numero+' ('+f.cliente+'):', f.email_to||'');
+  if(!para) return;
+  try{
+    const r = await fetch(API+'/facturacion/email',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:id, para:para})}).then(r=>r.json());
+    if(r.ok){
+      // recuerda el email del cliente para los próximos envíos en lote
+      fetch(API+'/clientes/email',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({cliente:f.cliente, email:para})}).catch(()=>{});
+      alert('Enviada '+r.ref+' a '+r.para); cargarHist();
+    } else alert('Error: '+(r.error||''));
+  }catch(e){ alert('Error: '+e.message); }
+}
+async function generarRemesa(){
+  const domic = HIST.filter(f=>f.forma_pago_id==8 && !f.remesada);
+  if(!domic.length){ alert('No hay domiciliadas pendientes.'); return; }
+  if(!confirm('Generar remesa SEPA de '+domic.length+' recibos ('+eur(domic.reduce((s,f)=>s+f.total,0))+')?')) return;
+  const recibos = domic.map(f=>({cliente:f.cliente, nif:f.cif, importe:f.total, facturas:[f.serie+'-'+f.numero]}));
+  try{
+    const r = await fetch(API+'/remesa/generar',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({banco:'Sabadell', confirmar:1, recibos:recibos})}).then(r=>r.json());
+    if(!r.ok){ alert('Error: '+(r.error||'')); return; }
+    if(r.contenido_b64){ const a=document.createElement('a');
+      a.href='data:text/plain;base64,'+r.contenido_b64; a.download=r.fichero||'remesa.txt'; a.click(); }
+    const okNifs = new Set((r.recibos_ok||[]).map(x=>(x.nif||'').toUpperCase()));
+    for(const f of domic){ if(okNifs.has((f.cif||'').toUpperCase())){
+      await fetch(API+'/facturacion/historico/marcar',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({id:f.id, campo:'remesada', valor:new Date().toISOString().slice(0,19)})}); } }
+    const faltan=(r.faltan_mandato||[]).length;
+    alert('Remesa: '+r.n+' recibos · '+eur(r.total)+(faltan?(' · '+faltan+' sin mandato (fuera)'):'')+'. Súbela al banco por "Enviar ficheros".');
+    cargarHist();
+  }catch(e){ alert('Error: '+e.message); }
+}
 
 // init
 $('#mes').value = mesActual();

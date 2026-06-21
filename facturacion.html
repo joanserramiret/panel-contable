@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1f5c">
+<title>Facturador de cuotas · JS-Tech</title>
+<style>
+  :root{ --azul:#0f1f5c; --azul2:#1e1b4b; --acc:#3b82f6; --ok:#16a34a; --amb:#d97706;
+         --bg:#f1f5f9; --card:#fff; --line:#e2e8f0; --txt:#0f172a; --mut:#64748b; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+        background:var(--bg); color:var(--txt); -webkit-text-size-adjust:100%; }
+  header{ background:linear-gradient(135deg,var(--azul),var(--azul2)); color:#fff; padding:18px 20px 16px; }
+  header h1{ margin:0 0 2px; font-size:20px; font-weight:700; letter-spacing:-.2px; }
+  header .sub{ font-size:13px; opacity:.85; }
+  .bar{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:14px; }
+  .bar label{ font-size:12px; opacity:.85; margin-right:4px; }
+  .bar input[type=month]{ font-size:15px; padding:7px 10px; border-radius:9px; border:0; }
+  .pill{ background:rgba(255,255,255,.15); border-radius:20px; padding:6px 13px; font-size:13px; font-weight:600; }
+  .pill b{ font-size:15px; }
+  .wrap{ max-width:920px; margin:0 auto; padding:16px 14px 120px; }
+  .toolbar{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:6px 0 14px; }
+  .btn{ border:0; border-radius:10px; padding:9px 15px; font-size:14px; font-weight:600; cursor:pointer; }
+  .btn.sec{ background:#e2e8f0; color:#334155; }
+  .btn.gho{ background:#fff; color:#334155; border:1px solid var(--line); }
+  .btn.pri{ background:var(--acc); color:#fff; }
+  .muted{ color:var(--mut); font-size:13px; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; margin:0 0 12px;
+         padding:13px 14px; box-shadow:0 1px 2px rgba(0,0,0,.03); }
+  .card.off{ opacity:.55; }
+  .card.aviso{ border-color:#fcd34d; background:#fffdf5; }
+  .chead{ display:flex; align-items:flex-start; gap:10px; }
+  .chk{ width:22px; height:22px; flex:0 0 auto; margin-top:2px; }
+  .cinfo{ flex:1; min-width:0; }
+  .cname{ font-weight:700; font-size:15px; line-height:1.25; }
+  .cmeta{ font-size:12px; color:var(--mut); margin-top:2px; display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; }
+  .badge{ background:#eef2ff; color:#4338ca; border-radius:6px; padding:1px 7px; font-weight:600; font-size:11px; }
+  .badge.centro{ background:#ecfeff; color:#0e7490; }
+  .badge.av{ background:#fef3c7; color:#92400e; }
+  .ctot{ font-weight:700; font-size:16px; white-space:nowrap; }
+  .lines{ margin-top:10px; border-top:1px dashed var(--line); padding-top:9px; }
+  .ln{ display:grid; grid-template-columns: 1fr 78px 52px 30px; gap:6px; align-items:center; margin-bottom:6px; }
+  .ln select,.ln input{ font-size:13px; padding:6px 7px; border:1px solid var(--line); border-radius:8px; width:100%; background:#fff; }
+  .ln .num{ text-align:right; }
+  .ln .del{ background:#fef2f2; color:#dc2626; border:0; border-radius:8px; font-size:15px; cursor:pointer; padding:6px 0; }
+  .ln2{ display:grid; grid-template-columns: 1fr; gap:6px; margin:-2px 0 8px; }
+  .ln2 input{ font-size:12px; padding:5px 8px; border:1px solid var(--line); border-radius:8px; width:100%; color:#475569; }
+  .crow{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px; }
+  .crow select{ font-size:13px; padding:6px 9px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  .addln{ background:#f0f9ff; color:#0369a1; border:1px dashed #7dd3fc; border-radius:8px; padding:6px 11px; font-size:12px; font-weight:600; cursor:pointer; }
+  .grp{ font-size:12px; font-weight:700; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; margin:16px 4px 8px; }
+  .foot{ position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--line);
+         padding:11px 14px calc(11px + env(safe-area-inset-bottom)); display:flex; gap:10px; align-items:center; justify-content:space-between; }
+  .foot .info{ font-size:13px; color:var(--mut); }
+  .foot .info b{ color:var(--txt); font-size:15px; }
+  .foot .btn.pri{ padding:11px 18px; font-size:15px; }
+  .loading{ text-align:center; padding:50px 20px; color:var(--mut); }
+  .modal-bg{ position:fixed; inset:0; background:rgba(15,23,42,.55); display:none; align-items:center; justify-content:center; padding:18px; z-index:50; }
+  .modal{ background:#fff; border-radius:16px; max-width:560px; width:100%; max-height:84vh; overflow:auto; padding:18px 18px 16px; }
+  .modal h3{ margin:0 0 4px; }
+  .modal .row{ display:flex; justify-content:space-between; gap:10px; font-size:14px; padding:7px 0; border-bottom:1px solid var(--line); }
+  .modal .row small{ color:var(--mut); }
+  .note{ background:#f0f9ff; border:1px solid #bae6fd; color:#075985; border-radius:10px; padding:10px 12px; font-size:13px; margin-top:12px; }
+  @media(max-width:520px){ .ln{ grid-template-columns: 1fr 70px 46px 28px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧾 Facturador de cuotas</h1>
+  <div class="sub">Propone las cuotas Ágora del mes clonando el mes anterior · solo cuotas (el material lo facturas tú)</div>
+  <div class="bar">
+    <span><label>Clonar del mes</label><input type="month" id="mes"></span>
+    <span class="pill" id="pillDest">Propuesta para —</span>
+    <span class="pill" id="pillN">—</span>
+    <span class="pill" id="pillTot">—</span>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="toolbar">
+    <button class="btn gho" id="bAll">✓ Marcar todas</button>
+    <button class="btn gho" id="bNone">▢ Desmarcar</button>
+    <button class="btn gho" id="bProp">↺ Solo propuestas</button>
+    <span class="muted" id="diasInfo"></span>
+  </div>
+  <div id="list"><div class="loading">Cargando propuesta…</div></div>
+</div>
+
+<div class="foot">
+  <div class="info" id="footInfo">—</div>
+  <button class="btn pri" id="bEmit">Emitir seleccionadas</button>
+</div>
+
+<div class="modal-bg" id="mbg">
+  <div class="modal" id="mbox"></div>
+</div>
+
+<script>
+const API = 'https://panel.js-tech.es';
+const FORMAS = { 8:'Recibo (domiciliado)', 4:'Transferencia' };
+let CAT = [];          // catálogo de artículos de cuota
+let PROPS = [];        // propuestas (estado editable)
+let MESDEST = '';
+
+const $ = s => document.querySelector(s);
+const eur = n => (n||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+const esc = s => (s==null?'':(''+s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function mesActual(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function mesMas1(m){ let [y,mo]=m.split('-').map(Number); mo++; if(mo>12){mo=1;y++;} return y+'-'+String(mo).padStart(2,'0'); }
+function nombreMes(m){ const [y,mo]=m.split('-').map(Number);
+  return ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][mo-1]+' '+y; }
+
+// IVA por VatId (Ágora JST: 4 = 21%)
+function ivaDe(vatid){ return 0.21; }
+function lineaTotal(l){ return (Number(l.precio)||0) * (Number(l.cantidad)||0) * (1+ivaDe(l.vatid)); }
+function propTotal(p){ return p.lineas.reduce((s,l)=>s+lineaTotal(l),0); }
+
+async function cargar(){
+  const mes = $('#mes').value || mesActual();
+  MESDEST = mesMas1(mes);
+  $('#pillDest').textContent = 'Propuesta para '+nombreMes(MESDEST);
+  $('#list').innerHTML = '<div class="loading">Cargando propuesta de '+nombreMes(mes)+'…</div>';
+  try{
+    const r = await fetch(API+'/facturacion/propuesta?mes='+mes+'&nocache='+Date.now());
+    const j = await r.json();
+    if(!j.ok){ $('#list').innerHTML='<div class="loading">Error: '+esc(j.error||'')+'</div>'; return; }
+    CAT = j.catalogo||[];
+    PROPS = (j.cuotas||[]).map((c,i)=>({
+      _id:i, sel: !!c.propon, cliente:c.cliente, cif:c.cif, customer_id:c.customer_id,
+      centro:c.centro, centro_raw:c.centro_raw, aviso:c.aviso, atrasada:c.atrasada, dup:c.dup,
+      origen:c.serie+'-'+c.numero, forma_pago_id: c.forma_pago_id||8,
+      lineas: c.lineas.map(l=>({pid:l.pid, nombre:l.nombre, precio:l.precio, cantidad:l.cantidad, vatid:l.vatid, nota:l.nota||''}))
+    }));
+    $('#diasInfo').textContent = (j.dias_con_datos||[]).length+' días con datos · origen '+nombreMes(mes);
+    render();
+  }catch(e){ $('#list').innerHTML='<div class="loading">No se pudo cargar ('+esc(e.message)+')</div>'; }
+}
+
+function catOptions(pid){
+  return CAT.map(a=>'<option value="'+a.pid+'"'+(a.pid===pid?' selected':'')+'>'+esc(a.nombre)+' ('+a.pid+')</option>').join('');
+}
+
+function render(){
+  if(!PROPS.length){ $('#list').innerHTML='<div class="loading">No hay cuotas en ese mes.</div>'; resumen(); return; }
+  let html=''; let lastCli=null;
+  PROPS.forEach(p=>{
+    if(p.cliente!==lastCli){ html += '<div class="grp">'+esc(p.cliente)+(p.cif?' · '+esc(p.cif):'')+'</div>'; lastCli=p.cliente; }
+    html += card(p);
+  });
+  $('#list').innerHTML = html;
+  resumen();
+}
+
+function card(p){
+  const tot = propTotal(p);
+  const cls = 'card'+(p.sel?'':' off')+(p.aviso?' aviso':'');
+  let lns='';
+  p.lineas.forEach((l,li)=>{
+    lns += '<div class="ln">'
+      + '<select onchange="setArt('+p._id+','+li+',this.value)">'+catOptions(l.pid)+'</select>'
+      + '<input class="num" type="number" step="0.01" value="'+(l.precio)+'" onchange="setVal('+p._id+','+li+',\'precio\',this.value)">'
+      + '<input class="num" type="number" step="1" value="'+(l.cantidad)+'" onchange="setVal('+p._id+','+li+',\'cantidad\',this.value)">'
+      + '<button class="del" onclick="delLn('+p._id+','+li+')" title="Quitar línea">🗑</button>'
+      + '</div>'
+      + '<div class="ln2"><input type="text" placeholder="Nota del centro (en esta línea)" value="'+esc(l.nota)+'" onchange="setVal('+p._id+','+li+',\'nota\',this.value)"></div>';
+  });
+  return '<div class="'+cls+'" id="card'+p._id+'">'
+    + '<div class="chead">'
+    +   '<input class="chk" type="checkbox" '+(p.sel?'checked':'')+' onchange="toggle('+p._id+',this.checked)">'
+    +   '<div class="cinfo">'
+    +     '<div class="cname">'+esc(p.cliente)+'</div>'
+    +     '<div class="cmeta">'
+    +        (p.centro?'<span class="badge centro">📍 '+esc(p.centro)+'</span>':'')
+    +        '<span class="badge">clona '+esc(p.origen)+'</span>'
+    +        (p.aviso?'<span class="badge av">⚠ '+esc(p.aviso)+'</span>':'')
+    +     '</div>'
+    +   '</div>'
+    +   '<div class="ctot" id="tot'+p._id+'">'+eur(tot)+'</div>'
+    + '</div>'
+    + '<div class="lines">'+lns
+    +   '<div class="crow">'
+    +     '<button class="addln" onclick="addLn('+p._id+')">+ Añadir línea</button>'
+    +     '<span class="muted">Forma de pago:</span>'
+    +     '<select onchange="setPago('+p._id+',this.value)">'
+    +        '<option value="8"'+(p.forma_pago_id==8?' selected':'')+'>Recibo (domiciliado)</option>'
+    +        '<option value="4"'+(p.forma_pago_id==4?' selected':'')+'>Transferencia</option>'
+    +     '</select>'
+    +   '</div>'
+    + '</div>'
+    + '</div>';
+}
+
+function recalcCard(id){
+  const p = PROPS.find(x=>x._id===id); if(!p) return;
+  const el = document.getElementById('tot'+id); if(el) el.textContent = eur(propTotal(p));
+  resumen();
+}
+function setArt(id,li,pid){ const p=PROPS.find(x=>x._id===id); pid=Number(pid);
+  const a=CAT.find(c=>c.pid===pid); p.lineas[li].pid=pid; if(a)p.lineas[li].nombre=a.nombre; recalcCard(id); }
+function setVal(id,li,k,v){ const p=PROPS.find(x=>x._id===id);
+  p.lineas[li][k] = (k==='nota')? v : (Number(v)||0); recalcCard(id); }
+function delLn(id,li){ const p=PROPS.find(x=>x._id===id); p.lineas.splice(li,1);
+  if(!p.lineas.length){ p.sel=false; } render(); }
+function addLn(id){ const p=PROPS.find(x=>x._id===id); const a=CAT[0];
+  p.lineas.push({pid:a.pid, nombre:a.nombre, precio:0, cantidad:1, vatid:4, nota:''}); render(); }
+function setPago(id,v){ const p=PROPS.find(x=>x._id===id); p.forma_pago_id=Number(v); }
+function toggle(id,on){ const p=PROPS.find(x=>x._id===id); p.sel=on;
+  const c=document.getElementById('card'+id); if(c)c.classList.toggle('off',!on); resumen(); }
+
+function resumen(){
+  const sel = PROPS.filter(p=>p.sel && p.lineas.length);
+  const tot = sel.reduce((s,p)=>s+propTotal(p),0);
+  const nAv = PROPS.filter(p=>p.aviso).length;
+  $('#pillN').innerHTML = '<b>'+PROPS.length+'</b> cuotas'+(nAv?' · '+nAv+' ⚠':'');
+  $('#pillTot').innerHTML = '<b>'+eur(tot)+'</b>';
+  $('#footInfo').innerHTML = 'Seleccionadas <b>'+sel.length+'</b> · <b>'+eur(tot)+'</b>';
+  $('#bEmit').textContent = 'Emitir seleccionadas ('+sel.length+')';
+}
+
+$('#bAll').onclick = ()=>{ PROPS.forEach(p=>p.sel=!!p.lineas.length); render(); };
+$('#bNone').onclick = ()=>{ PROPS.forEach(p=>p.sel=false); render(); };
+$('#bProp').onclick = ()=>{ PROPS.forEach(p=>p.sel=p.propon!==undefined?p.propon:!p.aviso); render(); };
+$('#mes').onchange = cargar;
+
+$('#bEmit').onclick = ()=>{
+  const sel = PROPS.filter(p=>p.sel && p.lineas.length);
+  if(!sel.length){ alert('No hay cuotas seleccionadas.'); return; }
+  const tot = sel.reduce((s,p)=>s+propTotal(p),0);
+  let rows = sel.map(p=>'<div class="row"><span>'+esc(p.cliente)+(p.centro?' · <small>'+esc(p.centro)+'</small>':'')
+      +' <small>('+FORMAS[p.forma_pago_id]+')</small></span><span>'+eur(propTotal(p))+'</span></div>').join('');
+  $('#mbox').innerHTML = '<h3>Revisar emisión</h3>'
+    + '<div class="muted">'+sel.length+' facturas de cuota · serie F · '+nombreMes(MESDEST)+'</div>'
+    + '<div style="margin-top:10px">'+rows+'</div>'
+    + '<div class="row" style="border:0;font-weight:700"><span>TOTAL</span><span>'+eur(tot)+'</span></div>'
+    + '<div class="note">La emisión real en Ágora (serie F numerada por Ágora, vía el canal del TPV) es el <b>último paso</b> que estamos terminando. '
+    + 'De momento esta pantalla deja la propuesta lista y revisada. Pulsa <b>Copiar</b> para guardar la selección.</div>'
+    + '<div class="toolbar" style="margin-top:14px;justify-content:flex-end">'
+    +   '<button class="btn sec" onclick="cerrarModal()">Cerrar</button>'
+    +   '<button class="btn pri" onclick="copiarSel()">Copiar propuesta</button>'
+    + '</div>';
+  $('#mbg').style.display='flex';
+};
+function cerrarModal(){ $('#mbg').style.display='none'; }
+function copiarSel(){
+  const sel = PROPS.filter(p=>p.sel && p.lineas.length).map(p=>({
+    cliente:p.cliente, cif:p.cif, customer_id:p.customer_id, centro:p.centro, forma_pago_id:p.forma_pago_id,
+    mes_destino:MESDEST, total:Number(propTotal(p).toFixed(2)),
+    lineas:p.lineas.map(l=>({pid:l.pid, nombre:l.nombre, precio:l.precio, cantidad:l.cantidad, nota:l.nota}))
+  }));
+  const txt = JSON.stringify(sel,null,2);
+  navigator.clipboard.writeText(txt).then(()=>{ alert('Propuesta copiada ('+sel.length+' facturas).'); },
+    ()=>{ alert('No se pudo copiar.'); });
+}
+$('#mbg').onclick = e=>{ if(e.target===$('#mbg')) cerrarModal(); };
+
+// init
+$('#mes').value = mesActual();
+cargar();
+</script>
+</body>
+</html>

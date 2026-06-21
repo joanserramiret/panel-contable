@@ -314,10 +314,21 @@ function renderHist(j){
   let bar='<div class="hbar"><span class="pill" style="background:#0f1f5c;color:#fff"><b>'+j.n+'</b> facturas · '+eur(j.total)+'</span>';
   if(pend.length) bar+='<button class="btn pri" id="bMailAll">✉️ Enviar todas pendientes ('+pend.length+')</button>';
   if(domic.length) bar+='<button class="btn pri" id="bRemesa">🏦 Generar remesa ('+domic.length+')</button>';
+  bar+='<button class="btn gho" id="bCobros">🔄 Actualizar cobros</button>';
   bar+='</div>';
   $('#histView').innerHTML = bar + HIST.map(hcard).join('');
   const br=$('#bRemesa'); if(br) br.onclick=generarRemesa;
   const bm=$('#bMailAll'); if(bm) bm.onclick=enviarTodas;
+  const bc=$('#bCobros'); if(bc) bc.onclick=actualizarCobros;
+}
+async function actualizarCobros(){
+  const bc=$('#bCobros'); if(bc){ bc.disabled=true; bc.textContent='Cruzando banco…'; }
+  try{
+    const r = await fetch(API+'/facturacion/refrescar_cobros',{method:'POST'}).then(r=>r.json());
+    alert(r.n? ('✅ '+r.n+' factura(s) marcadas cobradas:\n'+r.cobradas.map(x=>'· '+x.ref+' '+x.cliente+' ('+eur(x.importe)+')').join('\n'))
+              : 'No se ha encontrado ningún cobro nuevo en el banco que cuadre.');
+    cargarHist();
+  }catch(e){ alert('Error: '+e.message); cargarHist(); }
 }
 async function enviarTodas(){
   const pend = HIST.filter(f=>!f.email_enviado);

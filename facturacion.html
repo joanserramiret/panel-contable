@@ -106,6 +106,7 @@
     <button class="btn pri" id="navProp">📝 Propuesta</button>
     <button class="btn gho" id="navHist">📋 Histórico</button>
     <button class="btn gho" id="navRem">🏦 Pendientes de remesar</button>
+    <button class="btn gho" id="navAlb">🔧 Albaranes a facturar</button>
   </div>
   <div id="propView">
     <div class="toolbar">
@@ -121,6 +122,7 @@
   </div>
   <div id="histView" style="display:none"><div class="loading">Cargando histórico…</div></div>
   <div id="remView" style="display:none"><div class="loading">Cargando pendientes…</div></div>
+  <div id="albView" style="display:none"><div class="loading">Cargando albaranes…</div></div>
 </div>
 
 <div class="foot">
@@ -180,11 +182,19 @@ function catOptions(pid){
 
 function render(){
   if(!PROPS.length){ $('#list').innerHTML='<div class="loading">No hay cuotas en ese mes.</div>'; resumen(); return; }
-  let html=''; let lastCli=null;
+  let html=''; let lastCli=null; let folded=[];
+  const flush=()=>{ if(folded.length){
+    html += '<div style="margin:2px 0 10px;padding:6px 12px;background:#fffbeb;border:1px dashed #fcd34d;border-radius:8px;font-size:11.5px;color:#92400e">'
+      + '↩ '+folded.length+' apartada(s), mes ya cubierto — no se proponen: '
+      + folded.map(f=>esc(f.centro_raw||'cuota')+' ('+eur(propTotal(f))+')').join(' · ')+'</div>';
+    folded=[]; } };
   PROPS.forEach(p=>{
-    if(p.cliente!==lastCli){ html += '<div class="grp">'+esc(p.cliente)+(p.cif?' · '+esc(p.cif):'')+'</div>'; lastCli=p.cliente; }
-    html += card(p);
+    if(p.cliente!==lastCli){ flush(); html += '<div class="grp">'+esc(p.cliente)+(p.cif?' · '+esc(p.cif):'')+'</div>'; lastCli=p.cliente; }
+    // Apartada por etiqueta de mes (puesta al día, no duplicado) → se pliega en una nota, no como tarjeta
+    if(p.aviso && p.atrasada && !p.dup){ folded.push(p); }
+    else html += card(p);
   });
+  flush();
   $('#list').innerHTML = html;
   resumen();
 }
@@ -571,16 +581,77 @@ function switchView(v){
   $('#propView').style.display = v==='prop'?'':'none';
   $('#histView').style.display = v==='hist'?'':'none';
   $('#remView').style.display  = v==='rem' ?'':'none';
+  $('#albView').style.display  = v==='alb' ?'':'none';
   $('#navProp').className='btn '+(v==='prop'?'pri':'gho');
   $('#navHist').className='btn '+(v==='hist'?'pri':'gho');
   $('#navRem').className ='btn '+(v==='rem' ?'pri':'gho');
+  $('#navAlb').className ='btn '+(v==='alb' ?'pri':'gho');
   document.querySelector('.foot').style.display = v==='prop'?'flex':'none';
   if(v==='hist') cargarHist();
   if(v==='rem')  cargarRem();
+  if(v==='alb')  cargarAlb();
 }
 $('#navProp').onclick=()=>switchView('prop');
 $('#navHist').onclick=()=>switchView('hist');
 $('#navRem').onclick =()=>switchView('rem');
+$('#navAlb').onclick =()=>switchView('alb');
+
+// ── Albaranes APP a facturar (averías) → emite F real por /bus/ ──
+let ALB=[];
+async function cargarAlb(){
+  $('#albView').innerHTML='<div class="loading">Cargando albaranes…</div>';
+  try{
+    const j=await fetch(API+'/facturacion/albaranes?anio='+(new Date().getFullYear())+'&_='+Date.now()).then(r=>r.json());
+    ALB=(j.albaranes||[]).map((a,i)=>Object.assign({_id:i},a));
+    renderAlb();
+  }catch(e){ $('#albView').innerHTML='<div class="note">Error: '+esc(e.message)+'</div>'; }
+}
+function albTotal(a){ return (a.lineas||[]).reduce((s,l)=>s+(Number(l.precio)||0)*(Number(l.cantidad)||0)*(1+(l.vatrate==null?0.21:Number(l.vatrate))),0); }
+function renderAlb(){
+  if(!ALB.length){ $('#albView').innerHTML='<div class="hbar"><span class="pill" style="background:#dcfce7;color:#166534">✓ No hay albaranes APP pendientes de facturar</span></div>'; return; }
+  let h='<div class="hbar"><span class="pill" style="background:#0f1f5c;color:#fff">🔧 Albaranes a facturar</span>'
+    +'<span class="pill" style="background:#fff7ed;color:#9a3412"><b>'+ALB.length+'</b> pendientes</span>'
+    +'<span class="muted" style="font-size:11.5px">Cada albarán → factura F real. Revisa las líneas; los productos que no existan se crean en Ágora.</span></div>';
+  h+=ALB.map(a=>{
+    const lns=(a.lineas||[]).map((l,li)=>'<div class="ln">'
+      + '<input type="text" style="flex:1" value="'+esc(l.nombre||'')+'" placeholder="Producto / servicio" onchange="albSet('+a._id+','+li+',\'nombre\',this.value)">'
+      + '<input class="num" type="number" step="0.01" value="'+(l.precio)+'" title="Precio neto" onchange="albSet('+a._id+','+li+',\'precio\',this.value)">'
+      + '<input class="num" type="number" step="1" value="'+(l.cantidad)+'" title="Cantidad" onchange="albSet('+a._id+','+li+',\'cantidad\',this.value)">'
+      + '<button class="del" onclick="albDel('+a._id+','+li+')" title="Quitar línea">🗑</button>'
+      + (l.saleformat?'':'<span class="badge" style="background:#fef3c7;color:#92400e" title="Se creará en Ágora al emitir">nuevo</span>')
+      + '</div>').join('');
+    const fp4=a.forma_pago_id==4?' selected':'', fp8=a.forma_pago_id==8?' selected':'';
+    return '<div class="hcard"><div class="hhead"><div style="min-width:0">'
+      + '<div class="hname" style="font-size:14px">'+esc(a.ref)+' · '+esc(a.cliente||'')+'</div>'
+      + '<div class="hsub">'+(a.cif?esc(a.cif)+' · ':'')+(a.fecha||'')+'</div></div>'
+      + '<div class="htot" id="albtot'+a._id+'">'+eur(albTotal(a))+'</div></div>'
+      + '<div class="lines">'+lns
+      + '<div class="crow"><button class="addln" onclick="albAddLn('+a._id+')">+ Añadir línea</button>'
+      + '<span class="muted">Forma de pago:</span>'
+      + '<select onchange="albSetPago('+a._id+',this.value)"><option value="8"'+fp8+'>Recibo (domiciliado)</option><option value="4"'+fp4+'>Transferencia</option></select>'
+      + '<button class="btn pri" style="margin-left:auto" onclick="emitirAlb('+a._id+')">🧾 Emitir factura F</button>'
+      + '</div></div></div>';
+  }).join('');
+  $('#albView').innerHTML=h;
+}
+function albSet(id,li,k,v){ const a=ALB.find(x=>x._id===id); if(!a)return; a.lineas[li][k]=(k==='nombre')?v:(Number(v)||0);
+  const el=document.getElementById('albtot'+id); if(el) el.textContent=eur(albTotal(a)); }
+function albDel(id,li){ const a=ALB.find(x=>x._id===id); a.lineas.splice(li,1); renderAlb(); }
+function albAddLn(id){ const a=ALB.find(x=>x._id===id); a.lineas.push({saleformat:null,pid:null,nombre:'',precio:0,cantidad:1,vatid:4,vatrate:0.21,nota:''}); renderAlb(); }
+function albSetPago(id,v){ const a=ALB.find(x=>x._id===id); a.forma_pago_id=Number(v); }
+async function emitirAlb(id){
+  const a=ALB.find(x=>x._id===id); if(!a)return;
+  if(!(a.lineas||[]).length){ alert('El albarán no tiene líneas.'); return; }
+  if(!confirm('Emitir FACTURA F real de '+a.ref+' a '+a.cliente+'\n\nTotal '+eur(albTotal(a))+' · '+(a.forma_pago_id==8?'Recibo domiciliado':'Transferencia')+'\n\nEs una factura fiscal real. ¿Continuar?')) return;
+  const body={confirmar:true, ref:a.ref, customer_id:a.customer_id, cif:a.cif, cliente:a.cliente,
+    forma_pago_id:a.forma_pago_id, lineas:a.lineas};
+  try{
+    const r=await fetch(API+'/facturacion/albaran_emitir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(!r.ok){ alert('❌ Error: '+(r.error||'')); return; }
+    alert('✅ Emitida '+r.serie+'-'+r.numero+' · '+eur(r.total)+(r.creados&&r.creados.length?('\n\nArtículos creados en Ágora: '+r.creados.map(c=>c.nombre).join(', ')):'')+'\n\nLa tienes en el Histórico.');
+    cargarAlb();
+  }catch(e){ alert('Error: '+e.message); }
+}
 // ── Pendientes de remesar (sniffer global de Ágora: cuotas + material domiciliados) ──
 let REM=null;
 async function cargarRem(){

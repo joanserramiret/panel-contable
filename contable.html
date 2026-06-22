@@ -6171,8 +6171,8 @@ async function bkRemesasRealizadas() {
       '<span style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:6px;padding:2px 8px;font-weight:700;font-size:11px;white-space:nowrap">⏳ PDTE LIQUIDAR</span>' +
       '<span style="font-weight:700">' + bkFmt(r.importe) + '</span>' +
       '<span style="color:#666">· ' + (r.fecha || '¿?') + ' · ' + (r.banco || '') + ' · ' + (r.n_recibos || 0) + ' recibos</span>' +
-      '<span style="color:#999;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.facturas || []).join(' ') + '">' +
-        (r.facturas || []).slice(0, 8).map(f => 'F-' + f).join(' ') + ((r.facturas || []).length > 8 ? ' …' : '') + '</span>' +
+      '<span style="color:#999;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.facturas || []).map(f => 'F-' + String(f).replace(/\D/g, '')).join(' ') + '">' +
+        (r.facturas || []).slice(0, 8).map(f => 'F-' + String(f).replace(/\D/g, '')).join(' ') + ((r.facturas || []).length > 8 ? ' …' : '') + '</span>' +
       '<span style="color:#bb9;font-size:11px" title="Fichero(s) de remesa">' + (r.ficheros || []).join(', ') + '</span>' +
     '</div>').join('');
   el.innerHTML =

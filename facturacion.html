@@ -666,8 +666,7 @@ async function enviarTodas(){
   for(const f of pend){
     const ref=f.serie+'-'+f.numero;
     if(bm) bm.textContent='Enviando '+ref+'…';
-    let para=(f.email_to||'').trim();
-    if(!para){ try{ const e=await fetch(API+'/clientes/email?cliente='+encodeURIComponent(f.cliente||'')+'&cif='+encodeURIComponent(f.cif||'')).then(r=>r.json()); para=(e.email||'').trim(); }catch(_){} }
+    let para=(await emailAgora(f)) || (f.email_to||'').trim();
     if(!para||para.indexOf('@')<0){ sinEmail.push(ref+' · '+f.cliente); continue; }
     try{ await _mandarFactura(f, para); enviadas++; }
     catch(e){ errores.push(ref+': '+e.message); }
@@ -707,10 +706,21 @@ async function _mandarFactura(f, para){
   fetch(API+'/clientes/email',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({cliente:f.cliente, email:para})}).catch(()=>{});
 }
+async function emailAgora(f){
+  // SIEMPRE el email de la ficha de Ágora. /clientes/email lee el Ágora JST con escaneo flexible de campos.
+  try{
+    const j = await fetch(API+'/clientes/email?cif='+encodeURIComponent(f.cif||'')+'&cliente='+encodeURIComponent(f.cliente||'')+'&t='+Date.now()).then(r=>r.json());
+    if(j && j.email && j.email.indexOf('@')>=0) return j.email.trim();
+  }catch(e){}
+  try{ await cargarClientes(); const c=(CLIENTES||[]).find(x=>x.id===f.customer_id); if(c&&c.email&&c.email.indexOf('@')>=0) return c.email.trim(); }catch(e){}
+  return '';
+}
 async function emailDe(id){
   const f = HIST.find(x=>x.id===id); if(!f) return;
   const ref = f.serie+'-'+f.numero;
-  const para = prompt('Email del cliente para '+ref+' ('+f.cliente+'):', f.email_to||'');
+  const ag = await emailAgora(f);
+  const sugerido = ag || f.email_to || '';
+  const para = prompt('Email para '+ref+' ('+f.cliente+'):'+(ag?'\n(tomado de la ficha de Ágora)':'\n⚠️ Este cliente NO tiene email en Ágora — ponlo en su ficha y saldrá solo.'), sugerido);
   if(!para) return;
   try{ await _mandarFactura(f, para); alert('✅ Enviada '+ref+' a '+para); cargarHist(); }
   catch(e){ alert('Error: '+e.message); }

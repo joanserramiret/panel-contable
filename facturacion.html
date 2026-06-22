@@ -105,6 +105,7 @@
   <div class="vnav">
     <button class="btn pri" id="navProp">📝 Propuesta</button>
     <button class="btn gho" id="navHist">📋 Histórico</button>
+    <button class="btn gho" id="navRem">🏦 Pendientes de remesar</button>
   </div>
   <div id="propView">
     <div class="toolbar">
@@ -118,6 +119,7 @@
     <div id="list"><div class="loading">Cargando propuesta…</div></div>
   </div>
   <div id="histView" style="display:none"><div class="loading">Cargando histórico…</div></div>
+  <div id="remView" style="display:none"><div class="loading">Cargando pendientes…</div></div>
 </div>
 
 <div class="foot">
@@ -499,16 +501,65 @@ async function verPDF(id){
 // ── Histórico ──
 let HIST=[];
 function switchView(v){
-  const prop = v!=='hist';
-  $('#propView').style.display = prop?'':'none';
-  $('#histView').style.display = prop?'none':'';
-  $('#navProp').className='btn '+(prop?'pri':'gho');
-  $('#navHist').className='btn '+(prop?'gho':'pri');
-  document.querySelector('.foot').style.display = prop?'flex':'none';
-  if(!prop) cargarHist();
+  $('#propView').style.display = v==='prop'?'':'none';
+  $('#histView').style.display = v==='hist'?'':'none';
+  $('#remView').style.display  = v==='rem' ?'':'none';
+  $('#navProp').className='btn '+(v==='prop'?'pri':'gho');
+  $('#navHist').className='btn '+(v==='hist'?'pri':'gho');
+  $('#navRem').className ='btn '+(v==='rem' ?'pri':'gho');
+  document.querySelector('.foot').style.display = v==='prop'?'flex':'none';
+  if(v==='hist') cargarHist();
+  if(v==='rem')  cargarRem();
 }
 $('#navProp').onclick=()=>switchView('prop');
 $('#navHist').onclick=()=>switchView('hist');
+$('#navRem').onclick =()=>switchView('rem');
+// ── Pendientes de remesar (sniffer global de Ágora: cuotas + material domiciliados) ──
+let REM=null;
+async function cargarRem(){
+  const mes = $('#mes').value || mesActual();
+  $('#remView').innerHTML='<div class="loading">Leyendo domiciliadas de '+nombreMes(mes)+' y cruzando remesas…</div>';
+  try{
+    const j = await fetch(API+'/facturacion/pendientes_remesar?mes='+mes+'&nocache='+Date.now()).then(r=>r.json());
+    if(!j.ok){ $('#remView').innerHTML='<div class="loading">Error: '+esc(j.error||'')+'</div>'; return; }
+    REM=j; renderRem();
+  }catch(e){ $('#remView').innerHTML='<div class="loading">Error: '+esc(e.message)+'</div>'; }
+}
+function tipoBadge(t){ const c=t==='material'?'#fef3c7;color:#92400e':(t==='mixta'?'#e0e7ff;color:#3730a3':'#ecfeff;color:#0e7490'); return '<span class="badge" style="background:'+c+'">'+t+'</span>'; }
+function remFila(f, girada){
+  return '<div class="hcard" style="padding:9px 12px"><div class="hhead"><div style="min-width:0">'
+    +'<div class="hname" style="font-size:14px">'+esc(f.serie+'-'+f.numero)+' · '+esc(f.cliente)+'</div>'
+    +'<div class="hsub">'+(f.cif?esc(f.cif)+' · ':'')+(f.fecha||'')+' '+tipoBadge(f.tipo)+(girada?' <span class="st on">🏦 '+esc((f.remesa||'').slice(0,22))+'…</span>':'')+'</div>'
+    +'</div><div class="htot">'+eur(f.total)+'</div></div></div>';
+}
+function renderRem(){
+  const j=REM; const mes=$('#mes').value||mesActual();
+  let h='<div class="hbar"><span class="pill" style="background:#0f1f5c;color:#fff">'+nombreMes(mes)+'</span>'
+    +'<span class="pill" style="background:#fef2f2;color:#991b1b"><b>'+j.n_pendientes+'</b> pendientes · '+eur(j.total_pendiente)+'</span>'
+    +'<span class="pill" style="background:#dcfce7;color:#166534"><b>'+j.n_remesadas+'</b> remesadas · '+eur(j.total_remesado)+'</span>';
+  if(j.n_pendientes) h+='<button class="btn pri" id="bRemGlobal">🏦 Generar remesa de las '+j.n_pendientes+' pendientes</button>';
+  h+='</div>';
+  h+='<div class="grp">⏳ Pendientes de girar ('+j.n_pendientes+')</div>';
+  h+= j.pendientes.length? j.pendientes.map(f=>remFila(f,false)).join('') : '<div class="muted" style="padding:6px 4px">Ninguna pendiente. 👍</div>';
+  if(j.remesadas.length){ h+='<div class="grp">🏦 Ya remesadas ('+j.n_remesadas+')</div>'+j.remesadas.map(f=>remFila(f,true)).join(''); }
+  $('#remView').innerHTML=h;
+  const b=$('#bRemGlobal'); if(b) b.onclick=generarRemesaGlobal;
+}
+async function generarRemesaGlobal(){
+  const pend=(REM&&REM.pendientes)||[]; if(!pend.length){ alert('No hay pendientes.'); return; }
+  if(!confirm('Generar remesa SEPA de '+pend.length+' facturas domiciliadas pendientes ('+eur(REM.total_pendiente)+')?\n\nCuotas + material, todo lo que sea Recibo y no esté girado.')) return;
+  const recibos = pend.map(f=>({cliente:f.cliente, nif:f.cif, importe:f.total, facturas:[f.serie+'-'+f.numero]}));
+  const b=$('#bRemGlobal'); if(b){ b.disabled=true; b.textContent='Generando…'; }
+  try{
+    const r=await fetch(API+'/remesa/generar',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({banco:'Sabadell', confirmar:1, recibos:recibos})}).then(r=>r.json());
+    if(!r.ok){ alert('Error: '+(r.error||'')); cargarRem(); return; }
+    if(r.contenido_b64){ const a=document.createElement('a'); a.href='data:text/plain;base64,'+r.contenido_b64; a.download=r.fichero||'remesa.txt'; a.click(); }
+    const faltan=(r.faltan_mandato||[]).length;
+    alert('✅ Remesa generada: '+r.n+' recibos · '+eur(r.total)+(faltan?('\n\n⚠️ '+faltan+' sin mandato SEPA (fuera) — necesitan firmar el mandato primero.'):'')+'\n\nSúbela al banco por "Enviar ficheros". Al recargar, las giradas saldrán como remesadas.');
+    cargarRem();
+  }catch(e){ alert('Error: '+e.message); cargarRem(); }
+}
 async function cargarHist(){
   $('#histView').innerHTML='<div class="loading">Cargando histórico…</div>';
   try{

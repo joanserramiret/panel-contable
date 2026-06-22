@@ -605,12 +605,35 @@ function renderRem(){
     +'<span class="pill" style="background:#fef2f2;color:#991b1b"><b>'+j.n_pendientes+'</b> pendientes · '+eur(j.total_pendiente)+'</span>'
     +'<span class="pill" style="background:#dcfce7;color:#166534"><b>'+j.n_remesadas+'</b> remesadas · '+eur(j.total_remesado)+'</span>';
   if(j.n_pendientes) h+='<button class="btn pri" id="bRemGlobal">🏦 Generar remesa de las '+j.n_pendientes+' pendientes</button>';
+  h+='<button class="btn gho" id="bDobleGiro">🔍 Auditar doble giro</button>';
   h+='</div>';
   h+='<div class="grp">⏳ Pendientes de girar ('+j.n_pendientes+')</div>';
   h+= j.pendientes.length? j.pendientes.map(f=>remFila(f,false)).join('') : '<div class="muted" style="padding:6px 4px">Ninguna pendiente. 👍</div>';
   if(j.remesadas.length){ h+='<div class="grp">🏦 Ya remesadas ('+j.n_remesadas+')</div>'+j.remesadas.map(f=>remFila(f,true)).join(''); }
   $('#remView').innerHTML=h;
   const b=$('#bRemGlobal'); if(b) b.onclick=generarRemesaGlobal;
+  const bd=$('#bDobleGiro'); if(bd) bd.onclick=auditarDobleGiro;
+}
+async function auditarDobleGiro(){
+  $('#mbox').innerHTML='<h3>🔍 Auditar doble giro</h3><div class="loading">Cruzando todas las remesas del año con el banco…</div>';
+  $('#mbg').style.display='flex';
+  try{
+    const j=await fetch(API+'/facturacion/auditar_doble_giro?anio='+(new Date().getFullYear())+'&t='+Date.now()).then(r=>r.json());
+    if(!j.ok){ $('#mbox').innerHTML='<h3>Error</h3><div class="note">'+esc(j.error||'')+'</div><div class="toolbar" style="justify-content:flex-end"><button class="btn sec" onclick="cerrarModal()">Cerrar</button></div>'; return; }
+    if(!j.n_doble_giro){ $('#mbox').innerHTML='<h3>🔍 Auditar doble giro</h3><div class="note" style="background:#ecfdf5;border-color:#a7f3d0;color:#065f46">Ninguna factura aparece en 2 remesas distintas. 👍 Sin riesgo de doble cobro.</div><div class="toolbar" style="justify-content:flex-end"><button class="btn pri" onclick="cerrarModal()">Cerrar</button></div>'; return; }
+    const cards=j.dobles.map(d=>{
+      const rem=d.remesas.map(r=>'<div class="row"><span><small>'+r.fecha+' · '+esc(r.banco)+' · '+eur(r.importe)+'</small></span><span><small style="color:#94a3b8">'+esc((r.ficheros||[])[0]||'')+'</small></span></div>').join('');
+      const amber=!d.devolver && !d.veces_cobrada;
+      return '<div class="hcard" style="'+(d.devolver?'border-color:#fca5a5;background:#fef2f2':(amber?'border-color:#fde68a;background:#fffbeb':''))+'">'
+        +'<div class="hname">'+esc(d.factura)+' · '+esc(d.cliente||'')+'</div>'
+        +'<div style="margin:6px 0;font-weight:700;color:'+(d.devolver?'#dc2626':(amber?'#92400e':'#166534'))+'">'
+        +(d.devolver?'⚠️ DOBLE COBRO — devolver':('en '+d.n_remesas+' remesas · cobrada '+d.veces_cobrada+'×'+(amber?' — aún sin cobrar, quítala de una':' (ok, neto 1)')))+'</div>'+rem+'</div>';
+    }).join('');
+    const tot=j.n_devolver?'<div class="note" style="background:#fef2f2;border-color:#fca5a5;color:#991b1b"><b>'+j.n_devolver+'</b> con doble cobro real → DEVOLVER.</div>':'<div class="note" style="background:#ecfdf5;border-color:#a7f3d0;color:#065f46">Ninguna cobrada dos veces. 👍 (las ámbar están en vuelo: quita la factura de una remesa antes de que el banco la procese).</div>';
+    $('#mbox').innerHTML='<h3>🔍 Doble giro · '+j.anio+'</h3><div class="muted">'+j.n_doble_giro+' factura(s) en 2+ remesas distintas. Rojo = cobrada 2× (devolver) · ámbar = en vuelo sin cobrar · verde = devuelta/re-girada (neto 1).</div>'
+      +'<div style="margin-top:10px;max-height:55vh;overflow:auto">'+cards+'</div>'+tot
+      +'<div class="toolbar" style="margin-top:12px;justify-content:flex-end"><button class="btn pri" onclick="cerrarModal()">Cerrar</button></div>';
+  }catch(e){ $('#mbox').innerHTML='<h3>Error</h3><div class="note">'+esc(e.message)+'</div><div class="toolbar" style="justify-content:flex-end"><button class="btn sec" onclick="cerrarModal()">Cerrar</button></div>'; }
 }
 async function generarRemesaGlobal(){
   const pend=(REM&&REM.pendientes)||[]; if(!pend.length){ alert('No hay pendientes.'); return; }

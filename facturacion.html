@@ -593,26 +593,31 @@ async function cargarRem(){
   }catch(e){ $('#remView').innerHTML='<div class="loading">Error: '+esc(e.message)+'</div>'; }
 }
 function tipoBadge(t){ const c=t==='material'?'#fef3c7;color:#92400e':(t==='mixta'?'#e0e7ff;color:#3730a3':'#ecfeff;color:#0e7490'); return '<span class="badge" style="background:'+c+'">'+t+'</span>'; }
-function remFila(f, girada){
+function remFila(f){
+  let badge='';
+  if(f.estado==='cobrada') badge=' <span class="st" style="background:#dcfce7;color:#166534">✅ cobrada</span>';
+  else if(f.estado==='girada') badge=' <span class="st" style="background:#fef3c7;color:#92400e">📤 pdte recibir'+(f.remesa?' · '+esc((f.remesa||'').slice(0,18)):'')+'</span>';
   return '<div class="hcard" style="padding:9px 12px"><div class="hhead"><div style="min-width:0">'
     +'<div class="hname" style="font-size:14px">'+esc(f.serie+'-'+f.numero)+' · '+esc(f.cliente)+'</div>'
-    +'<div class="hsub">'+(f.cif?esc(f.cif)+' · ':'')+(f.fecha||'')+' '+tipoBadge(f.tipo)+(girada?' <span class="st on">🏦 '+esc((f.remesa||'').slice(0,22))+'…</span>':'')+'</div>'
+    +'<div class="hsub">'+(f.cif?esc(f.cif)+' · ':'')+(f.fecha||'')+' '+tipoBadge(f.tipo)+badge+'</div>'
     +'</div><div class="htot">'+eur(f.total)+'</div></div></div>';
 }
 function renderRem(){
   const j=REM; const mes=$('#mes').value||mesActual();
   let h='<div class="hbar"><span class="pill" style="background:#0f1f5c;color:#fff">'+nombreMes(mes)+'</span>'
-    +'<span class="pill" style="background:#fef2f2;color:#991b1b"><b>'+j.n_pendientes+'</b> pendientes · '+eur(j.total_pendiente)+'</span>'
-    +'<span class="pill" style="background:#dcfce7;color:#166534"><b>'+j.n_remesadas+'</b> remesadas · '+eur(j.total_remesado)+'</span>';
+    +'<span class="pill" style="background:#fef2f2;color:#991b1b"><b>'+j.n_pendientes+'</b> ⏳ a remesar · '+eur(j.total_pendiente)+'</span>'
+    +'<span class="pill" style="background:#fffbeb;color:#92400e"><b>'+(j.n_giradas||0)+'</b> 📤 pdte recibir · '+eur(j.total_girado||0)+'</span>'
+    +'<span class="pill" style="background:#dcfce7;color:#166534"><b>'+(j.n_cobradas||0)+'</b> ✅ cobradas · '+eur(j.total_cobrado||0)+'</span>';
   if(j.n_pendientes) h+='<button class="btn pri" id="bRemGlobal">🏦 Generar remesa de las '+j.n_pendientes+' pendientes</button>';
-  h+='<button class="btn gho" id="bDobleGiro">🔍 Auditar doble giro</button>';
   h+='</div>';
-  h+='<div class="grp">⏳ Pendientes de girar ('+j.n_pendientes+')</div>';
-  h+= j.pendientes.length? j.pendientes.map(f=>remFila(f,false)).join('') : '<div class="muted" style="padding:6px 4px">Ninguna pendiente. 👍</div>';
-  if(j.remesadas.length){ h+='<div class="grp">🏦 Ya remesadas ('+j.n_remesadas+')</div>'+j.remesadas.map(f=>remFila(f,true)).join(''); }
+  h+='<div class="grp">⏳ Pendientes de remesar ('+j.n_pendientes+') <span style="font-weight:400;color:var(--muted)">— por girar</span></div>';
+  h+= j.pendientes.length? j.pendientes.map(f=>remFila(f)).join('') : '<div class="muted" style="padding:6px 4px">Ninguna pendiente. 👍</div>';
+  h+='<div class="grp">📤 Giradas · pendientes de recibir ('+(j.n_giradas||0)+') <span style="font-weight:400;color:var(--muted)">— en una remesa enviada, el banco aún no ha ingresado</span></div>';
+  h+= (j.giradas&&j.giradas.length)? j.giradas.map(f=>remFila(f)).join('') : '<div class="muted" style="padding:6px 4px">Ninguna en vuelo.</div>';
+  h+='<div class="grp">✅ Cobradas ('+(j.n_cobradas||0)+') <span style="font-weight:400;color:var(--muted)">— el banco ya ingresó</span></div>';
+  h+= (j.cobradas&&j.cobradas.length)? j.cobradas.map(f=>remFila(f)).join('') : '<div class="muted" style="padding:6px 4px">—</div>';
   $('#remView').innerHTML=h;
   const b=$('#bRemGlobal'); if(b) b.onclick=generarRemesaGlobal;
-  const bd=$('#bDobleGiro'); if(bd) bd.onclick=auditarDobleGiro;
 }
 async function auditarDobleGiro(){
   $('#mbox').innerHTML='<h3>🔍 Auditar doble giro</h3><div class="loading">Cruzando todas las remesas del año con el banco…</div>';
@@ -622,15 +627,21 @@ async function auditarDobleGiro(){
     if(!j.ok){ $('#mbox').innerHTML='<h3>Error</h3><div class="note">'+esc(j.error||'')+'</div><div class="toolbar" style="justify-content:flex-end"><button class="btn sec" onclick="cerrarModal()">Cerrar</button></div>'; return; }
     if(!j.n_doble_giro){ $('#mbox').innerHTML='<h3>🔍 Auditar doble giro</h3><div class="note" style="background:#ecfdf5;border-color:#a7f3d0;color:#065f46">Ninguna factura aparece en 2 remesas distintas. 👍 Sin riesgo de doble cobro.</div><div class="toolbar" style="justify-content:flex-end"><button class="btn pri" onclick="cerrarModal()">Cerrar</button></div>'; return; }
     const cards=j.dobles.map(d=>{
-      const rem=d.remesas.map(r=>'<div class="row"><span><small>'+r.fecha+' · '+esc(r.banco)+' · '+eur(r.importe)+'</small></span><span><small style="color:#94a3b8">'+esc((r.ficheros||[])[0]||'')+'</small></span></div>').join('');
+      const rem=d.remesas.map(r=>'<div class="row"><span><small>📋 '+r.fecha+' · '+esc(r.banco)+' · '+eur(r.importe)+'</small></span><span><small style="color:#94a3b8">'+esc((r.ficheros||[])[0]||'')+'</small></span></div>').join('');
+      const trail=(d.apariciones||[]).map(a=>'<div class="row"><span><small>🏦 '+a.fecha+' · '+(a.situacion==='devuelto'?'<b style="color:#dc2626">↩ devuelto</b>':'<b style="color:#166534">✅ abonado</b>')+'</small></span><span><small style="color:#94a3b8">'+esc((a.concepto||'').slice(0,38))+'</small></span></div>').join('')
+        || '<div class="row"><small style="color:#94a3b8">Sin movimientos conciliados en el banco todavía.</small></div>';
       const amber=!d.devolver && !d.veces_cobrada;
+      const verdict = d.devolver ? '⚠️ DOBLE COBRO — cobrada '+d.veces_cobrada+'× sin devolución → DEVOLVER'
+        : (amber ? '⏳ en '+d.n_remesas+' remesas · aún sin cobrar — quítala de una'
+                 : '✅ '+d.n_abonos+' abono(s) − '+d.n_devoluciones+' devolución(es) = neto '+d.veces_cobrada+' · re-giro normal (devuelta y re-girada)');
       return '<div class="hcard" style="'+(d.devolver?'border-color:#fca5a5;background:#fef2f2':(amber?'border-color:#fde68a;background:#fffbeb':''))+'">'
         +'<div class="hname">'+esc(d.factura)+' · '+esc(d.cliente||'')+'</div>'
-        +'<div style="margin:6px 0;font-weight:700;color:'+(d.devolver?'#dc2626':(amber?'#92400e':'#166534'))+'">'
-        +(d.devolver?'⚠️ DOBLE COBRO — devolver':('en '+d.n_remesas+' remesas · cobrada '+d.veces_cobrada+'×'+(amber?' — aún sin cobrar, quítala de una':' (ok, neto 1)')))+'</div>'+rem+'</div>';
+        +'<div style="margin:6px 0;font-weight:700;color:'+(d.devolver?'#dc2626':(amber?'#92400e':'#166534'))+'">'+verdict+'</div>'
+        +'<div style="font-size:11px;color:#64748b;margin:4px 0 2px">En remesas:</div>'+rem
+        +'<div style="font-size:11px;color:#64748b;margin:6px 0 2px">Rastro en el banco:</div>'+trail+'</div>';
     }).join('');
-    const tot=j.n_devolver?'<div class="note" style="background:#fef2f2;border-color:#fca5a5;color:#991b1b"><b>'+j.n_devolver+'</b> con doble cobro real → DEVOLVER.</div>':'<div class="note" style="background:#ecfdf5;border-color:#a7f3d0;color:#065f46">Ninguna cobrada dos veces. 👍 (las ámbar están en vuelo: quita la factura de una remesa antes de que el banco la procese).</div>';
-    $('#mbox').innerHTML='<h3>🔍 Doble giro · '+j.anio+'</h3><div class="muted">'+j.n_doble_giro+' factura(s) en 2+ remesas distintas. Rojo = cobrada 2× (devolver) · ámbar = en vuelo sin cobrar · verde = devuelta/re-girada (neto 1).</div>'
+    const tot=j.n_devolver?'<div class="note" style="background:#fef2f2;border-color:#fca5a5;color:#991b1b"><b>'+j.n_devolver+'</b> con doble cobro real → DEVOLVER.</div>':'<div class="note" style="background:#ecfdf5;border-color:#a7f3d0;color:#065f46">Ninguna cobrada dos veces. 👍 Cada una es una devuelta re-girada (neto 1) o un giro en vuelo aún sin cobrar.</div>';
+    $('#mbox').innerHTML='<h3>🔍 Doble giro · '+j.anio+'</h3><div class="muted">'+j.n_doble_giro+' factura(s) en 2+ remesas. Resta DEVOLUCIONES, no solo cargos: neto = abonos − devueltos. Rojo = neto ≥2 (devolver) · verde = devuelta+re-girada (neto 1) · ámbar = en vuelo.</div>'
       +'<div style="margin-top:10px;max-height:55vh;overflow:auto">'+cards+'</div>'+tot
       +'<div class="toolbar" style="margin-top:12px;justify-content:flex-end"><button class="btn pri" onclick="cerrarModal()">Cerrar</button></div>';
   }catch(e){ $('#mbox').innerHTML='<h3>Error</h3><div class="note">'+esc(e.message)+'</div><div class="toolbar" style="justify-content:flex-end"><button class="btn sec" onclick="cerrarModal()">Cerrar</button></div>'; }

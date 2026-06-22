@@ -2164,6 +2164,7 @@ function renderTablaFacturas() {
       '<td><div style="display:flex;gap:6px">' +
         (!esPagada && !anuladaT && t > 0 ? '<button onclick="conciliarDesdeFactura(' + i + ')" title="Buscar en el banco el cobro de esta factura y conciliarla" style="padding:5px 10px;background:#e87e1a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700">🔗</button>' : '') +
         '<button onclick="previsualizarFacturaC(' + i + ')" style="padding:5px 10px;background:var(--fondo);border:1.5px solid var(--borde);border-radius:5px;cursor:pointer;font-size:12px">🖨 Ver</button>' +
+        (t > 0 ? '<button onclick="enviarFacturaC(' + i + ')" title="Enviar la factura por email al cliente (PDF adjunto)" style="padding:5px 10px;background:#0F6E56;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:12px">✉️</button>' : '') +
         '<button onclick="descargarFactura(' + i + ')" style="padding:5px 10px;background:var(--azul);color:white;border:none;border-radius:5px;cursor:pointer;font-size:12px">⬇</button>' +
       '</div></td>' +
     '</tr>';
@@ -2200,6 +2201,23 @@ async function descargarFacturaObj(f) {
   } catch(e) {
     alert('Error al generar PDF: ' + e.message);
   }
+}
+
+// ✉️ Enviar una factura emitida por email al cliente (PDF idéntico al panel, vía /correo/enviar). Reusa el compose
+// del reclamador: resuelve el email por CIF (Ágora manda), tú revisas el destinatario y el texto, y envías.
+function enviarFacturaC(i){
+  const f = facturasFiltC[i];
+  if(!f){ return; }
+  const ref = f.Serie + '-' + f.Number;
+  const cli = f.Customer ? (f.Customer.BusinessName || f.Customer.FiscalName || '') : '';
+  const cif = f.Customer ? (f.Customer.Cif || '') : '';
+  const total = f.Totals ? f.Totals.GrossAmount : 0;
+  const eur = new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(total) + ' €';
+  window._plComposeFacs = [{ serie:f.Serie, numero:f.Number, fecha:(f.Date? f.Date.split('T')[0]:''), importe:total }];
+  const asunto = 'Factura ' + ref + ' — JS Technology Menorca SL';
+  const cuerpo = 'Hola ' + cli + ',\n\nAdjuntamos la factura ' + ref + ' por importe de ' + eur + '.\n\n' +
+    'Gracias por confiar en nosotros. Cualquier duda, aquí estamos.\n\nUn saludo,\nJS Technology Menorca SL\nNIF B57841140';
+  plCompose(cli, asunto, cuerpo, cif, '✉️ Enviar factura ' + ref + ' a ');
 }
 
 function previsualizarFacturaC(i) {
@@ -4922,14 +4940,15 @@ function plMail(cli, imp, tono){
   var ov=document.getElementById('pl-rec-ov'); if(ov) ov.remove();
   plCompose(cli, asunto, cuerpo);
 }
-async function plCompose(cli, asunto, cuerpo){
+async function plCompose(cli, asunto, cuerpo, cif, titulo){
   var ex=document.getElementById('pl-comp-ov'); if(ex) ex.remove();
   var email='', tel='';
-  try{ var j=await fetch(BRIDGE_URL_C+'/clientes/email?cliente='+encodeURIComponent(cli)+'&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();}); email=j.email||''; tel=j.tel||''; }catch(e){}
+  var q = cif ? ('cif='+encodeURIComponent(cif)) : ('cliente='+encodeURIComponent(cli));
+  try{ var j=await fetch(BRIDGE_URL_C+'/clientes/email?'+q+'&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();}); email=j.email||''; tel=j.tel||''; }catch(e){}
   var ov=document.createElement('div'); ov.id='pl-comp-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:10080;background:rgba(15,31,92,.55);display:flex;align-items:center;justify-content:center;padding:16px';
   ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:20px;max-width:580px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.32)">'+
-    '<div style="font-size:16px;font-weight:800;margin-bottom:10px">✉️ Reclamación a '+cli+'</div>'+
+    '<div style="font-size:16px;font-weight:800;margin-bottom:10px">'+(titulo||'✉️ Reclamación a ')+cli+'</div>'+
     '<div style="font-size:12px;color:#666;margin-bottom:6px">De: <b>info@js-tech.es</b></div>'+
     '<label style="font-size:12px;color:#666">Para (email del cliente)'+(email?' · sugerido':'')+':</label>'+
     '<input id="pl-comp-para" value="'+email.replace(/"/g,'&quot;')+'" placeholder="cliente@correo.com" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;margin:3px 0 8px;font-size:13px">'+

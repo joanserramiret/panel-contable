@@ -112,6 +112,7 @@
       <button class="btn gho" id="bAll">✓ Marcar todas</button>
       <button class="btn gho" id="bNone">▢ Desmarcar</button>
       <button class="btn gho" id="bProp">↺ Solo propuestas</button>
+      <button class="btn gho" id="bAudit">🔍 Auditar duplicados</button>
       <span class="muted" id="diasInfo"></span>
     </div>
     <div id="list"><div class="loading">Cargando propuesta…</div></div>
@@ -257,6 +258,28 @@ $('#bAll').onclick = ()=>{ PROPS.forEach(p=>p.sel=!!p.lineas.length); render(); 
 $('#bNone').onclick = ()=>{ PROPS.forEach(p=>p.sel=false); render(); };
 $('#bProp').onclick = ()=>{ PROPS.forEach(p=>p.sel=p.propon!==undefined?p.propon:!p.aviso); render(); };
 $('#mes').onchange = cargar;
+
+// ── Auditoría de duplicados (cobrados 2× → devolución) ──
+$('#bAudit').onclick = async ()=>{
+  const mes = $('#mes').value || mesActual();
+  $('#mbox').innerHTML='<h3>🔍 Auditar duplicados</h3><div class="loading">Cruzando remesas y banco de '+nombreMes(mes)+'…</div>';
+  $('#mbg').style.display='flex';
+  try{
+    const j = await fetch(API+'/facturacion/auditar_duplicados?mes='+mes+'&t='+Date.now()).then(r=>r.json());
+    if(!j.ok){ $('#mbox').innerHTML='<h3>Error</h3><div class="note">'+esc(j.error||'')+'</div><div class="toolbar" style="justify-content:flex-end"><button class="btn sec" onclick="cerrarModal()">Cerrar</button></div>'; return; }
+    if(!j.n){ $('#mbox').innerHTML='<h3>🔍 Auditar duplicados</h3><div class="note">No hay cuotas duplicadas (mismo cliente+importe) en '+nombreMes(mes)+'. 👍</div><div class="toolbar" style="justify-content:flex-end"><button class="btn pri" onclick="cerrarModal()">Cerrar</button></div>'; return; }
+    const cards = j.duplicados.map(d=>{
+      const dev = d.n_cobradas>=2;
+      const facs = d.facturas.map(f=>'<div class="row"><span>'+esc(f.ref)+' · <small>'+f.forma_pago+' · '+f.fecha+'</small></span><span>'+(f.cobrada?'✅ '+esc(f.cobrada):'⬜ sin cobro')+'</span></div>').join('');
+      return '<div class="hcard" style="'+(dev?'border-color:#fca5a5;background:#fef2f2':'')+'"><div class="hname">'+esc(d.cliente)+(d.centro?' · '+esc(d.centro):'')+' · '+eur(d.importe)+'</div>'
+        +'<div style="margin:6px 0;font-weight:700;color:'+(dev?'#dc2626':'#166534')+'">'+(dev?'⚠️ ':'✓ ')+esc(d.veredicto)+'</div>'+facs+'</div>';
+    }).join('');
+    const tot = j.total_devolver? '<div class="note" style="background:#fef2f2;border-color:#fca5a5;color:#991b1b">Total a devolver estimado: <b>'+eur(j.total_devolver)+'</b></div>':'';
+    $('#mbox').innerHTML='<h3>🔍 Auditoría de duplicados · '+nombreMes(mes)+'</h3><div class="muted">'+j.n+' grupo(s) con importe repetido. ✅=cobrada (remesa/banco), ⬜=sin cobro encontrado.</div>'
+      +'<div style="margin-top:10px;max-height:55vh;overflow:auto">'+cards+'</div>'+tot
+      +'<div class="toolbar" style="margin-top:12px;justify-content:flex-end"><button class="btn pri" onclick="cerrarModal()">Cerrar</button></div>';
+  }catch(e){ $('#mbox').innerHTML='<h3>Error</h3><div class="note">'+esc(e.message)+'</div><div class="toolbar" style="justify-content:flex-end"><button class="btn sec" onclick="cerrarModal()">Cerrar</button></div>'; }
+};
 
 // ── Añadir cuota a mano (cliente nuevo, p.ej. MIGO/Leomides con SEPA) ──
 let CLIENTES=null, manCounter=900000;

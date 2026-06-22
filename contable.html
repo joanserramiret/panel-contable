@@ -2715,12 +2715,15 @@ function actualizarCobros() {
   if (carteraDestinos === null) { carteraDestinos = {}; cargarCarteraDestinos().then(actualizarCobros); }
   // Guardarraíl pre-remesa: estado por factura (verde/regirar/ambar/rojo) para colorear PARA GIRAR
   if (window._cobGuard === undefined) { window._cobGuard = null; cargarCobGuard().then(actualizarCobros); }
+  // 📤 EN PROCESO: facturas que ya están en un .txt de remesa (giradas, esperando que el banco ingrese) → ni "girar"
+  // ni "perseguir". Se cargan una vez del backend (que reusa el lector unificado de remesas).
+  if (window._enRemesa === undefined) { window._enRemesa = null; cargarEnRemesa().then(actualizarCobros); }
 
   const buckets = { '0-30': [0, 0], '31-60': [0, 0], '61-90': [0, 0], '+90': [0, 0] };
   // DOS CARTERAS por método de pago (el ajuste manual prevalece):
   // 🧲 GIRAR = cobradas "por Recibo" en Ágora que no se negociaron → montar SEPA
   // 🏃 PERSEGUIR = impagos (recibos devueltos) y transferencias que no llegan → reclamar
-  const cols = { girar: {}, perseguir: {} };
+  const cols = { girar: {}, proceso: {}, perseguir: {} };
   carteraFacts = {};
   pendientes.forEach(f => {
     const t = f.Totals ? f.Totals.GrossAmount : 0;
@@ -2732,9 +2735,11 @@ function actualizarCobros() {
     const clave = bkNormClave(f.Serie + '-' + f.Number);
     const devuelta = !!(banco && banco.devueltas.has(clave));
     const recibo = (f.Payments || []).some(p => String(p.MethodName || '').toLowerCase().includes('recibo'));
-    let destino = carteraDestinos[clave] || (devuelta ? 'perseguir' : (recibo ? 'girar' : 'perseguir'));
-    if (destino === 'esperando') destino = 'girar';   // Cobros es 2 columnas; 'esperando' (ya girada, espera remesa) va al lado girar
-    if (!cols[destino]) destino = 'perseguir';          // cualquier valor inesperado → perseguir (a prueba de fallos)
+    const enRem = !!(window._enRemesa && window._enRemesa.has(clave));
+    let destino = carteraDestinos[clave];   // el ajuste manual manda
+    if (!destino) destino = devuelta ? 'perseguir' : (enRem ? 'proceso' : (recibo ? 'girar' : 'perseguir'));
+    if (destino === 'esperando') destino = 'proceso';   // 'esperando' (girada, espera remesa) = 📤 en proceso
+    if (!cols[destino]) destino = 'perseguir';          // valor inesperado → perseguir (a prueba de fallos)
     carteraFacts[clave] = { destino: destino };
     const g = cols[destino][cli] = cols[destino][cli] || { total: 0, maxDias: 0, facts: [], claves: [] };
     g.total += t;
@@ -2762,8 +2767,8 @@ function actualizarCobros() {
     const grupos = Object.entries(cols[destino]).sort((a, b) => b[1].total - a[1].total);
     const tot = grupos.reduce((s, [, g]) => s + g.total, 0);
     const nf = grupos.reduce((s, [, g]) => s + g.facts.length, 0);
-    const otro = destino === 'girar' ? 'perseguir' : 'girar';
-    const etqOtro = destino === 'girar' ? '🏃 a perseguir' : '🧲 a girar';
+    const otro = destino === 'perseguir' ? 'girar' : 'perseguir';
+    const etqOtro = otro === 'perseguir' ? '🏃 a perseguir' : '🧲 a girar';
     let _gb = '';
     if (destino === 'girar' && window._cobGuard) {
       const acc = { verde: [0, 0], regirar: [0, 0], ambar: [0, 0], rojo: [0, 0] };
@@ -2807,8 +2812,9 @@ function actualizarCobros() {
     }).join('');
     return h + '</div>';
   };
-  html += '<div class="cols-2">' +
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px">' +
     pintaColumna('girar', '🧲 PARA GIRAR (SEPA pendiente)', 'Cobradas "por Recibo" en Ágora sin negociar, o que el cliente pide re-girar — material para la próxima remesa.', '#1a7a3f') +
+    pintaColumna('proceso', '📤 EN PROCESO (en remesa, esperando cobro)', 'Ya están en una remesa girada — esperando que el banco ingrese. NO hay que perseguirlas; saldrán solas al conciliar el abono.', '#b45309') +
     pintaColumna('perseguir', '🏃 A PERSEGUIR (impagos y transferencias)', 'Recibos devueltos y transferencias que no llegan — a reclamar (✉ desde Facturas emitidas).', '#c0392b') +
     '</div>';
   el.innerHTML = html;
@@ -2854,6 +2860,16 @@ async function cargarCarteraDestinos() {
   } catch(e) { carteraDestinos = {}; }
 }
 
+// 📤 Facturas que ya están en un .txt de remesa (giradas, esperando ingreso) → set de claves para la columna "En proceso".
+async function cargarEnRemesa() {
+  try {
+    const j = await fetch(`${BRIDGE_URL_C}/contabilidad/clientes_pendientes?anio=2026&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
+    const s = new Set();
+    (j.facturas || []).forEach(f => { if (f.en_remesa) s.add(bkNormClave((f.serie || 'F') + '-' + f.numero)); });
+    window._enRemesa = s;
+  } catch(e) { window._enRemesa = new Set(); }
+}
+
 async function carteraMover(claves, destino) {
   try {
     await fetch(BRIDGE_URL_C + '/cartera/destino', {
@@ -2869,7 +2885,8 @@ async function carteraMover(claves, destino) {
 function carteraMoverUna(clave) {
   const f = carteraFacts[clave];
   if (!f) return;
-  carteraMover([clave], f.destino === 'girar' ? 'perseguir' : 'girar');
+  // 3 columnas: cualquiera que no sea 'perseguir' (girar / proceso) → perseguir; perseguir → girar.
+  carteraMover([clave], f.destino === 'perseguir' ? 'girar' : 'perseguir');
 }
 
 function carteraMoverGrupo(gi) {

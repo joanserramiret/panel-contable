@@ -918,6 +918,7 @@
           </span>
         </div>
         <div id="rem-buscar-res"></div>
+        <div id="bk-realizadas"></div>
         <div id="bk-remesas"><div style="color:var(--texto-suave);font-size:13px">Cargando remesas...</div></div>
       </div>
     </div>
@@ -6148,7 +6149,43 @@ const RE_REMESA = /REM\.|REMESA|RECIBOS|ADEUDOS/i;
 const RE_DEVOL = /DEVOL|DEVUELT|IMPAGAD|DEV\.?\s*RECIBO|RECIBO\s+DEV/i;
 let bkRemesasDatos = { remesas: [], devoluciones: [] };
 
+// 📤 Remesas YA GIRADAS pero AÚN NO LIQUIDADAS por el banco (giro en vuelo). Se leen de los ficheros de remesa
+// y se auto-liquidan cuando entra el extracto que las casa. Importante: estos recibos NO deben volver a remesarse.
+async function bkRemesasRealizadas() {
+  const el = document.getElementById('bk-realizadas');
+  if (!el) return;
+  let d;
+  try {
+    d = await fetch(BRIDGE_URL_C + '/remesas/realizadas?anio=' + (new Date().getFullYear()) + '&_=' + Date.now(),
+      { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
+  } catch(e) { el.innerHTML = ''; return; }
+  if (!d || !d.ok) { el.innerHTML = ''; return; }
+  const pdte = (d.remesas || []).filter(r => r.estado === 'pdte_liquidar');
+  if (!pdte.length) {
+    el.innerHTML = '<div style="background:#eaf7ef;border:1px solid #a7d7b8;border-radius:10px;padding:8px 14px;margin-bottom:12px;font-size:12.5px;color:#1b7a3d">' +
+      '✓ Todas las remesas giradas están <b>liquidadas</b> en el banco (' + (d.n_liquidadas || 0) + '). No hay giros en vuelo.</div>';
+    return;
+  }
+  const filas = pdte.map(r =>
+    '<div style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-top:1px dashed #e3c9a0;font-size:12.5px">' +
+      '<span style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:6px;padding:2px 8px;font-weight:700;font-size:11px;white-space:nowrap">⏳ PDTE LIQUIDAR</span>' +
+      '<span style="font-weight:700">' + bkFmt(r.importe) + '</span>' +
+      '<span style="color:#666">· ' + (r.fecha || '¿?') + ' · ' + (r.banco || '') + ' · ' + (r.n_recibos || 0) + ' recibos</span>' +
+      '<span style="color:#999;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.facturas || []).join(' ') + '">' +
+        (r.facturas || []).slice(0, 8).map(f => 'F-' + f).join(' ') + ((r.facturas || []).length > 8 ? ' …' : '') + '</span>' +
+      '<span style="color:#bb9;font-size:11px" title="Fichero(s) de remesa">' + (r.ficheros || []).join(', ') + '</span>' +
+    '</div>').join('');
+  el.innerHTML =
+    '<div style="background:#fffbeb;border:1.5px solid #fcd34d;border-radius:12px;padding:10px 14px;margin-bottom:14px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
+        '<b style="color:#92400e;font-size:13.5px">📤 ' + pdte.length + ' remesa(s) giradas — PENDIENTES DE LIQUIDAR · ' + bkFmt(d.total_pdte) + '</b>' +
+        '<span style="font-size:11.5px;color:#a16207">Ya enviadas al banco, aún sin ingresar. Se auto-liquidan al entrar el extracto N43 que las casa. ⛔ NO volver a remesar estos recibos.</span>' +
+      '</div>' + filas +
+    '</div>';
+}
+
 async function bkRemesas() {
+  bkRemesasRealizadas();
   const el = document.getElementById('bk-remesas');
   el.innerHTML = '<div style="color:var(--texto-suave);font-size:13px"><span class="spinner"></span>Buscando remesas...</div>';
   let movs = [];

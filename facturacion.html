@@ -79,6 +79,17 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
+<div id="login-ov" style="position:fixed;inset:0;background:linear-gradient(135deg,#0f1f5c,#1e1b4b);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px">
+  <div style="background:#fff;border-radius:16px;padding:26px 24px;max-width:340px;width:100%;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,.35)">
+    <div style="font-size:30px">🧾</div>
+    <h2 style="margin:6px 0 2px;font-size:19px;color:#0f1f5c">Facturador de cuotas</h2>
+    <div style="color:#64748b;font-size:13px;margin-bottom:16px">JS Technology Menorca</div>
+    <input id="lg-user" placeholder="Usuario" autocomplete="username" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:10px;border:1px solid #e2e8f0;border-radius:9px;font-size:15px">
+    <input id="lg-pin" type="password" placeholder="PIN (déjalo vacío si no tienes)" autocomplete="current-password" style="width:100%;box-sizing:border-box;margin-bottom:14px;padding:10px;border:1px solid #e2e8f0;border-radius:9px;font-size:15px">
+    <button class="btn pri" style="width:100%;padding:11px;font-size:15px" onclick="doLogin()">Entrar</button>
+    <div id="lg-err" style="color:#dc2626;font-size:13px;margin-top:10px;min-height:18px"></div>
+  </div>
+</div>
 <header>
   <h1>🧾 Facturador de cuotas</h1>
   <div class="sub">Propone las cuotas Ágora del mes clonando el mes anterior · solo cuotas (el material lo facturas tú)</div>
@@ -219,7 +230,9 @@ function recalcCard(id){
   resumen();
 }
 function setArt(id,li,pid){ const p=PROPS.find(x=>x._id===id); pid=Number(pid);
-  const a=CAT.find(c=>c.pid===pid); p.lineas[li].pid=pid; if(a)p.lineas[li].nombre=a.nombre; recalcCard(id); }
+  const a=CAT.find(c=>c.pid===pid); p.lineas[li].pid=pid; p.lineas[li].saleformat=pid;
+  if(a){ p.lineas[li].nombre=a.nombre; if(a.precio!=null) p.lineas[li].precio=a.precio; }
+  render(); }
 function setVal(id,li,k,v){ const p=PROPS.find(x=>x._id===id);
   p.lineas[li][k] = (k==='nota')? v : (Number(v)||0); recalcCard(id); }
 function delLn(id,li){ const p=PROPS.find(x=>x._id===id); p.lineas.splice(li,1);
@@ -582,9 +595,27 @@ async function generarRemesa(){
   }catch(e){ alert('Error: '+e.message); }
 }
 
-// init
-$('#mes').value = mesActual();
-cargar();
+// ── Login (misma lógica que los otros paneles: usuarios de Ágora, solo perfiles admin) ──
+async function doLogin(){
+  const u=$('#lg-user').value.trim(); const p=$('#lg-pin').value.trim();
+  const err=$('#lg-err'); err.textContent='';
+  if(!u){ err.textContent='Introduce tu usuario.'; return; }
+  try{
+    const d=await fetch(API+'/api/export-master/?filter=Users').then(r=>r.json());
+    const us=(d.Users||[]).find(x=>!x.DeletionDate && (x.Name||'').toLowerCase()===u.toLowerCase()
+      && ( (!x.Password && !x.SmartphonePassword) || String(x.Password||'')===p || String(x.SmartphonePassword||'')===p ));
+    if(!us){ err.textContent='Usuario o PIN incorrecto.'; return; }
+    if((((us.Profile||'')+'').toLowerCase()).indexOf('admin')===-1){ err.textContent='Tu perfil no permite facturar.'; return; }
+    localStorage.setItem('fact_user', JSON.stringify({nombre:us.Name, perfil:us.Profile}));
+    $('#login-ov').style.display='none';
+    arrancar();
+  }catch(e){ err.textContent='Error de conexión.'; }
+}
+function arrancar(){ $('#mes').value = mesActual(); cargar(); }
+['lg-user','lg-pin'].forEach(id=>{ const el=$('#'+id); if(el) el.addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); }); });
+// puerta
+if(localStorage.getItem('fact_user')){ $('#login-ov').style.display='none'; arrancar(); }
+else { const lu=$('#lg-user'); if(lu) lu.focus(); }
 </script>
 </body>
 </html>

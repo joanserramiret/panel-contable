@@ -4513,7 +4513,7 @@ async function cargarPulso(){
     const [jp,jpag,jt,js,jiva,jmov,jver,jprov,jcli]=await Promise.all([
       fetch(BRIDGE_URL_C+'/contabilidad/clientes_pendientes?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/contabilidad/pagos?anio=2026&_='+Date.now(),H).then(r=>r.json()),
-      fetch(BRIDGE_URL_C+'/agora/totales_mensuales?anios=2023,2024,2025,2026&_='+Date.now(),H).then(r=>r.json()),
+      fetch(BRIDGE_URL_C+'/agora/totales_mensuales?anios=2024,2025,2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/banco/eb/saldos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({saldos:[]})),
       fetch(BRIDGE_URL_C+'/contabilidad/iva?_='+Date.now(),H).then(r=>r.json()).catch(()=>({})),
       fetch(BRIDGE_URL_C+'/banco/movimientos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({movimientos:[]})),
@@ -4569,7 +4569,7 @@ async function cargarPulso(){
     // TENDENCIA PLURIANUAL (facturación ene–jun de cada año = comparable; 2026 en curso)
     const A=jt.anios||{};
     const mm=['01','02','03','04','05','06'];
-    const anys=['2023','2024','2025','2026'];
+    const anys=['2024','2025','2026'];   // 2023 fuera: no es referencial para la facturación mensual
     const ytd={}; anys.forEach(y=>{ const m=(A[y]||{}).meses||{}; ytd[y]=mm.reduce((a,x)=>a+(m[y+'-'+x]||0),0); });
     const s25=ytd['2025']||0, s26=ytd['2026']||0;
     const pct=s25?Math.round((s26/s25-1)*1000)/10:0;

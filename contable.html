@@ -4513,7 +4513,7 @@ async function cargarPulso(){
     const [jp,jpag,jt,js,jiva,jmov,jver,jprov,jcli]=await Promise.all([
       fetch(BRIDGE_URL_C+'/contabilidad/clientes_pendientes?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/contabilidad/pagos?anio=2026&_='+Date.now(),H).then(r=>r.json()),
-      fetch(BRIDGE_URL_C+'/agora/totales_mensuales?anios=2024,2025,2026&_='+Date.now(),H).then(r=>r.json()),
+      fetch(BRIDGE_URL_C+'/agora/totales_mensuales?anios=2023,2024,2025,2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/banco/eb/saldos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({saldos:[]})),
       fetch(BRIDGE_URL_C+'/contabilidad/iva?_='+Date.now(),H).then(r=>r.json()).catch(()=>({})),
       fetch(BRIDGE_URL_C+'/banco/movimientos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({movimientos:[]})),
@@ -4582,6 +4582,19 @@ async function cargarPulso(){
         '<span style="width:72px;text-align:right;font-size:12px;font-weight:'+(act?'800':'600')+'">'+eur(v)+'</span></div>';
     });
     ih+='<div style="margin-top:8px;font-size:11px;color:var(--texto-suave)">Facturación <b>ene–jun</b> de cada año (comparable). 2026 en curso.</div>';
+    // 📅 TOTAL POR AÑO COMPLETO (años cerrados) + lo que va del año en curso a fecha de hoy
+    const anysF=['2023','2024','2025','2026'];
+    const totY={}; anysF.forEach(y=>{ const m=(A[y]||{}).meses||{}; totY[y]=Object.values(m).reduce((a,v)=>a+(v||0),0); });
+    const maxF=Math.max.apply(null,anysF.map(y=>totY[y]).concat([1]));
+    const mesAct=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][new Date().getMonth()];
+    ih+='<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e8e8e8"><div style="font-size:12px;font-weight:800;color:#534AB7;margin-bottom:8px">📅 Facturación por año completo</div>';
+    anysF.forEach(y=>{ const v=totY[y]||0, act=(y==='2026');
+      ih+='<div style="display:flex;align-items:center;gap:8px;margin:6px 0"><span style="width:38px;font-size:12px;font-weight:'+(act?'800':'600')+';color:'+(act?'#534AB7':'#666')+'">'+y+'</span>'+
+        '<div style="flex:1;background:#eee;border-radius:5px;height:16px;overflow:hidden"><div style="width:'+Math.round(v/maxF*100)+'%;height:100%;background:'+(act?'#534AB7':'#b4b2a9')+';border-radius:5px"></div></div>'+
+        '<span style="width:78px;text-align:right;font-size:12px;font-weight:'+(act?'800':'600')+'">'+eur(v)+'</span>'+
+        '<span style="width:52px;font-size:9.5px;color:var(--texto-suave)">'+(act?'a '+mesAct+' (en curso)':'año completo')+'</span></div>';
+    });
+    ih+='<div style="margin-top:6px;font-size:11px;color:var(--texto-suave)">Total F/FD de cada año. El año en curso es lo facturado hasta hoy.</div></div>';
     document.getElementById('pl-interanual').innerHTML=ih;
     // 👑 CONCENTRACIÓN DE CLIENTES (top 5 por facturación + su % del total)
     try{ var _pc=document.getElementById('pl-concentra'); if(_pc){

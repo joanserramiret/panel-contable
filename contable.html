@@ -2812,7 +2812,7 @@ function actualizarCobros() {
     }).join('');
     return h + '</div>';
   };
-  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px">' +
+  html += '<div style="display:grid;grid-template-columns:1fr;gap:14px">' +
     pintaColumna('girar', '🧲 PARA GIRAR (SEPA pendiente)', 'Cobradas "por Recibo" en Ágora sin negociar, o que el cliente pide re-girar — material para la próxima remesa.', '#1a7a3f') +
     pintaColumna('proceso', '📤 EN PROCESO (en remesa, esperando cobro)', 'Ya están en una remesa girada — esperando que el banco ingrese. NO hay que perseguirlas; saldrán solas al conciliar el abono.', '#b45309') +
     pintaColumna('perseguir', '🏃 A PERSEGUIR (impagos y transferencias)', 'Recibos devueltos y transferencias que no llegan — a reclamar (✉ desde Facturas emitidas).', '#c0392b') +
@@ -4700,8 +4700,11 @@ function buzonFile(file){
   rd.onload=function(){
     var txt=(rd.result||''); var head=txt.replace(/^\s+/,'').slice(0,400); var tipo='desconocido';
     if(/\.pdf$/i.test(file.name)||head.slice(0,4)==='%PDF'){
-      // PDF de banco (adeudos / devoluciones / listado de remesa) → al flujo de remesa, no al cajón
-      tipo = /adeudo|devoluci|listado de adeudos|cumovements|remesa|impagad/i.test(file.name) ? 'remesa' : 'pdf';
+      // PDF de banco. "recibo devuelto"/"devolución"/"avance de extracto" = devolución SEPA individual → casador.
+      // "adeudos/listado/impagados/remesa" = listado de remesa → flujo de remesa. Lo demás = factura → cajón.
+      if(/devuelt|devoluci[oó]n|avance.*extracto|r\.?d\.?\s*sepa/i.test(file.name)) tipo='devolucion';
+      else if(/adeudo|listado de adeudos|cumovements|remesa|impagad/i.test(file.name)) tipo='remesa';
+      else tipo='pdf';
     }
     else if(/^0119143/.test(head)) tipo='remesa';
     else if(/\.n43$/i.test(file.name)||/^(11|00)\d{6}/.test(head)) tipo='n43';
@@ -4739,6 +4742,38 @@ async function buzonDetectado(file, tipo, txt){
         var j=await fetch(BRIDGE_URL_C+'/proveedores/subir_doc',{method:'POST',headers:HP,body:JSON.stringify({nombre:file.name, archivo_base64:b64})}).then(function(r){return r.json();});
         document.getElementById('buzon-pdfres').innerHTML = j.ok? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Guardada en el cajón. Ve a 📥 Facturas recibidas → ordenar el cajón cuando quieras.</div>' : '<div style="color:#dc2626;font-size:13px">'+(j.error||'Error')+'</div>';
       }catch(e){ document.getElementById('buzon-pdfres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; } };
+  } else if(tipo==='devolucion'){
+    res.innerHTML=badge('↩️ Devolución de recibo detectada','#fee2e2')+
+      '<div style="margin:12px 0;font-size:13px">Leo el PDF y busco a qué factura/remesa corresponde…</div><div id="buzon-devres"></div>';
+    try{
+      var b64=await buzonB64(file);
+      var j=await fetch(BRIDGE_URL_C+'/banco/devolucion_pdf',{method:'POST',headers:HP,body:JSON.stringify({pdf_base64:b64, nombre:file.name})}).then(function(r){return r.json();});
+      var dr=document.getElementById('buzon-devres');
+      if(!j.ok){ dr.innerHTML='<div style="color:#dc2626;font-size:13px">'+(j.error||'Error')+'</div>'; return; }
+      var cands=j.candidatos||[]; var top=cands[0]||null;
+      var info='<div style="font-size:13px;margin:6px 0 10px"><b>Importe:</b> '+(j.importe||0).toFixed(2)+' € · <b>Valor:</b> '+(j.fecha||'?')+(j.concepto?'<br><span style="color:#666">'+j.concepto+'</span>':'')+'</div>';
+      if(j.movimiento && j.movimiento.ya_conciliado){ dr.innerHTML=info+'<div style="color:#0F6E56;font-size:13px;font-weight:700">✅ Esta devolución ya está conciliada en el banco (mov '+j.movimiento.mov+'). Nada que hacer.</div>'; return; }
+      if(!j.movimiento){ dr.innerHTML=info+'<div style="color:#b45309;font-size:13px">'+(j.aviso||'No encuentro el movimiento en el banco.')+'</div>'; return; }
+      var opts=cands.map(function(c,i){ return '<option value="'+i+'">'+(c.serie||'F')+'-'+c.numero+' · '+(c.cliente||'')+(c.baja?'  ⛔ BAJA':'')+(c.remesa_fecha?'  (remesa '+c.remesa_fecha+')':'')+'</option>'; }).join('');
+      var bajaTop = top && top.baja;
+      dr.innerHTML=info+
+        '<div style="font-size:13px;margin-bottom:6px">Factura que botó (elige):</div>'+
+        '<select id="buzon-dev-cand" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:8px;font-size:13px;margin-bottom:8px">'+(opts||'<option>— sin candidatos —</option>')+'</select>'+
+        '<label style="display:block;font-size:12.5px;margin-bottom:10px"><input type="checkbox" id="buzon-dev-inc" '+(bajaTop?'checked':'')+'> Incobrable — NO re-girar (cliente cerrado/de baja)</label>'+
+        '<button id="buzon-dev-conf" style="padding:8px 18px;border:none;border-radius:8px;background:#b91c1c;color:#fff;cursor:pointer;font-weight:700">↩️ Registrar devolución</button>'+
+        '<div id="buzon-dev-conf-res" style="margin-top:8px"></div>';
+      var sel=document.getElementById('buzon-dev-cand'), inc=document.getElementById('buzon-dev-inc');
+      sel.onchange=function(){ var c=cands[+sel.value]; if(c) inc.checked=!!c.baja; };
+      document.getElementById('buzon-dev-conf').onclick=async function(){
+        var c=cands[+sel.value]; if(!c){ return; }
+        var bb=document.getElementById('buzon-dev-conf'); bb.disabled=true; bb.textContent='Registrando…';
+        var jr=await fetch(BRIDGE_URL_C+'/banco/devoluciones',{method:'POST',headers:HP,body:JSON.stringify({mov:j.movimiento.mov, numero:c.numero, cliente:c.cliente, serie:c.serie||'F', incobrable:inc.checked?1:0, confirmar:1})}).then(function(r){return r.json();});
+        document.getElementById('buzon-dev-conf-res').innerHTML = jr.ok
+          ? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Devolución registrada: '+(jr.serie||'F')+'-'+jr.numero+' '+(jr.incobrable?'(INCOBRABLE, no re-girar)':'(devuelta, a re-girar)')+'. Fuera de pendientes.</div>'
+          : '<div style="color:#dc2626;font-size:13px">'+(jr.error||'Error')+'</div>';
+        if(jr.ok && typeof cargarBanco==='function'){ try{ cargarBanco(); }catch(e){} }
+      };
+    }catch(e){ document.getElementById('buzon-devres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; }
   } else if(tipo==='remesa'){
     var esPdf=/\.pdf$/i.test(file.name); var recibos=0;
     if(!esPdf){ var full=await file.text(); recibos=full.split(/\r?\n/).filter(function(l){return l.slice(0,2)==='03';}).length; }

@@ -4798,24 +4798,46 @@ async function buzonDetectado(file, tipo, txt){
       };
     }catch(e){ document.getElementById('buzon-devres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; }
   } else if(tipo==='remesa'){
-    var esPdf=/\.pdf$/i.test(file.name); var recibos=0;
-    if(!esPdf){ var full=await file.text(); recibos=full.split(/\r?\n/).filter(function(l){return l.slice(0,2)==='03';}).length; }
-    res.innerHTML=badge('🧩 '+(esPdf?'Documento de banco (adeudos/remesa)':'Remesa SEPA')+' detectado','#ede9fe')+
-      '<div style="margin:12px 0;font-size:13px">'+(esPdf?'Documento de banco — lo leo y lo caso contra el abono.':'Fichero de remesa con <b>'+recibos+' recibos</b>.')+' Te enseño el desglose <b>antes</b> de conciliar nada.</div>'+
-      '<button id="buzon-rem-sim" style="padding:8px 18px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-weight:700">Cuadrar con el banco (simular)</button>'+
-      '<div id="buzon-remres" style="margin-top:12px"></div>';
-    document.getElementById('buzon-rem-sim').onclick=async function(){
-      var b=document.getElementById('buzon-rem-sim'), rr=document.getElementById('buzon-remres');
-      b.disabled=true; b.textContent='Procesando…'; rr.innerHTML='<div style="color:#666;font-size:13px">Archivando la remesa y casándola con el banco…</div>';
-      try{
-        var b64=await buzonB64(file);
-        var pj=await fetch(BRIDGE_URL_C+'/remesas/parse_pdf',{method:'POST',headers:HP,body:JSON.stringify({pdf_base64:b64, nombre:file.name})}).then(function(r){return r.json();});
-        if(!pj.ok || !pj.doc){ rr.innerHTML='<div style="color:#dc2626;font-size:13px">'+(pj.error||'No pude archivar/parsear la remesa')+'</div>'; b.disabled=false; b.textContent='Cuadrar con el banco (simular)'; return; }
-        window._buzonRemDoc=pj.doc;
-        var sj=await fetch(BRIDGE_URL_C+'/remesas/importar_archivado?ruta='+encodeURIComponent(pj.doc)+'&confirmar=0&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();});
-        rr.innerHTML=buzonRemPreview(sj); b.style.display='none';
-      }catch(e){ rr.innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Cuadrar con el banco (simular)'; }
-    };
+    var esPdf=/\.pdf$/i.test(file.name);
+    if(!esPdf){
+      // Fichero de remesa SEPA (el GIRO que se envía al banco, Sabadell Norma19 o Bankinter) → REGISTRAR como girada.
+      var full=await file.text();
+      var recibos=full.split(/\r?\n/).filter(function(l){return l.slice(0,2)==='03';}).length;
+      res.innerHTML=badge('🏦 Remesa SEPA (girada) detectada','#ede9fe')+
+        '<div style="margin:12px 0;font-size:13px">Fichero de remesa'+(recibos?(' con <b>'+recibos+' recibos</b>'):'')+'. Al registrarla, sus facturas pasan a <b>📤 En proceso</b> en Cobros (ya no se vuelven a girar → evita re-giros indebidos) y la remesa aparece en <b>Remesas → pendiente de liquidar</b>. Se concilia sola cuando llegue el abono del banco (N43).</div>'+
+        '<button id="buzon-rem-reg" style="padding:8px 18px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-weight:700">🏦 Registrar remesa girada</button>'+
+        '<div id="buzon-remres" style="margin-top:12px"></div>';
+      document.getElementById('buzon-rem-reg').onclick=async function(){
+        var b=document.getElementById('buzon-rem-reg'), rr=document.getElementById('buzon-remres');
+        b.disabled=true; b.textContent='Registrando…';
+        try{
+          var j=await fetch(BRIDGE_URL_C+'/remesa/guardar',{method:'POST',headers:HP,body:JSON.stringify({nombre:file.name, contenido:full})}).then(function(r){return r.json();});
+          rr.innerHTML = j.ok
+            ? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Remesa registrada ('+j.banco+'): <b>'+j.n_facturas+'</b> facturas'+(j.total?(' · '+(+j.total).toFixed(2)+'€'):'')+'.<br>Sus facturas pasan a 📤 <b>En proceso</b> en Cobros; en Remesas sale como <b>pendiente de liquidar</b>.</div>'
+            : '<div style="color:#dc2626;font-size:13px">'+(j.error||'Error')+'</div>';
+          if(j.ok){ window._enRemesa=undefined; try{ if(typeof cargarBanco==='function') cargarBanco(); }catch(e){} try{ actualizarCobros(); }catch(e){} }
+          else { b.disabled=false; b.textContent='🏦 Registrar remesa girada'; }
+        }catch(e){ rr.innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='🏦 Registrar remesa girada'; }
+      };
+    } else {
+      // PDF de banco (abono de remesa / adeudos) → conciliar contra el movimiento del banco (flujo existente).
+      res.innerHTML=badge('🧩 Documento de banco (adeudos/remesa) detectado','#ede9fe')+
+        '<div style="margin:12px 0;font-size:13px">Documento de banco — lo leo y lo caso contra el abono. Te enseño el desglose <b>antes</b> de conciliar nada.</div>'+
+        '<button id="buzon-rem-sim" style="padding:8px 18px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-weight:700">Cuadrar con el banco (simular)</button>'+
+        '<div id="buzon-remres" style="margin-top:12px"></div>';
+      document.getElementById('buzon-rem-sim').onclick=async function(){
+        var b=document.getElementById('buzon-rem-sim'), rr=document.getElementById('buzon-remres');
+        b.disabled=true; b.textContent='Procesando…'; rr.innerHTML='<div style="color:#666;font-size:13px">Archivando la remesa y casándola con el banco…</div>';
+        try{
+          var b64=await buzonB64(file);
+          var pj=await fetch(BRIDGE_URL_C+'/remesas/parse_pdf',{method:'POST',headers:HP,body:JSON.stringify({pdf_base64:b64, nombre:file.name})}).then(function(r){return r.json();});
+          if(!pj.ok || !pj.doc){ rr.innerHTML='<div style="color:#dc2626;font-size:13px">'+(pj.error||'No pude archivar/parsear la remesa')+'</div>'; b.disabled=false; b.textContent='Cuadrar con el banco (simular)'; return; }
+          window._buzonRemDoc=pj.doc;
+          var sj=await fetch(BRIDGE_URL_C+'/remesas/importar_archivado?ruta='+encodeURIComponent(pj.doc)+'&confirmar=0&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();});
+          rr.innerHTML=buzonRemPreview(sj); b.style.display='none';
+        }catch(e){ rr.innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Cuadrar con el banco (simular)'; }
+      };
+    }
   } else if(tipo==='csv'){
     res.innerHTML=badge('📊 CSV de Amazon detectado','#e1f5ee')+
       '<div style="margin:12px 0;font-size:13px">Informe de pedidos de Amazon Business. Lo importo como facturas del proveedor AMAZON (con su IVA real), <b>saltando las que ya tengas</b>. Primero te enseño qué entraría.</div>'+

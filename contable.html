@@ -1455,6 +1455,12 @@ async function cargarCobradasBanco() {
     });
     // Ciclo del recibo devuelto: la devolución deja la factura pendiente HASTA que un nuevo
     // cobro válido (transferencia o nueva remesa) la "mata" → entonces cuenta como cobrada.
+    // ➕ Cobros RESUELTOS A MANO (cobro fuera del extracto, p.ej. remesa de enero anterior a los datos N43):
+    // se añaden al set de cobradas para que salgan de la cartera y no ensucien.
+    try {
+      const rr = await fetch(BRIDGE_URL_C + '/cobros/resueltos', { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(x => x.json());
+      Object.values(rr.cobros || {}).forEach(c => { const k = bkNormClave(c.factura || ''); if (k) cobradas.add(k); });
+    } catch (e) {}
     bkCobradasBanco = { cobradas, devueltas, detalle };
   } catch(e) { bkCobradasBanco = { cobradas: new Set(), devueltas: new Set(), detalle: {}, sinBanco: true }; }
 }

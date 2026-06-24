@@ -2698,6 +2698,13 @@ function actualizarCobros() {
     return sumPagos < t - 0.01;
   }).sort((a,b) => new Date(a.Date) - new Date(b.Date));
 
+  // Alimenta el reclamador (✉️ por cliente) con las facturas pendientes de la cartera, en el formato que espera plMail.
+  window._plPend = pendientes.map(f => ({
+    cliente: f.Customer ? (f.Customer.BusinessName || f.Customer.FiscalName || '(sin nombre)') : '(sin nombre)',
+    serie: f.Serie, numero: f.Number, fecha: (f.Date || '').slice(0, 10),
+    importe: (f.Totals ? f.Totals.GrossAmount : 0)
+  }));
+
   // Resumen visible: cuánto se ha COBRADO vía banco/remesas vs lo que queda PENDIENTE (mismo período).
   // Así las remesas cuadradas por factura quedan "computadas y a la vista", no solo descontadas en silencio.
   let _cobBanco = 0, _nCobBanco = 0;
@@ -2808,6 +2815,7 @@ function actualizarCobros() {
         _recurBadge +
         '<span style="color:var(--texto-suave);font-size:10.5px;flex-shrink:0;white-space:nowrap">' + g.facts.length + ' · ' + g.maxDias + 'd</span>' +
         '<b style="flex-shrink:0">' + g.total.toFixed(2) + '€</b>' +
+        '<button onclick="event.preventDefault();plReclamar(decodeURIComponent(\'' + encodeURIComponent(cli) + '\'),' + g.total + ')" title="Reclamar el cobro a ' + cli.replace(/[<>"]/g,'') + ' por email (semáforo de tono)" style="flex-shrink:0;padding:2px 8px;background:#ede9fe;border:1.5px solid #c4b5fd;border-radius:6px;font-size:13px;font-weight:700;line-height:1;cursor:pointer">✉️</button>' +
         '<button onclick="event.preventDefault();carteraMoverGrupo(' + gi + ')" title="Mover TODAS las facturas de ' + cli.replace(/[<>"]/g,'') + ' → «' + etqOtro + '»" style="flex-shrink:0;padding:2px 8px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:6px;font-size:14px;font-weight:700;line-height:1;cursor:pointer">⇄</button></summary>' +
         g.facts.sort((a, b) => (destino === 'girar' ? _guardRank(a.num) - _guardRank(b.num) : 0) || (b.dias - a.dias)).map(x => {
           const _e = destino === 'girar' ? _guardEstado(x.num) : null;

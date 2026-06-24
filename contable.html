@@ -1439,13 +1439,20 @@ async function cargarCobradasBanco() {
     const r = await fetch(BRIDGE_URL_C + '/banco/movimientos?estado=conciliado', { headers: { 'ngrok-skip-browser-warning': 'true' } });
     const movs = (await r.json()).movimientos || [];
     const cobradas = new Set(), devueltas = new Set(), detalle = {};
-    movs.forEach(m => bkClavesDeConciliado(m.conciliado).forEach(([k, f]) => {
-      // Trazabilidad: en qué movimiento(s) está imputada cada factura
-      (detalle[k] = detalle[k] || []).push({ id: m.id, fecha: m.fecha, banco: m.banco,
-        concepto: m.concepto, importe: m.importe, situacion: f.situacion || 'abonado' });
-      if (f.situacion === 'devuelto') devueltas.add(k);
-      else if (m.importe > 0) cobradas.add(k);  // cobro válido = en un ABONO y no marcado devuelto
-    }));
+    movs.forEach(m => {
+      const ents = bkClavesDeConciliado(m.conciliado);
+      // ¿Es una COMPENSACIÓN? (abono FD + F nueva en el MISMO movimiento, p.ej. devolución por transferencia
+      // saliente = FD − F). Si la hay, la F queda SALDADA por compensación aunque el movimiento sea negativo.
+      const hayAbonoFD = ents.some(([k, f]) => ((f.serie || (k.split('-')[0] || '')).toUpperCase() === 'FD') || ((f.importe || 0) < 0));
+      ents.forEach(([k, f]) => {
+        // Trazabilidad: en qué movimiento(s) está imputada cada factura
+        (detalle[k] = detalle[k] || []).push({ id: m.id, fecha: m.fecha, banco: m.banco,
+          concepto: m.concepto, importe: m.importe, situacion: f.situacion || 'abonado' });
+        if (f.situacion === 'devuelto') devueltas.add(k);
+        else if (m.importe > 0) cobradas.add(k);  // cobro válido = en un ABONO y no marcado devuelto
+        else if (hayAbonoFD && (f.importe || 0) > 0) cobradas.add(k);  // F saldada por compensación FD+F (devolución por transferencia)
+      });
+    });
     // Ciclo del recibo devuelto: la devolución deja la factura pendiente HASTA que un nuevo
     // cobro válido (transferencia o nueva remesa) la "mata" → entonces cuenta como cobrada.
     bkCobradasBanco = { cobradas, devueltas, detalle };
@@ -2672,6 +2679,8 @@ function actualizarCobros() {
     const t = f.Totals ? f.Totals.GrossAmount : 0;
     if (t <= 0) return false;  // devoluciones: no se cobran
     if (fcAnuladas.has(bkNormClave(f.Serie + '-' + f.Number))) return false;  // anuladas con su hermana
+    // 🔴 Guardarraíl "no girar": un abono FD ya la cancela → no es cobro pendiente, fuera de la cartera.
+    if (window._cobGuard && _guardEstado(f.Serie + '-' + f.Number) === 'rojo') return false;
     const pagos = f.Payments || [];
     const sumPagos = pagos.reduce((s,p) => s + Math.abs(p.Amount||p.PaidAmount||0), 0);
     if (banco) {

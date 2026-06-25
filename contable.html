@@ -637,6 +637,21 @@
         </div>
       </div>
 
+      <div class="card" id="pulso-cerebro-card" style="margin-bottom:16px;border:1.5px solid #d9d4f5;background:linear-gradient(135deg,#faf9ff,#f1eefb)">
+        <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
+          <div style="font-size:24px">🧠</div>
+          <div>
+            <div style="font-size:15px;font-weight:800;letter-spacing:-.2px">Cerebro · tu gerente financiero</div>
+            <div style="font-size:11px;color:var(--texto-suave)">Analiza, prioriza y recomienda con tus datos reales. No mueve dinero — decides tú.</div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input id="cerebro-q" placeholder="Pregúntale lo que quieras…" onkeydown="if(event.key==='Enter')pedirCerebro()" style="padding:7px 12px;border:1px solid #d9d4f5;border-radius:9px;font-size:13px;width:230px">
+            <button onclick="pedirCerebro()" id="cerebro-btn" style="padding:8px 16px;background:#534AB7;color:#fff;border:none;border-radius:9px;cursor:pointer;font-size:13px;font-weight:700">🧠 Parte del día</button>
+          </div>
+        </div>
+        <div id="cerebro-out"></div>
+      </div>
+
       <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:12px;margin-bottom:12px">
         <div style="background:#fff;border:1px solid #ece9f7;border-left:4px solid #534AB7;border-radius:12px;padding:14px 18px">
           <div style="font-size:12px;color:var(--texto-suave)">💰 Tesorería real</div>
@@ -4604,6 +4619,76 @@ function pcVerEmi(rutaEnc){
   const ruta=decodeURIComponent(rutaEnc);
   if(!ruta){ alert('Sin documento.'); return; }
   window.open(BRIDGE_URL_C+'/contabilidad/emitida_abrir?ruta='+encodeURIComponent(ruta)+'&ngrok-skip-browser-warning=true','_blank');
+}
+
+// ===== 🧠 CEREBRO (PORTAL 6.0) — gerente financiero =====
+async function pedirCerebro(){
+  var btn=document.getElementById('cerebro-btn'), out=document.getElementById('cerebro-out');
+  var preg=(document.getElementById('cerebro-q')||{}).value||'';
+  if(btn){ btn.disabled=true; btn.textContent='🧠 Pensando…'; }
+  if(out) out.innerHTML='<div style="margin-top:12px;color:var(--texto-suave);font-size:13px"><span class="spinner"></span> El cerebro está analizando tus datos reales…</div>';
+  var H={'ngrok-skip-browser-warning':'true'};
+  var JH={'Content-Type':'application/json','ngrok-skip-browser-warning':'true'};
+  var g=function(u){return fetch(BRIDGE_URL_C+u+(u.indexOf('?')>=0?'&':'?')+'_='+Date.now(),{headers:H}).then(function(r){return r.json();}).catch(function(){return {};});};
+  try{
+    var res=await Promise.all([
+      g('/contabilidad/clientes_pendientes?anio=2026'),
+      g('/contabilidad/pagos?anio=2026'),
+      g('/agora/totales_mensuales?anios=2025,2026'),
+      g('/remesa/verificar?anio=2026'),
+      g('/remesa/girables_transferencia?anio=2026')
+    ]);
+    var cli=res[0]||{}, pag=res[1]||{}, tot=res[2]||{}, ver=res[3]||{}, gir=res[4]||{};
+    // nos deben + deudores top + aging
+    var facsC=cli.facturas||[]; var porCli={};
+    facsC.forEach(function(f){ if((+f.importe)<=0) return; var k=f.cliente||'?'; if(!porCli[k])porCli[k]={cliente:k,importe:0,fecha:f.fecha||''}; porCli[k].importe+=(+f.importe||0); if((f.fecha||'')<porCli[k].fecha||!porCli[k].fecha)porCli[k].fecha=f.fecha||porCli[k].fecha; });
+    var hoy=new Date(); var dias=function(d){ if(!d)return null; var t=new Date(d); return isNaN(t)?null:Math.round((hoy-t)/86400000); };
+    var deudores=Object.values(porCli).sort(function(a,b){return b.importe-a.importe;}).slice(0,6).map(function(d){return {cliente:d.cliente,importe:Math.round(d.importe),dias:dias(d.fecha)};});
+    var nosDeben=Object.values(porCli).reduce(function(a,d){return a+d.importe;},0);
+    // vencimientos 14d
+    var lim=new Date(); lim.setDate(lim.getDate()+14); var venc=[];
+    (pag.facturas||[]).forEach(function(f){ if(f.estado_pago==='pagada'||f.pagada||f.externo)return; var v=f.vencimiento||f.venc; if(!v)return; var t=new Date(v); if(isNaN(t)||t>lim)return; venc.push({proveedor:f.proveedor||f.entidad||'?',fecha:v,importe:Math.round(+f.importe||0),domiciliado:!!(f.domiciliado||f.cal==='programada')}); });
+    venc.sort(function(a,b){return (a.fecha||'').localeCompare(b.fecha||'');});
+    // interanual
+    var pct=null, m25=0, m26=0;
+    if(tot.meses||tot.series){ try{ var s25=(tot.series&&tot.series['2025'])||[], s26=(tot.series&&tot.series['2026'])||[]; m25=s25.reduce(function(a,b){return a+(+b||0);},0); m26=s26.reduce(function(a,b){return a+(+b||0);},0); if(m25>0)pct=Math.round((m26-m25)/m25*1000)/10; }catch(e){} }
+    var datos={
+      fecha:new Date().toISOString().slice(0,10),
+      tesoreria:{nos_deben:Math.round(nosDeben), debemos:Math.round(pag.tot_deuda_real||0), accionable_proveedores:Math.round(pag.tot_accionable||0)},
+      deudores_top:deudores,
+      vencimientos_14d:venc.slice(0,12),
+      girables_transferencia:(gir.girables||[]).map(function(x){return {cliente:x.cliente,factura:'F-'+x.numero,importe:x.importe};}),
+      remesa_guardarrail:{no_girar_rojo:(ver.rojo||[]).length, regirar:(ver.regirar||[]).length, posible_duplicado_ambar:(ver.ambar||[]).length},
+      interanual: pct!=null?{pct:pct,'2025':Math.round(m25),'2026':Math.round(m26)}:null
+    };
+    var j=await fetch(BRIDGE_URL_C+'/cerebro/analisis',{method:'POST',headers:JH,body:JSON.stringify({datos:datos,pregunta:preg})}).then(function(r){return r.json();});
+    if(!j.ok){ if(out)out.innerHTML='<div style="margin-top:12px;color:#dc2626;font-size:13px">El cerebro no pudo responder: '+(j.error||'?')+'</div>'; }
+    else renderCerebro(j);
+  }catch(e){ if(out)out.innerHTML='<div style="margin-top:12px;color:#dc2626;font-size:13px">Error: '+e.message+'</div>'; }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='🧠 Parte del día'; } }
+}
+function renderCerebro(j){
+  var out=document.getElementById('cerebro-out'); if(!out) return;
+  var sevCol={alta:'#dc2626',media:'#d97706',baja:'#0F6E56'};
+  var sevBg={alta:'#fdeaea',media:'#fdf4e6',baja:'#e8f7ef'};
+  var actMap={reclamar:["cobros","✉️ Ir a Cobros"],girar:["cobros","🏦 Ir a remesa"],pagar:["pagos","📅 Ir a Pagos"],conciliar:["cuadrar","🔗 Ir a Cuadrar"],revisar:["pagos","🔎 Revisar"]};
+  var h='<div style="margin-top:14px">';
+  if(j.parte) h+='<div style="background:#fff;border:1px solid #e7e3f7;border-radius:10px;padding:13px 15px;font-size:13.5px;line-height:1.5;color:#1e1b3a">'+(j.parte||'').replace(/\n/g,'<br>')+'</div>';
+  if((j.prioridades||[]).length){
+    h+='<div style="font-size:12px;font-weight:800;color:#534AB7;margin:14px 0 6px">🎯 Prioridades</div>';
+    j.prioridades.forEach(function(p){ var sv=(p.severidad||'media').toLowerCase(); var col=sevCol[sv]||'#d97706'; var bg=sevBg[sv]||'#fdf4e6';
+      var act=actMap[(p.accion||'').toLowerCase()];
+      h+='<div style="display:flex;gap:10px;align-items:flex-start;background:'+bg+';border-left:3px solid '+col+';border-radius:8px;padding:10px 12px;margin-bottom:7px">'+
+         '<div style="flex:1"><div style="font-weight:700;font-size:13px;color:'+col+'">'+(p.titulo||'')+'</div>'+
+         '<div style="font-size:12.5px;color:#444;margin-top:2px">'+(p.detalle||'')+'</div></div>'+
+         (act?'<button onclick="switchTabC(\''+act[0]+'\')" style="white-space:nowrap;padding:5px 10px;border:1px solid '+col+';border-radius:7px;background:#fff;color:'+col+';cursor:pointer;font-size:11.5px;font-weight:600">'+act[1]+'</button>':'')+
+         '</div>';
+    });
+  }
+  if((j.riesgos||[]).length){ h+='<div style="font-size:12px;font-weight:800;color:#dc2626;margin:12px 0 5px">⚠️ Riesgos</div><ul style="margin:0;padding-left:18px;font-size:12.5px;color:#444">'; j.riesgos.forEach(function(r){h+='<li style="margin-bottom:3px">'+r+'</li>';}); h+='</ul>'; }
+  if((j.oportunidades||[]).length){ h+='<div style="font-size:12px;font-weight:800;color:#0F6E56;margin:12px 0 5px">💡 Oportunidades</div><ul style="margin:0;padding-left:18px;font-size:12.5px;color:#444">'; j.oportunidades.forEach(function(o){h+='<li style="margin-bottom:3px">'+o+'</li>';}); h+='</ul>'; }
+  h+='<div style="font-size:10.5px;color:#aaa;margin-top:10px;text-align:right">🧠 '+(j.modelo||'')+' · El cerebro analiza y recomienda; las decisiones y los movimientos de dinero los haces tú.</div></div>';
+  out.innerHTML=h;
 }
 
 // ===== PULSO — cuadro de salud =====

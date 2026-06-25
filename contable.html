@@ -1165,7 +1165,9 @@ async function doLoginContable() {
       // Show logged user name in header
       const nameEl = document.getElementById('header-user-name');
       if (nameEl) nameEl.textContent = found.Name;
+      try{ localStorage.setItem('panel_user', found.Name); }catch(e){}
       initContable();
+      try{ finaFlotanteInit(); }catch(e){}
     } else {
       err.textContent = 'Usuario o contraseña incorrectos.';
       document.getElementById('login-pass').value = '';
@@ -4623,53 +4625,62 @@ function pcVerEmi(rutaEnc){
 }
 
 // ===== 🧠 CEREBRO (PORTAL 6.0) — gerente financiero =====
+async function finaGatherDatos(){
+  var H={'ngrok-skip-browser-warning':'true'};
+  var g=function(u){return fetch(BRIDGE_URL_C+u+(u.indexOf('?')>=0?'&':'?')+'_='+Date.now(),{headers:H}).then(function(r){return r.json();}).catch(function(){return {};});};
+  var res=await Promise.all([
+    g('/contabilidad/clientes_pendientes?anio=2026'),
+    g('/contabilidad/pagos?anio=2026'),
+    g('/agora/totales_mensuales?anios=2025,2026'),
+    g('/remesa/verificar?anio=2026'),
+    g('/remesa/girables_transferencia?anio=2026')
+  ]);
+  var cli=res[0]||{}, pag=res[1]||{}, tot=res[2]||{}, ver=res[3]||{}, gir=res[4]||{};
+  var facsC=cli.facturas||[]; var porCli={};
+  facsC.forEach(function(f){ if((+f.importe)<=0) return; var k=f.cliente||'?'; if(!porCli[k])porCli[k]={cliente:k,importe:0,fecha:f.fecha||''}; porCli[k].importe+=(+f.importe||0); if((f.fecha||'')<porCli[k].fecha||!porCli[k].fecha)porCli[k].fecha=f.fecha||porCli[k].fecha; });
+  var hoy=new Date(); var dias=function(d){ if(!d)return null; var t=new Date(d); return isNaN(t)?null:Math.round((hoy-t)/86400000); };
+  var deudores=Object.values(porCli).sort(function(a,b){return b.importe-a.importe;}).slice(0,6).map(function(d){return {cliente:d.cliente,importe:Math.round(d.importe),dias:dias(d.fecha)};});
+  var nosDeben=Object.values(porCli).reduce(function(a,d){return a+d.importe;},0);
+  var lim=new Date(); lim.setDate(lim.getDate()+14); var venc=[];
+  (pag.facturas||[]).forEach(function(f){ if(f.estado_pago==='pagada'||f.pagada||f.externo)return; var v=f.vencimiento||f.venc; if(!v)return; var t=new Date(v); if(isNaN(t)||t>lim)return; venc.push({proveedor:f.proveedor||f.entidad||'?',fecha:v,importe:Math.round(+f.importe||0),domiciliado:!!(f.domiciliado||f.cal==='programada')}); });
+  venc.sort(function(a,b){return (a.fecha||'').localeCompare(b.fecha||'');});
+  var pct=null, m25=0, m26=0;
+  if(tot.meses||tot.series){ try{ var s25=(tot.series&&tot.series['2025'])||[], s26=(tot.series&&tot.series['2026'])||[]; m25=s25.reduce(function(a,b){return a+(+b||0);},0); m26=s26.reduce(function(a,b){return a+(+b||0);},0); if(m25>0)pct=Math.round((m26-m25)/m25*1000)/10; }catch(e){} }
+  var datos={
+    fecha:new Date().toISOString().slice(0,10),
+    tesoreria:{nos_deben:Math.round(nosDeben), debemos:Math.round(pag.tot_deuda_real||0), accionable_proveedores:Math.round(pag.tot_accionable||0)},
+    deudores_top:deudores,
+    vencimientos_14d:venc.slice(0,12),
+    girables_transferencia:(gir.girables||[]).map(function(x){return {cliente:x.cliente,factura:'F-'+x.numero,importe:x.importe};}),
+    remesa_guardarrail:{no_girar_rojo:(ver.rojo||[]).length, regirar:(ver.regirar||[]).length, posible_duplicado_ambar:(ver.ambar||[]).length},
+    interanual: pct!=null?{pct:pct,'2025':Math.round(m25),'2026':Math.round(m26)}:null
+  };
+  // 🔔 SEÑALES RÁPIDAS para la FINA flotante (sin IA, gratis) — las "notificaciones del día"
+  var d3=new Date(); d3.setDate(d3.getDate()+3); var d3s=d3.toISOString().slice(0,10);
+  var sig=[];
+  deudores.forEach(function(x){ if(x.dias!=null && x.dias>=60) sig.push({ico:'💸',txt:x.cliente+' te debe '+x.importe+'€ ('+x.dias+' días)',accion:'cobros'}); });
+  venc.forEach(function(v){ if((v.fecha||'')<=d3s) sig.push({ico:'📅',txt:'Vence '+v.fecha+': '+v.proveedor+' '+v.importe+'€'+(v.domiciliado?' (domiciliado)':''),accion:'pagos'}); });
+  if((gir.girables||[]).length) sig.push({ico:'🏦',txt:gir.girables.length+' facturas listas para girar ('+Math.round(gir.total||0)+'€)',accion:'cobros'});
+  if((ver.rojo||[]).length) sig.push({ico:'🛑',txt:(ver.rojo.length)+' recibo(s) a NO girar (abono FD ya los cancela)',accion:'cobros'});
+  window._finaSignals=sig.slice(0,8);
+  window._finaUltimoDatos=datos;
+  return datos;
+}
 async function pedirCerebro(){
   var btn=document.getElementById('cerebro-btn'), out=document.getElementById('cerebro-out');
   var preg=(document.getElementById('cerebro-q')||{}).value||'';
   if(btn){ btn.disabled=true; btn.textContent='🧠 Pensando…'; }
-  if(out) out.innerHTML='<div style="margin-top:12px;color:var(--texto-suave);font-size:13px"><span class="spinner"></span> El cerebro está analizando tus datos reales…</div>';
-  var H={'ngrok-skip-browser-warning':'true'};
-  var JH={'Content-Type':'application/json','ngrok-skip-browser-warning':'true'};
-  var g=function(u){return fetch(BRIDGE_URL_C+u+(u.indexOf('?')>=0?'&':'?')+'_='+Date.now(),{headers:H}).then(function(r){return r.json();}).catch(function(){return {};});};
+  if(out) out.innerHTML='<div style="margin-top:12px;color:var(--texto-suave);font-size:13px"><span class="spinner"></span> FINA está analizando tus datos reales…</div>';
   try{
-    var res=await Promise.all([
-      g('/contabilidad/clientes_pendientes?anio=2026'),
-      g('/contabilidad/pagos?anio=2026'),
-      g('/agora/totales_mensuales?anios=2025,2026'),
-      g('/remesa/verificar?anio=2026'),
-      g('/remesa/girables_transferencia?anio=2026')
-    ]);
-    var cli=res[0]||{}, pag=res[1]||{}, tot=res[2]||{}, ver=res[3]||{}, gir=res[4]||{};
-    // nos deben + deudores top + aging
-    var facsC=cli.facturas||[]; var porCli={};
-    facsC.forEach(function(f){ if((+f.importe)<=0) return; var k=f.cliente||'?'; if(!porCli[k])porCli[k]={cliente:k,importe:0,fecha:f.fecha||''}; porCli[k].importe+=(+f.importe||0); if((f.fecha||'')<porCli[k].fecha||!porCli[k].fecha)porCli[k].fecha=f.fecha||porCli[k].fecha; });
-    var hoy=new Date(); var dias=function(d){ if(!d)return null; var t=new Date(d); return isNaN(t)?null:Math.round((hoy-t)/86400000); };
-    var deudores=Object.values(porCli).sort(function(a,b){return b.importe-a.importe;}).slice(0,6).map(function(d){return {cliente:d.cliente,importe:Math.round(d.importe),dias:dias(d.fecha)};});
-    var nosDeben=Object.values(porCli).reduce(function(a,d){return a+d.importe;},0);
-    // vencimientos 14d
-    var lim=new Date(); lim.setDate(lim.getDate()+14); var venc=[];
-    (pag.facturas||[]).forEach(function(f){ if(f.estado_pago==='pagada'||f.pagada||f.externo)return; var v=f.vencimiento||f.venc; if(!v)return; var t=new Date(v); if(isNaN(t)||t>lim)return; venc.push({proveedor:f.proveedor||f.entidad||'?',fecha:v,importe:Math.round(+f.importe||0),domiciliado:!!(f.domiciliado||f.cal==='programada')}); });
-    venc.sort(function(a,b){return (a.fecha||'').localeCompare(b.fecha||'');});
-    // interanual
-    var pct=null, m25=0, m26=0;
-    if(tot.meses||tot.series){ try{ var s25=(tot.series&&tot.series['2025'])||[], s26=(tot.series&&tot.series['2026'])||[]; m25=s25.reduce(function(a,b){return a+(+b||0);},0); m26=s26.reduce(function(a,b){return a+(+b||0);},0); if(m25>0)pct=Math.round((m26-m25)/m25*1000)/10; }catch(e){} }
-    var datos={
-      fecha:new Date().toISOString().slice(0,10),
-      tesoreria:{nos_deben:Math.round(nosDeben), debemos:Math.round(pag.tot_deuda_real||0), accionable_proveedores:Math.round(pag.tot_accionable||0)},
-      deudores_top:deudores,
-      vencimientos_14d:venc.slice(0,12),
-      girables_transferencia:(gir.girables||[]).map(function(x){return {cliente:x.cliente,factura:'F-'+x.numero,importe:x.importe};}),
-      remesa_guardarrail:{no_girar_rojo:(ver.rojo||[]).length, regirar:(ver.regirar||[]).length, posible_duplicado_ambar:(ver.ambar||[]).length},
-      interanual: pct!=null?{pct:pct,'2025':Math.round(m25),'2026':Math.round(m26)}:null
-    };
-    var j=await fetch(BRIDGE_URL_C+'/cerebro/analisis',{method:'POST',headers:JH,body:JSON.stringify({datos:datos,pregunta:preg})}).then(function(r){return r.json();});
-    if(!j.ok){ if(out)out.innerHTML='<div style="margin-top:12px;color:#dc2626;font-size:13px">El cerebro no pudo responder: '+(j.error||'?')+'</div>'; }
+    var datos=await finaGatherDatos();
+    var j=await fetch(BRIDGE_URL_C+'/cerebro/analisis',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({datos:datos,pregunta:preg})}).then(function(r){return r.json();});
+    if(!j.ok){ if(out)out.innerHTML='<div style="margin-top:12px;color:#dc2626;font-size:13px">FINA no pudo responder: '+(j.error||'?')+'</div>'; }
     else renderCerebro(j);
   }catch(e){ if(out)out.innerHTML='<div style="margin-top:12px;color:#dc2626;font-size:13px">Error: '+e.message+'</div>'; }
   finally{ if(btn){ btn.disabled=false; btn.textContent='🧠 Parte del día'; } }
 }
-function renderCerebro(j){
-  var out=document.getElementById('cerebro-out'); if(!out) return;
+function renderCerebro(j, elId){
+  var out=document.getElementById(elId||'cerebro-out'); if(!out) return;
   var sevCol={alta:'#dc2626',media:'#d97706',baja:'#0F6E56'};
   var sevBg={alta:'#fdeaea',media:'#fdf4e6',baja:'#e8f7ef'};
   var actMap={reclamar:["cobros","✉️ Ir a Cobros"],girar:["cobros","🏦 Ir a remesa"],pagar:["pagos","📅 Ir a Pagos"],conciliar:["cuadrar","🔗 Ir a Cuadrar"],revisar:["pagos","🔎 Revisar"]};
@@ -4707,6 +4718,97 @@ async function ensenarFina(){
     if(j.ok){ var el=document.getElementById('fina-nlec'); if(el) el.textContent=(j.n||0); alert('✅ Aprendido. FINA ya recuerda '+(j.n||0)+' lecciones y aplicará esta a partir de ahora.'); }
     else alert('No se pudo guardar: '+(j.error||'?'));
   }catch(e){ alert('Error: '+e.message); }
+}
+
+// ===== 🧠 FINA FLOTANTE — "te llama al despacho" =====
+function finaFlotanteInit(){
+  if(document.getElementById('fina-fab')) return;
+  var st=document.createElement('style');
+  st.textContent='@keyframes finaPulse{0%{box-shadow:0 0 0 0 rgba(83,74,183,.55)}70%{box-shadow:0 0 0 14px rgba(83,74,183,0)}100%{box-shadow:0 0 0 0 rgba(83,74,183,0)}}'+
+    '@keyframes finaPop{0%{transform:translateY(8px) scale(.96);opacity:0}100%{transform:none;opacity:1}}'+
+    '#fina-fab{position:fixed;right:22px;bottom:22px;z-index:10090;width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,#534AB7,#7c3aed);color:#fff;border:none;cursor:pointer;font-size:27px;box-shadow:0 8px 24px rgba(83,74,183,.45);display:flex;align-items:center;justify-content:center;transition:transform .15s}'+
+    '#fina-fab:hover{transform:scale(1.08)}#fina-fab.llama{animation:finaPulse 1.6s infinite}'+
+    '#fina-badge{position:absolute;top:-3px;right:-3px;min-width:21px;height:21px;border-radius:11px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 5px;border:2px solid #fff}'+
+    '#fina-bubble{position:fixed;right:90px;bottom:34px;z-index:10090;background:#1e1b3a;color:#fff;padding:9px 13px;border-radius:12px;font-size:12.5px;max-width:230px;box-shadow:0 8px 24px rgba(0,0,0,.3);display:none;animation:finaPop .25s;cursor:pointer}'+
+    '#fina-bubble:after{content:"";position:absolute;right:-7px;bottom:18px;border:7px solid transparent;border-left-color:#1e1b3a;border-right:0}'+
+    '#fina-desp{position:fixed;right:22px;bottom:92px;z-index:10091;width:380px;max-width:92vw;max-height:74vh;background:#fff;border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.34);display:none;flex-direction:column;overflow:hidden;animation:finaPop .2s}';
+  document.head.appendChild(st);
+  var wrap=document.createElement('div');
+  wrap.innerHTML=
+   '<button id="fina-fab" onclick="finaToggleDespacho()" title="FINA — tu gerente financiera">🧠<span id="fina-badge">0</span></button>'+
+   '<div id="fina-bubble" onclick="finaToggleDespacho()"></div>'+
+   '<div id="fina-desp">'+
+     '<div style="background:linear-gradient(135deg,#534AB7,#7c3aed);color:#fff;padding:13px 16px;display:flex;align-items:center;gap:9px">'+
+       '<div style="font-size:20px">🧠</div><div style="flex:1"><div style="font-weight:800;font-size:14px">El despacho de FINA</div><div style="font-size:10.5px;color:rgba(255,255,255,.7)">Analiza y recomienda · no mueve dinero</div></div>'+
+       '<button onclick="finaToggleDespacho()" style="background:rgba(255,255,255,.18);border:none;color:#fff;width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:14px">✕</button></div>'+
+     '<div id="fina-desp-body" style="padding:12px 14px;overflow:auto;flex:1"></div>'+
+     '<div style="border-top:1px solid #eee;padding:9px 12px;display:flex;gap:7px">'+
+       '<input id="fina-desp-q" placeholder="Escríbele a FINA…" onkeydown="if(event.key===\'Enter\')finaDespachoPreguntar()" style="flex:1;padding:8px 11px;border:1px solid #ddd;border-radius:9px;font-size:13px">'+
+       '<button onclick="finaDespachoPreguntar()" style="background:#534AB7;color:#fff;border:none;border-radius:9px;padding:0 14px;cursor:pointer;font-size:14px">➤</button></div>'+
+   '</div>';
+  document.body.appendChild(wrap);
+  setTimeout(finaFlotanteSenales, 1800);
+}
+async function finaFlotanteSenales(){
+  try{
+    await finaGatherDatos();   // rellena window._finaSignals (sin IA, gratis)
+    var sig=window._finaSignals||[];
+    var badge=document.getElementById('fina-badge'), fab=document.getElementById('fina-fab'), bub=document.getElementById('fina-bubble');
+    if(sig.length){
+      if(badge){ badge.textContent=sig.length; badge.style.display='flex'; }
+      if(fab) fab.classList.add('llama');
+      var frases=['FINA te llama al despacho…','FINA quiere comentarte algo…','Pásate por el despacho de FINA…'];
+      if(bub){ bub.innerHTML='<b>📋 '+frases[Math.floor(Math.random()*frases.length)]+'</b><div style="font-size:11px;color:rgba(255,255,255,.75);margin-top:2px">'+sig.length+' cosa(s) del día · clic para entrar</div>'; bub.style.display='block'; setTimeout(function(){ if(bub) bub.style.display='none'; }, 9000); }
+    }
+  }catch(e){}
+}
+function finaToggleDespacho(){
+  var d=document.getElementById('fina-desp'); if(!d) return;
+  var bub=document.getElementById('fina-bubble'); if(bub) bub.style.display='none';
+  if(d.style.display==='flex'){ d.style.display='none'; return; }
+  d.style.display='flex';
+  var fab=document.getElementById('fina-fab'); if(fab) fab.classList.remove('llama');
+  finaDespachoRender();
+}
+function finaDespachoRender(){
+  var b=document.getElementById('fina-desp-body'); if(!b) return;
+  var sig=window._finaSignals||[];
+  var h='';
+  if(sig.length){
+    h+='<div style="font-size:11px;font-weight:800;color:#534AB7;margin-bottom:6px">🔔 Lo del día</div>';
+    sig.forEach(function(s){ h+='<div onclick="switchTabC(\''+(s.accion||'cobros')+'\');finaToggleDespacho()" style="display:flex;gap:8px;align-items:center;background:#f6f4fc;border-radius:9px;padding:9px 11px;margin-bottom:6px;cursor:pointer;font-size:12.5px"><span>'+(s.ico||'•')+'</span><span style="flex:1">'+s.txt+'</span><span style="color:#534AB7;font-size:13px">›</span></div>'; });
+  } else {
+    h+='<div style="color:var(--texto-suave);font-size:13px;padding:8px 2px">Todo tranquilo por ahora 🌤️ Ningún fuego que apagar.</div>';
+  }
+  h+='<button onclick="finaDespachoParte()" id="fina-desp-parte-btn" style="width:100%;margin-top:8px;padding:9px;background:#534AB7;color:#fff;border:none;border-radius:9px;cursor:pointer;font-size:13px;font-weight:700">🧠 Pídeme el parte completo</button>';
+  h+='<div id="fina-desp-out"></div>';
+  b.innerHTML=h;
+}
+async function finaDespachoParte(){
+  var btn=document.getElementById('fina-desp-parte-btn'), out=document.getElementById('fina-desp-out');
+  if(btn){ btn.disabled=true; btn.textContent='🧠 Pensando…'; }
+  if(out) out.innerHTML='<div style="margin-top:10px;color:var(--texto-suave);font-size:12.5px"><span class="spinner"></span> Analizando…</div>';
+  try{
+    var datos=window._finaUltimoDatos||await finaGatherDatos();
+    var j=await fetch(BRIDGE_URL_C+'/cerebro/analisis',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({datos:datos})}).then(function(r){return r.json();});
+    if(out) out.innerHTML='';
+    if(j.ok) renderCerebro(j,'fina-desp-out'); else if(out) out.innerHTML='<div style="color:#dc2626;font-size:12.5px;margin-top:8px">No pude: '+(j.error||'?')+'</div>';
+  }catch(e){ if(out) out.innerHTML='<div style="color:#dc2626;font-size:12.5px">Error: '+e.message+'</div>'; }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='🧠 Pídeme el parte completo'; } }
+}
+async function finaDespachoPreguntar(){
+  var q=document.getElementById('fina-desp-q'), out=document.getElementById('fina-desp-out');
+  var preg=(q&&q.value||'').trim(); if(!preg) return; if(q) q.value='';
+  var b=document.getElementById('fina-desp-body');
+  if(b && !out){ b.innerHTML+='<div id="fina-desp-out"></div>'; out=document.getElementById('fina-desp-out'); }
+  if(out) out.innerHTML='<div style="margin-top:10px;font-size:12.5px;color:#534AB7"><b>Tú:</b> '+preg+'</div><div style="margin-top:6px;color:var(--texto-suave);font-size:12.5px"><span class="spinner"></span> FINA está pensando…</div>';
+  try{
+    var datos=window._finaUltimoDatos||await finaGatherDatos();
+    var j=await fetch(BRIDGE_URL_C+'/cerebro/analisis',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({datos:datos,pregunta:preg})}).then(function(r){return r.json();});
+    var ans=(j.parte||j.error||'(sin respuesta)');
+    if(out) out.innerHTML='<div style="margin-top:10px;font-size:12.5px;color:#534AB7"><b>Tú:</b> '+preg+'</div>'+
+      '<div style="margin-top:8px;background:#f6f4fc;border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.5;color:#1e1b3a"><b>🧠 FINA:</b> '+ans.replace(/\n/g,'<br>')+'</div>';
+  }catch(e){ if(out) out.innerHTML='<div style="color:#dc2626;font-size:12.5px">Error: '+e.message+'</div>'; }
 }
 
 // ===== PULSO — cuadro de salud =====

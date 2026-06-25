@@ -4725,7 +4725,8 @@ function buzonFile(file){
     if(/\.pdf$/i.test(file.name)||head.slice(0,4)==='%PDF'){
       // PDF de banco. "recibo devuelto"/"devolución"/"avance de extracto" = devolución SEPA individual → casador.
       // "adeudos/listado/impagados/remesa" = listado de remesa → flujo de remesa. Lo demás = factura → cajón.
-      if(/devuelt|devoluci[oó]n|avance.*extracto|r\.?d\.?\s*sepa/i.test(file.name)) tipo='devolucion';
+      if(/aviso.?de.?pago|aviso_de_pago|aviso.*pago/i.test(file.name)) tipo='aviso';
+      else if(/devuelt|devoluci[oó]n|avance.*extracto|r\.?d\.?\s*sepa/i.test(file.name)) tipo='devolucion';
       else if(/adeudo|listado de adeudos|cumovements|remesa|impagad/i.test(file.name)) tipo='remesa';
       else tipo='pdf';
     }
@@ -4765,6 +4766,18 @@ async function buzonDetectado(file, tipo, txt){
         var j=await fetch(BRIDGE_URL_C+'/proveedores/subir_doc',{method:'POST',headers:HP,body:JSON.stringify({nombre:file.name, archivo_base64:b64})}).then(function(r){return r.json();});
         document.getElementById('buzon-pdfres').innerHTML = j.ok? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Guardada en el cajón. Ve a 📥 Facturas recibidas → ordenar el cajón cuando quieras.</div>' : '<div style="color:#dc2626;font-size:13px">'+(j.error||'Error')+'</div>';
       }catch(e){ document.getElementById('buzon-pdfres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; } };
+  } else if(tipo==='aviso'){
+    res.innerHTML=badge('📅 Aviso de pago detectado','#e7f0fd')+
+      '<div style="margin:12px 0;font-size:13px">Leo la fecha de cargo y las facturas que cargarán ese día (IGT y similares)…</div><div id="buzon-avres"></div>';
+    try{
+      var b64=await buzonB64(file);
+      var j=await fetch(BRIDGE_URL_C+'/proveedores/aviso_pago',{method:'POST',headers:HP,body:JSON.stringify({pdf_base64:b64})}).then(function(r){return r.json();});
+      var ar=document.getElementById('buzon-avres');
+      if(!j.ok){ ar.innerHTML='<div style="color:#dc2626;font-size:13px">'+(j.error||'No es un aviso de pago')+'</div>'; return; }
+      var filas=(j.partidas||[]).map(function(p){ return '<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;border-bottom:1px solid #f3f3f3"><span><b>'+p.factura+'</b> · '+(p.fecha||'')+'</span><b>'+(+p.importe||0).toFixed(2)+'€</b></div>'; }).join('');
+      ar.innerHTML='<div style="font-size:13px;margin:6px 0"><b>'+(j.proveedor||'')+'</b> · cargo el <b style="color:#c0392b">'+j.vencimiento+'</b>'+(j.total?(' · total '+(+j.total).toFixed(2)+'€'):'')+'</div>'+filas+
+        '<div style="color:#0F6E56;font-weight:700;font-size:13px;margin-top:8px">✅ Guardado. En Pagos, estas facturas vencen el '+j.vencimiento+'.</div>';
+    }catch(e){ document.getElementById('buzon-avres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; }
   } else if(tipo==='devolucion'){
     res.innerHTML=badge('↩️ Devolución de recibo detectada','#fee2e2')+
       '<div style="margin:12px 0;font-size:13px">Leo el PDF y busco a qué factura/remesa corresponde…</div><div id="buzon-devres"></div>';

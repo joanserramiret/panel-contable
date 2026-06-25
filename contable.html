@@ -1188,6 +1188,7 @@ function cerrarSesionContable() {
 
 // ===== INIT =====
 function initContable() {
+  try { finaFlotanteInit(); } catch(e) { console.warn(e); }   // 🧠 FINA flotante: SIEMPRE tras iniciar sesión
   try { cargarSaldos(); } catch(e) { console.warn(e); }
   try { setPeriod('year'); } catch(e) { console.warn(e); }  // año en curso entero: la caché del bridge lo hace ligero
   try { cargarAliases(); } catch(e) {}  // 🪪 nombres aprendidos (Juan Ruiz = Amapola)

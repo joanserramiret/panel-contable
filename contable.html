@@ -5018,6 +5018,7 @@ function buzonFile(file){
       else if(/adeudo|listado de adeudos|cumovements|remesa|impagad/i.test(file.name)) tipo='remesa';
       else tipo='pdf';
     }
+    else if(/\.xlsx?$/i.test(file.name)) tipo='tarjeta';   // extracto de tarjeta de crédito (Sabadell .xls)
     else if(/^0119143/.test(head)) tipo='remesa';
     else if(/\.n43$/i.test(file.name)||/^(11|00)\d{6}/.test(head)) tipo='n43';
     else if(/\n/.test(txt)&&/[;,].*[;,]/.test(head)) tipo='csv';
@@ -5026,6 +5027,38 @@ function buzonFile(file){
   rd.readAsText(file.slice(0,5000));
 }
 function buzonB64(file){ return new Promise(function(r){ var x=new FileReader(); x.onload=function(){ r((x.result+'').split(',')[1]); }; x.readAsDataURL(file); }); }
+function buzonNum(s){ s=(''+(s==null?'':s)).trim(); if(!s) return null; s=s.replace(/[^\d.,-]/g,''); if(!s) return null; s=s.replace(/\./g,'').replace(',','.'); var n=parseFloat(s); return isNaN(n)?null:n; }
+function buzonCargarXLSX(){ return new Promise(function(res,rej){ if(window.XLSX) return res(); var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=function(){res();}; s.onerror=function(){rej(new Error('no se pudo cargar el lector de Excel'));}; document.head.appendChild(s); }); }
+async function buzonParseTarjeta(file){
+  await buzonCargarXLSX();
+  var buf=await file.arrayBuffer();
+  var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+  var sh=wb.Sheets[wb.SheetNames[0]];
+  var rows=XLSX.utils.sheet_to_json(sh,{header:1,raw:false,defval:''});
+  var esTarjeta=rows.some(function(r){return (r||[]).some(function(c){return /MOVIMIENTOS DE CREDITO|Saldos y movimientos|IMPORTE TOTAL A LIQUIDAR|MC EMPRESA/i.test(''+c);});});
+  if(!esTarjeta) return null;
+  var d={tarjeta:'',titular:'',cuenta:'',movimientos:[],saldo_aplazado:null,total_operaciones:null,importe_liquidar:null,limite:null,disponible:null};
+  var m=(file.name||'').match(/(\d{2})(\d{2})(\d{4})/); d.fecha_corte = m? (m[3]+'-'+m[2]+'-'+m[1]) : new Date().toISOString().slice(0,10);
+  for(var i=0;i<rows.length;i++){
+    var r=(rows[i]||[]).map(function(x){return (''+x).trim();});
+    for(var c=0;c<r.length;c++){
+      var cell=r[c].toLowerCase();
+      if(cell==='tarjeta:'||cell==='tarjeta'){ d.tarjeta=r[c+1]||d.tarjeta; if(r[c+2]&&!d.titular_desc)d.titular_desc=r[c+2]; }
+      else if(cell.indexOf('titular tarjeta')===0){ d.titular=r[c+1]||d.titular; }
+      else if(cell.indexOf('cuenta relacionada')===0){ d.cuenta=r[c+1]||d.cuenta; }
+      else if(cell.indexOf('mite de cr')>=0){ d.limite=buzonNum(r[c+1]); }   // "Límite de crédito" (acentos rotos)
+      else if(cell.indexOf('saldo disponible')===0){ d.disponible=buzonNum(r[c+1]||r[c+2]); }
+      else if(cell.indexOf('saldo aplazado anterior')===0){ d.saldo_aplazado=buzonNum(r[c+1]||r[c+2]||r[c+3]); }
+      else if(cell.indexOf('importe total a liquidar')===0){ d.importe_liquidar=buzonNum(r[c+1]||r[c+2]||r[c+3]); }
+      else if(cell.indexOf('total operaciones')>=0 && d.total_operaciones==null){ d.total_operaciones=buzonNum(r[c+1]||r[c+2]||r[c+3]); }
+    }
+    if(/^\d{2}\/\d{2}$/.test(r[0])){   // fila de movimiento: DD/MM en la 1ª columna
+      var imp=null; for(var k=r.length-1;k>=2;k--){ if(/\d[.,]\d/.test(r[k])){ imp=buzonNum(r[k]); break; } }
+      d.movimientos.push({fecha:r[0], concepto:r[1]||'', localidad:r[2]||'', importe:imp});
+    }
+  }
+  return d;
+}
 async function buzonDetectado(file, tipo, txt){
   var res=document.getElementById('buzon-res');
   var HP={'ngrok-skip-browser-warning':'true','Content-Type':'application/json'};
@@ -5047,6 +5080,26 @@ async function buzonDetectado(file, tipo, txt){
           nr.innerHTML = ji.ok? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Importados '+(ji.nuevos||0)+' movimientos. Ya están en Tesorería.</div>' : '<div style="color:#dc2626">'+(ji.error||'Error')+'</div>'; };
       }catch(e){ nr.innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; }
     };
+  } else if(tipo==='tarjeta'){
+    res.innerHTML=badge('💳 Extracto de tarjeta detectado','#ede9fe')+'<div style="margin:12px 0 6px;font-size:13px">Leyendo el extracto…</div><div id="buzon-tjres"></div>';
+    try{
+      var d=await buzonParseTarjeta(file);
+      var tj=document.getElementById('buzon-tjres');
+      if(!d){ tj.innerHTML='<div style="color:#dc2626;font-size:13px">No reconozco este Excel como un extracto de tarjeta del Sabadell.</div>'; return; }
+      var eur=function(v){return v==null?'—':new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v)+' €';};
+      var html='<div style="font-size:13px;margin-bottom:8px">Tarjeta <b>'+(d.tarjeta||'?')+'</b>'+(d.titular?' · '+d.titular:'')+' · corte <b>'+d.fecha_corte+'</b></div>';
+      if(d.movimientos.length){ html+='<div style="border:1px solid #eee;border-radius:8px;overflow:hidden;margin-bottom:8px;max-height:200px;overflow:auto">'; d.movimientos.forEach(function(mv){ html+='<div style="display:flex;gap:8px;padding:6px 10px;border-bottom:1px solid #f4f4f4;font-size:12.5px"><span style="color:#888;width:42px">'+mv.fecha+'</span><span style="flex:1">'+(mv.concepto||'')+'</span><span style="font-weight:600">'+eur(mv.importe)+'</span></div>'; }); html+='</div>'; }
+      else html+='<div style="color:#999;font-size:12.5px;margin-bottom:8px">Sin cargos en este corte.</div>';
+      html+='<div style="font-size:12.5px;color:#444">Cargos del mes: <b>'+eur(d.total_operaciones)+'</b> · A liquidar: <b>'+eur(d.importe_liquidar)+'</b> · Disponible: <b>'+eur(d.disponible)+'</b></div>';
+      if(d.limite&&d.importe_liquidar&&(d.importe_liquidar/d.limite)>0.9) html+='<div style="margin-top:8px;background:#fdeaea;border-left:3px solid #dc2626;border-radius:7px;padding:8px 11px;font-size:12px;color:#991b1b">⚠️ Tarjeta al '+Math.round(d.importe_liquidar/d.limite*100)+'% del límite ('+eur(d.importe_liquidar)+' de '+eur(d.limite)+'). El aplazado es deuda cara — conviene liquidar.</div>';
+      html+='<button id="buzon-tj-reg" style="margin-top:10px;padding:8px 18px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-weight:700">Registrar extracto</button><div id="buzon-tj-done" style="margin-top:8px"></div>';
+      tj.innerHTML=html;
+      document.getElementById('buzon-tj-reg').onclick=async function(){ var b=this; b.disabled=true; b.textContent='Registrando…';
+        try{ var jr=await fetch(BRIDGE_URL_C+'/banco/tarjeta_importar',{method:'POST',headers:HP,body:JSON.stringify(d)}).then(function(r){return r.json();});
+          document.getElementById('buzon-tj-done').innerHTML = jr.ok? ('<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ '+(jr.ya_registrado?'Este corte ya estaba registrado (no se duplica).':'Registrado: '+jr.n_movimientos+' cargos guardados.')+'</div>') : '<div style="color:#dc2626;font-size:13px">'+(jr.error||'Error')+'</div>';
+          b.textContent='✅ Registrado';
+        }catch(e){ document.getElementById('buzon-tj-done').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Registrar extracto'; } };
+    }catch(e){ var tj2=document.getElementById('buzon-tjres'); if(tj2) tj2.innerHTML='<div style="color:#dc2626;font-size:13px">Error leyendo el Excel: '+e.message+'</div>'; }
   } else if(tipo==='pdf'){
     res.innerHTML=badge('📄 Factura (PDF) detectada','#faeeda')+'<div style="margin:12px 0;font-size:13px">La guardo en el <b>cajón</b> y se clasificará sola al ordenar el cajón.</div><button id="buzon-pdf" style="padding:8px 18px;border:none;border-radius:8px;background:#854F0B;color:#fff;cursor:pointer;font-weight:700">Guardar en el cajón</button><div id="buzon-pdfres" style="margin-top:8px"></div>';
     document.getElementById('buzon-pdf').onclick=async function(){ var b=document.getElementById('buzon-pdf'); b.disabled=true; b.textContent='Guardando…';

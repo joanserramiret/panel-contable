@@ -530,6 +530,7 @@
         <div id="pagos-resumen" style="font-size:12.5px;color:var(--texto-suave);margin-top:6px"></div>
         <div style="font-size:11px;color:var(--texto-suave);margin-top:4px">⚡ auto = domiciliado (te lo cargan solo) · ✋ manual = lo pagas tú · <b>~</b> = vencimiento estimado, revísalo con ✎</div>
       </div>
+      <div class="card" style="margin-bottom:14px"><div id="pagos-calendario"></div></div>
       <div class="card"><div id="pagos-lista"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div></div>
     </div>
 
@@ -671,6 +672,8 @@
         <div class="card"><div class="card-title">⚠️ Alertas · clic para actuar</div>
           <div id="pl-alertas"><div style="color:var(--texto-suave);font-size:13px">Analizando…</div></div></div>
       </div>
+
+      <div class="card" style="margin-top:12px"><div id="pulso-calendario"><div style="color:var(--texto-suave);font-size:13px">Cargando calendario…</div></div></div>
 
       <div style="display:grid;grid-template-columns:1.1fr 1fr 0.8fr;gap:16px">
         <div class="card"><div class="card-title">⏳ Antigüedad de la deuda</div>
@@ -4276,11 +4279,87 @@ function pagToggle(k) { _pagFiltro[k] = !_pagFiltro[k]; renderPagos(); }
 function pagPreset(p) { _pagFiltro = (p === 'todas') ? { pendiente: true, parcial: true, pagada: true } : { pendiente: true, parcial: true, pagada: false }; renderPagos(); }
 let _pagVerClasif = true;   // mostrar/ocultar el cajón "por clasificar" (Raquel) — no es deuda a proveedor
 function pagToggleClasif() { _pagVerClasif = !_pagVerClasif; renderPagos(); }
+
+// ── 📅 CALENDARIO DE VENCIMIENTOS (reutilizable: Pagos y Pulso) ──
+// Pinta los pagos a proveedor que caen cada día (rojo) + lista "Próximos 14 días" + contraste de tesorería
+// (a pagar vs nos deben). Datos = pagos PENDIENTES (no pagada, no externo) con su vencimiento.
+let _calVencMes = 0;   // offset de mes respecto al actual
+function calVencNav(d) { _calVencMes += d; if (window._calVencRerender) window._calVencRerender(); }
+function _calVencItems(pagosArr) {
+  return (pagosArr || []).filter(p => p.estado !== 'pagada' && p.estado !== 'externo' && p.vencimiento)
+    .map(p => ({ venc: (p.vencimiento || '').slice(0, 10), prov: (p.proveedor || '—'),
+                 imp: (p.pendiente != null ? p.pendiente : (p.a_pagar || p.total || 0)),
+                 dom: !!p.domiciliado, est: (p.like || p.cal) }));
+}
+function renderCalVenc(contId, pagosArr, debenTotal) {
+  const cont = document.getElementById(contId); if (!cont) return;
+  window._calVencRerender = function () { renderCalVenc(contId, pagosArr, debenTotal); };
+  const items = _calVencItems(pagosArr);
+  const byDay = {};
+  items.forEach(it => { (byDay[it.venc] = byDay[it.venc] || { total: 0, n: 0 }); byDay[it.venc].total += it.imp; byDay[it.venc].n++; });
+  const base = new Date(); base.setDate(1); base.setMonth(base.getMonth() + _calVencMes);
+  const y = base.getFullYear(), m = base.getMonth();
+  const offset = (new Date(y, m, 1).getDay() + 6) % 7;   // lunes = 0
+  const ndias = new Date(y, m + 1, 0).getDate();
+  const hoyISO = new Date().toISOString().slice(0, 10);
+  const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const btn = 'padding:2px 9px;border:1px solid #c0cbea;border-radius:7px;background:#f0f4fb;color:#1a2e6e;cursor:pointer;font-size:14px;font-weight:700;line-height:1';
+  let h = '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">' +
+    '<div class="card-title" style="margin:0">📅 Calendario de vencimientos</div>' +
+    '<div style="display:flex;gap:6px;align-items:center"><button onclick="calVencNav(-1)" style="' + btn + '">‹</button>' +
+    '<b style="min-width:120px;text-align:center;font-size:13px">' + meses[m] + ' ' + y + '</b>' +
+    '<button onclick="calVencNav(1)" style="' + btn + '">›</button>' +
+    (_calVencMes !== 0 ? '<button onclick="_calVencMes=0;if(window._calVencRerender)window._calVencRerender()" style="padding:2px 9px;border:1px dashed #c0cbea;border-radius:7px;background:#fff;color:#1a2e6e;cursor:pointer;font-size:11px">hoy</button>' : '') +
+    '</div></div>';
+  h += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">';
+  ['L', 'M', 'X', 'J', 'V', 'S', 'D'].forEach(d => h += '<div style="text-align:center;font-size:10px;color:#999;font-weight:700">' + d + '</div>');
+  for (let i = 0; i < offset; i++) h += '<div></div>';
+  for (let d = 1; d <= ndias; d++) {
+    const iso = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    const day = byDay[iso]; const esHoy = iso === hoyISO;
+    if (day) {
+      h += '<div title="' + day.n + ' pago(s) · ' + bkFmt(day.total) + '" style="border:1.5px solid ' + (esHoy ? '#1a2e6e' : '#f0a0a0') + ';border-radius:7px;padding:3px 4px;min-height:48px;background:#fcebeb">' +
+        '<div style="font-size:11px;font-weight:700;color:' + (esHoy ? '#1a2e6e' : '#555') + '">' + d + '</div>' +
+        '<div style="font-size:10.5px;font-weight:800;color:#c0392b;line-height:1.1;margin-top:2px">' + bkFmt(day.total) + '</div>' +
+        (day.n > 1 ? '<div style="font-size:9px;color:#a32d2d">' + day.n + ' fac</div>' : '') + '</div>';
+    } else {
+      h += '<div style="border:1px solid #eee;border-radius:7px;padding:3px 4px;min-height:48px;background:' + (esHoy ? '#eef2fb' : '#fafafa') + '">' +
+        '<div style="font-size:11px;color:' + (esHoy ? '#1a2e6e' : '#ccc') + ';font-weight:' + (esHoy ? '700' : '400') + '">' + d + '</div></div>';
+    }
+  }
+  h += '</div>';
+  // Próximos 14 días
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const lim = new Date(hoy); lim.setDate(lim.getDate() + 14);
+  const prox = items.filter(it => { const f = new Date(it.venc + 'T00:00:00'); return f >= hoy && f <= lim; }).sort((a, b) => a.venc < b.venc ? -1 : 1);
+  const totProx = prox.reduce((s, it) => s + it.imp, 0);
+  h += '<div style="margin-top:14px;border-top:1px solid #eee;padding-top:10px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:13px">⏳ Próximos 14 días — lo que te van a cargar</b>' +
+    '<b style="color:#c0392b;font-size:14px">' + bkFmt(totProx) + '</b></div>';
+  if (!prox.length) h += '<div style="color:var(--verde,#1b7a3d);font-size:12.5px">✓ Nada que pagar en los próximos 14 días.</div>';
+  else h += prox.map(it => '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:4px 0;border-bottom:1px solid #f5f5f5">' +
+    '<span style="color:#c0392b;font-weight:700;min-width:52px;flex-shrink:0">' + fechaES2(it.venc) + '</span>' +
+    '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + it.prov + (it.dom ? ' <span title="domiciliado, te lo cargan solo" style="color:#0e7490;font-size:10px">⚡</span>' : ' <span title="lo pagas tú a mano" style="color:#a32d2d;font-size:10px">✋</span>') + '</span>' +
+    '<b style="flex-shrink:0">' + bkFmt(it.imp) + '</b></div>').join('');
+  // Contraste de tesorería (si nos pasan cuánto nos deben)
+  if (debenTotal != null) {
+    const dif = (debenTotal || 0) - totProx;
+    h += '<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px">' +
+      '<span style="background:#fcebeb;border:1px solid #f0a0a0;border-radius:8px;padding:6px 12px"><b style="color:#c0392b">A pagar (14d): ' + bkFmt(totProx) + '</b></span>' +
+      '<span style="background:#e8f7ef;border:1px solid #a7d7b8;border-radius:8px;padding:6px 12px"><b style="color:#1b7a3d">Nos deben: ' + bkFmt(debenTotal) + '</b></span>' +
+      '<span style="background:' + (dif >= 0 ? '#eef2fb' : '#fff3e0') + ';border:1px solid ' + (dif >= 0 ? '#c0cbea' : '#e8b27a') + ';border-radius:8px;padding:6px 12px"><b style="color:' + (dif >= 0 ? '#1a2e6e' : '#b45309') + '">' + (dif >= 0 ? 'Cubierto con lo que te deben (+' + bkFmt(dif) + ')' : 'Falta por cubrir: ' + bkFmt(-dif) + ' → aprieta a quien te debe') + '</b></span>' +
+      '</div>';
+  }
+  h += '</div>';
+  cont.innerHTML = h;
+}
+
 function renderPagos() {
   const cont = document.getElementById('pagos-lista');
   const res = document.getElementById('pagos-resumen');
   const todas = pagosDatos.pagos || [];
   const c = pagosDatos.cuenta || { pendiente: 0, parcial: 0, pagada: 0 };
+  try { renderCalVenc('pagos-calendario', todas, window._debenTotal); } catch (e) {}
   // Cajón "por clasificar" (NO es deuda a proveedor): el backend ya respeta la reclasificación (tabla-puente),
   // así que confiamos en su flag (una factura reclasificada a su proveedor real ya NO es cubo).
   const _esClasif = p => !!p.clasificar;
@@ -4549,6 +4628,8 @@ async function cargarPulso(){
     const debemos=(jpag.tot_deuda_real!=null?jpag.tot_deuda_real:(jpag.total||0));
     S('pl-deben',eur(deben)); S('pl-deben-n',(jp.n||pend.length)+' facturas');
     S('pl-debemos',eur(debemos));
+    window._debenTotal=deben;   // para el contraste de tesorería del calendario (también en Pagos)
+    try{ renderCalVenc('pulso-calendario', jpag.pagos||[], deben); }catch(e){}
     const _saldos=(js&&js.saldos)||[];
     const hayBanco=_saldos.some(s=>typeof s.saldo==='number');
     const saldoBancos=_saldos.reduce((a,s)=>a+(typeof s.saldo==='number'?s.saldo:0),0);
@@ -4970,18 +5051,19 @@ async function remesisarAbrir(banco){
       return {cliente:m.cliente||v.cliente,nif:m.nif||'',importe:imp,facturas:[v.fact],concepto:con,fact:v.fact,tipo:tipo,gastos:gas,base:+v.importe,bancoDev:v.banco_dev||'',_sel:true};};
     var nuevas=(g.verde||[]).filter(function(v){return !yaRem[norm(v.fact)];}).map(function(v){return mk(v,'nueva');});
     var regir=(g.regirar||[]).map(function(v){return mk(v,'regirar');});
-    // 🆕 clientes con MANDATO MANUAL nuevo (firmaron SEPA) cuyas facturas Ágora aún marca transferencia → ya son girables
-    var jm=await fetch(BRIDGE_URL_C+'/remesa/mandato_manual?_='+Date.now(),{headers:H}).then(function(r){return r.json();}).catch(function(){return {mandatos:{}};});
-    var manNIF={}; Object.keys(jm.mandatos||{}).forEach(function(k){manNIF[norm(k)]=true;});
+    // 🆕 facturas que Ágora marca TRANSFERENCIA pero cuyo cliente YA tiene mandato (historial de recibo /
+    //    C192 / SEPA firmado / manual) → ya son girables. Endpoint unificado /remesa/girables_transferencia.
     var conMandato=[];
-    if(Object.keys(manNIF).length){
-      var jp=await fetch(BRIDGE_URL_C+'/contabilidad/clientes_pendientes?anio=2026&_='+Date.now(),{headers:H}).then(function(r){return r.json();}).catch(function(){return {facturas:[]};});
+    try{
+      var jg=await fetch(BRIDGE_URL_C+'/remesa/girables_transferencia?anio=2026&_='+Date.now(),{headers:H}).then(function(r){return r.json();});
       var yaEn={}; (g.verde||[]).concat(g.regirar||[]).forEach(function(v){yaEn[norm(v.fact)]=true;});
-      (jp.facturas||[]).forEach(function(f){var fc=(f.serie||'F')+'-'+f.numero; var fk=norm(fc); var m=byFac[fk]||{};
-        if(manNIF[norm(m.nif)] && !yaEn[fk] && !yaRem[fk] && (+f.importe)>0){
-          conMandato.push(mk({fact:fc,cliente:m.cliente||f.cliente,importe:+f.importe,fecha:f.fecha},'mandato'));
+      (jg.girables||[]).forEach(function(v){var fc=(v.serie||'F')+'-'+v.numero; var fk=norm(fc);
+        if(!yaEn[fk] && !yaRem[fk]){
+          var rec=mk({fact:fc,cliente:v.cliente,importe:+v.importe,fecha:v.fecha},'mandato');
+          if(!rec.nif && v.cif) rec.nif=v.cif;   // respaldo: NIF del propio endpoint si Ágora no lo trae
+          conMandato.push(rec);
         }});
-    }
+    }catch(e){}
     window._consRecibos=regir.concat(conMandato).concat(nuevas);
     var nRem=Object.keys(yaRem).length;
     var row=function(r,i,col){return '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:4px 2px;border-bottom:1px solid #f4f4f4;cursor:pointer"><input type="checkbox" '+(r._sel?'checked':'')+' onchange="window._consRecibos['+i+']._sel=this.checked;consTotal()"><span style="width:70px;color:'+col+';font-weight:600">'+r.fact+'</span><span style="flex:1">'+(r.cliente||'(sin nombre)')+(r.gastos>0?' <span style="color:#185FA5;font-size:11px">+ '+eur(r.gastos)+' gastos dev'+(r.bancoDev?' '+r.bancoDev:'')+'</span>':'')+(r.nif?'':' <span style=\'color:#c00\'>⚠ sin NIF</span>')+'</span><span style="font-weight:600">'+eur(r.importe)+'</span></label>';};

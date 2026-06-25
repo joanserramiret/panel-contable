@@ -641,11 +641,12 @@
         <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
           <div style="font-size:24px">🧠</div>
           <div>
-            <div style="font-size:15px;font-weight:800;letter-spacing:-.2px">Cerebro · tu gerente financiero</div>
-            <div style="font-size:11px;color:var(--texto-suave)">Analiza, prioriza y recomienda con tus datos reales. No mueve dinero — decides tú.</div>
+            <div style="font-size:15px;font-weight:800;letter-spacing:-.2px">FINA · tu gerente financiera <span style="font-size:10px;font-weight:600;color:#fff;background:#534AB7;border-radius:6px;padding:1px 6px;vertical-align:middle">IA</span></div>
+            <div style="font-size:11px;color:var(--texto-suave)">Analiza, prioriza y recomienda con tus datos reales. Aprende de ti · <span id="fina-nlec">—</span> lecciones. No mueve dinero — decides tú.</div>
           </div>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <input id="cerebro-q" placeholder="Pregúntale lo que quieras…" onkeydown="if(event.key==='Enter')pedirCerebro()" style="padding:7px 12px;border:1px solid #d9d4f5;border-radius:9px;font-size:13px;width:230px">
+            <button onclick="ensenarFina()" id="fina-teach-btn" title="Enséñale una regla o corrección — la recordará siempre" style="padding:8px 12px;background:#fff;color:#534AB7;border:1px solid #534AB7;border-radius:9px;cursor:pointer;font-size:13px;font-weight:700">🎓 Enséñale</button>
             <button onclick="pedirCerebro()" id="cerebro-btn" style="padding:8px 16px;background:#534AB7;color:#fff;border:none;border-radius:9px;cursor:pointer;font-size:13px;font-weight:700">🧠 Parte del día</button>
           </div>
         </div>
@@ -4687,13 +4688,31 @@ function renderCerebro(j){
   }
   if((j.riesgos||[]).length){ h+='<div style="font-size:12px;font-weight:800;color:#dc2626;margin:12px 0 5px">⚠️ Riesgos</div><ul style="margin:0;padding-left:18px;font-size:12.5px;color:#444">'; j.riesgos.forEach(function(r){h+='<li style="margin-bottom:3px">'+r+'</li>';}); h+='</ul>'; }
   if((j.oportunidades||[]).length){ h+='<div style="font-size:12px;font-weight:800;color:#0F6E56;margin:12px 0 5px">💡 Oportunidades</div><ul style="margin:0;padding-left:18px;font-size:12.5px;color:#444">'; j.oportunidades.forEach(function(o){h+='<li style="margin-bottom:3px">'+o+'</li>';}); h+='</ul>'; }
-  h+='<div style="font-size:10.5px;color:#aaa;margin-top:10px;text-align:right">🧠 '+(j.modelo||'')+' · El cerebro analiza y recomienda; las decisiones y los movimientos de dinero los haces tú.</div></div>';
+  h+='<div style="font-size:10.5px;color:#aaa;margin-top:10px;text-align:right">🧠 FINA ('+(j.modelo||'')+') analiza y recomienda; las decisiones y los movimientos de dinero los haces tú.</div></div>';
   out.innerHTML=h;
+}
+async function finaCargarLecciones(){
+  try{
+    var j=await fetch(BRIDGE_URL_C+'/cerebro/memoria?_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();});
+    var el=document.getElementById('fina-nlec'); if(el) el.textContent=(j.n||0);
+    window._finaLecciones=j.lecciones||[];
+  }catch(e){}
+}
+async function ensenarFina(){
+  var lecc=prompt('🎓 Enséñale a FINA una regla o corrección (la recordará siempre y la aplicará en cada análisis):\n\nEj: "A tal cliente no le gires nunca, paga siempre por transferencia."');
+  if(!lecc||!lecc.trim()) return;
+  var quien=prompt('¿Quién se lo enseña? (Joan / Raquel)', (localStorage.getItem('panel_user')||'Joan'))||'Joan';
+  try{
+    var j=await fetch(BRIDGE_URL_C+'/cerebro/memoria',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({leccion:lecc.trim(),quien:quien.trim()})}).then(function(r){return r.json();});
+    if(j.ok){ var el=document.getElementById('fina-nlec'); if(el) el.textContent=(j.n||0); alert('✅ Aprendido. FINA ya recuerda '+(j.n||0)+' lecciones y aplicará esta a partir de ahora.'); }
+    else alert('No se pudo guardar: '+(j.error||'?'));
+  }catch(e){ alert('Error: '+e.message); }
 }
 
 // ===== PULSO — cuadro de salud =====
 async function cargarPulso(){
   const H={headers:{'ngrok-skip-browser-warning':'true'}};
+  finaCargarLecciones();
   const eur=x=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(Math.round(x||0))+' €';
   const S=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
   try{

@@ -5059,6 +5059,38 @@ async function buzonParseTarjeta(file){
   }
   return d;
 }
+async function buzonParseRemesaXls(file){
+  // Remesa Bankinter exportada (.xls "Remesa_Exportada_*"): YA girada, pendiente de recibir → "En proceso".
+  await buzonCargarXLSX();
+  var buf=await file.arrayBuffer();
+  var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+  var sh=wb.Sheets[wb.SheetNames[0]];
+  var rows=XLSX.utils.sheet_to_json(sh,{header:1,raw:false,defval:''});
+  var esRem=rows.some(function(r){return (r||[]).some(function(c){return /Adeudos SEPA|Listado de Adeudos|Nombre Remesa|ADEUDOS DIRECTOS/i.test(''+c);});});
+  if(!esRem) return null;
+  var d={banco:'Bankinter',facturas:[],recibos:[],fecha:null,total:null,nombre_remesa:''};
+  var enLista=false;
+  for(var i=0;i<rows.length;i++){
+    var r=(rows[i]||[]).map(function(x){return (''+x).trim();});
+    for(var c=0;c<r.length;c++){ var cell=r[c].toLowerCase();
+      if(cell.indexOf('fecha de cobro')===0){ var fc=(r[c+1]||'').match(/(\d{2})\/(\d{2})\/(\d{4})/); if(fc) d.fecha=fc[3]+'-'+fc[2]+'-'+fc[1]; }
+      else if(cell.indexOf('nombre remesa')===0){ d.nombre_remesa=r[c+1]||d.nombre_remesa; }
+      else if(cell.indexOf('importe total')===0 && d.total==null){ d.total=buzonNum(r[c+1]); }
+    }
+    if(/listado de adeudos/i.test(r.join(' '))){ enLista=true; continue; }
+    if(enLista){
+      if(/^titular$/i.test(r[0])||/fecha firma/i.test(r.join(' '))) continue;   // cabecera de la tabla
+      var joined=r.join(' '); var fnums=joined.match(/F\s*-?\s*0*\d{3,7}/g);
+      if(fnums && fnums.length){
+        var imp=null; for(var k=r.length-1;k>=0;k--){ if(/\d[.,]\d/.test(r[k])){ imp=buzonNum(r[k]); break; } }
+        d.recibos.push({titular:r[0]||'', concepto:r[3]||joined, importe:imp});
+        fnums.forEach(function(fn){ var mm=fn.match(/(\d{3,7})/); if(mm) d.facturas.push(parseInt(mm[1],10)); });
+      }
+    }
+  }
+  d.facturas=Array.from(new Set(d.facturas));
+  return d.facturas.length? d : null;
+}
 async function buzonDetectado(file, tipo, txt){
   var res=document.getElementById('buzon-res');
   var HP={'ngrok-skip-browser-warning':'true','Content-Type':'application/json'};
@@ -5081,25 +5113,48 @@ async function buzonDetectado(file, tipo, txt){
       }catch(e){ nr.innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; }
     };
   } else if(tipo==='tarjeta'){
-    res.innerHTML=badge('💳 Extracto de tarjeta detectado','#ede9fe')+'<div style="margin:12px 0 6px;font-size:13px">Leyendo el extracto…</div><div id="buzon-tjres"></div>';
+    res.innerHTML=badge('📊 Excel detectado','#ede9fe')+'<div style="margin:12px 0 6px;font-size:13px">Leyendo el Excel…</div><div id="buzon-tjres"></div>';
+    var tj=document.getElementById('buzon-tjres');
     try{
-      var d=await buzonParseTarjeta(file);
-      var tj=document.getElementById('buzon-tjres');
-      if(!d){ tj.innerHTML='<div style="color:#dc2626;font-size:13px">No reconozco este Excel como un extracto de tarjeta del Sabadell.</div>'; return; }
       var eur=function(v){return v==null?'—':new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v)+' €';};
-      var html='<div style="font-size:13px;margin-bottom:8px">Tarjeta <b>'+(d.tarjeta||'?')+'</b>'+(d.titular?' · '+d.titular:'')+' · corte <b>'+d.fecha_corte+'</b></div>';
-      if(d.movimientos.length){ html+='<div style="border:1px solid #eee;border-radius:8px;overflow:hidden;margin-bottom:8px;max-height:200px;overflow:auto">'; d.movimientos.forEach(function(mv){ html+='<div style="display:flex;gap:8px;padding:6px 10px;border-bottom:1px solid #f4f4f4;font-size:12.5px"><span style="color:#888;width:42px">'+mv.fecha+'</span><span style="flex:1">'+(mv.concepto||'')+'</span><span style="font-weight:600">'+eur(mv.importe)+'</span></div>'; }); html+='</div>'; }
-      else html+='<div style="color:#999;font-size:12.5px;margin-bottom:8px">Sin cargos en este corte.</div>';
-      html+='<div style="font-size:12.5px;color:#444">Cargos del mes: <b>'+eur(d.total_operaciones)+'</b> · A liquidar: <b>'+eur(d.importe_liquidar)+'</b> · Disponible: <b>'+eur(d.disponible)+'</b></div>';
-      if(d.limite&&d.importe_liquidar&&(d.importe_liquidar/d.limite)>0.9) html+='<div style="margin-top:8px;background:#fdeaea;border-left:3px solid #dc2626;border-radius:7px;padding:8px 11px;font-size:12px;color:#991b1b">⚠️ Tarjeta al '+Math.round(d.importe_liquidar/d.limite*100)+'% del límite ('+eur(d.importe_liquidar)+' de '+eur(d.limite)+'). El aplazado es deuda cara — conviene liquidar.</div>';
-      html+='<button id="buzon-tj-reg" style="margin-top:10px;padding:8px 18px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-weight:700">Registrar extracto</button><div id="buzon-tj-done" style="margin-top:8px"></div>';
-      tj.innerHTML=html;
-      document.getElementById('buzon-tj-reg').onclick=async function(){ var b=this; b.disabled=true; b.textContent='Registrando…';
-        try{ var jr=await fetch(BRIDGE_URL_C+'/banco/tarjeta_importar',{method:'POST',headers:HP,body:JSON.stringify(d)}).then(function(r){return r.json();});
-          document.getElementById('buzon-tj-done').innerHTML = jr.ok? ('<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ '+(jr.ya_registrado?'Este corte ya estaba registrado (no se duplica).':'Registrado: '+jr.n_movimientos+' cargos guardados.')+'</div>') : '<div style="color:#dc2626;font-size:13px">'+(jr.error||'Error')+'</div>';
-          b.textContent='✅ Registrado';
-        }catch(e){ document.getElementById('buzon-tj-done').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Registrar extracto'; } };
-    }catch(e){ var tj2=document.getElementById('buzon-tjres'); if(tj2) tj2.innerHTML='<div style="color:#dc2626;font-size:13px">Error leyendo el Excel: '+e.message+'</div>'; }
+      var d=await buzonParseTarjeta(file);
+      if(d){
+        // ===== EXTRACTO DE TARJETA =====
+        var html='<div style="font-size:13px;margin-bottom:8px">💳 Tarjeta <b>'+(d.tarjeta||'?')+'</b>'+(d.titular?' · '+d.titular:'')+' · corte <b>'+d.fecha_corte+'</b></div>';
+        if(d.movimientos.length){ html+='<div style="border:1px solid #eee;border-radius:8px;overflow:hidden;margin-bottom:8px;max-height:200px;overflow:auto">'; d.movimientos.forEach(function(mv){ html+='<div style="display:flex;gap:8px;padding:6px 10px;border-bottom:1px solid #f4f4f4;font-size:12.5px"><span style="color:#888;width:42px">'+mv.fecha+'</span><span style="flex:1">'+(mv.concepto||'')+'</span><span style="font-weight:600">'+eur(mv.importe)+'</span></div>'; }); html+='</div>'; }
+        else html+='<div style="color:#999;font-size:12.5px;margin-bottom:8px">Sin cargos en este corte.</div>';
+        html+='<div style="font-size:12.5px;color:#444">Cargos del mes: <b>'+eur(d.total_operaciones)+'</b> · A liquidar: <b>'+eur(d.importe_liquidar)+'</b> · Disponible: <b>'+eur(d.disponible)+'</b></div>';
+        if(d.limite&&d.importe_liquidar&&(d.importe_liquidar/d.limite)>0.9) html+='<div style="margin-top:8px;background:#fdeaea;border-left:3px solid #dc2626;border-radius:7px;padding:8px 11px;font-size:12px;color:#991b1b">⚠️ Tarjeta al '+Math.round(d.importe_liquidar/d.limite*100)+'% del límite ('+eur(d.importe_liquidar)+' de '+eur(d.limite)+'). El aplazado es deuda cara — conviene liquidar.</div>';
+        html+='<button id="buzon-tj-reg" style="margin-top:10px;padding:8px 18px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-weight:700">Registrar extracto</button><div id="buzon-tj-done" style="margin-top:8px"></div>';
+        tj.innerHTML=html;
+        document.getElementById('buzon-tj-reg').onclick=async function(){ var b=this; b.disabled=true; b.textContent='Registrando…';
+          try{ var jr=await fetch(BRIDGE_URL_C+'/banco/tarjeta_importar',{method:'POST',headers:HP,body:JSON.stringify(d)}).then(function(r){return r.json();});
+            document.getElementById('buzon-tj-done').innerHTML = jr.ok? ('<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ '+(jr.ya_registrado?'Este corte ya estaba registrado (no se duplica).':'Registrado: '+jr.n_movimientos+' cargos guardados.')+'</div>') : '<div style="color:#dc2626;font-size:13px">'+(jr.error||'Error')+'</div>';
+            b.textContent='✅ Registrado';
+          }catch(e){ document.getElementById('buzon-tj-done').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Registrar extracto'; } };
+        return;
+      }
+      var dr=await buzonParseRemesaXls(file);
+      if(dr){
+        // ===== REMESA BANKINTER EN PROCESO =====
+        var h='<div style="font-size:13px;margin-bottom:8px">🏦 Remesa <b>'+dr.banco+'</b>'+(dr.nombre_remesa?' · '+dr.nombre_remesa:'')+(dr.fecha?' · cobro '+dr.fecha:'')+'</div>';
+        h+='<div style="border:1px solid #eee;border-radius:8px;overflow:auto;max-height:200px;margin-bottom:8px">';
+        dr.recibos.forEach(function(rc){ h+='<div style="display:flex;gap:8px;padding:6px 10px;border-bottom:1px solid #f4f4f4;font-size:12px"><span style="flex:1">'+(rc.titular||'')+'</span><span style="font-weight:600">'+eur(rc.importe)+'</span></div>'; });
+        h+='</div>';
+        h+='<div style="font-size:12.5px;color:#444">'+dr.facturas.length+' facturas · total <b>'+eur(dr.total)+'</b></div>';
+        h+='<div style="margin-top:8px;background:#e7f0fd;border-left:3px solid #185FA5;border-radius:7px;padding:8px 11px;font-size:12px;color:#1e3a5f">📤 Remesa girada pendiente de recibir → estas facturas pasarán a <b>"En proceso"</b> (salen de pendientes y de girables).</div>';
+        h+='<button id="buzon-rem-reg" style="margin-top:10px;padding:8px 18px;border:none;border-radius:8px;background:#185FA5;color:#fff;cursor:pointer;font-weight:700">Registrar remesa girada</button><div id="buzon-rem-done" style="margin-top:8px"></div>';
+        tj.innerHTML=h;
+        document.getElementById('buzon-rem-reg').onclick=async function(){ var b=this; b.disabled=true; b.textContent='Registrando…';
+          try{ var b64=await buzonB64(file);
+            var jr=await fetch(BRIDGE_URL_C+'/remesa/guardar',{method:'POST',headers:HP,body:JSON.stringify({nombre:file.name, base64:b64, banco:dr.banco, facturas:dr.facturas, fecha:dr.fecha, total:dr.total, n_recibos:dr.recibos.length})}).then(function(r){return r.json();});
+            document.getElementById('buzon-rem-done').innerHTML = jr.ok? ('<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ '+(jr.ya_registrada?'Esta remesa ya estaba registrada (no se duplica).':'Registrada: '+(jr.n_facturas||dr.facturas.length)+' facturas en proceso.')+' Recarga Cobros (Ctrl+Shift+R).</div>') : '<div style="color:#dc2626;font-size:13px">'+(jr.error||'Error')+'</div>';
+            b.textContent='✅ Registrada';
+          }catch(e){ document.getElementById('buzon-rem-done').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Registrar remesa girada'; } };
+        return;
+      }
+      tj.innerHTML='<div style="color:#dc2626;font-size:13px">No reconozco este Excel (ni extracto de tarjeta del Sabadell ni remesa Bankinter).</div>';
+    }catch(e){ if(tj) tj.innerHTML='<div style="color:#dc2626;font-size:13px">Error leyendo el Excel: '+e.message+'</div>'; }
   } else if(tipo==='pdf'){
     res.innerHTML=badge('📄 Factura (PDF) detectada','#faeeda')+'<div style="margin:12px 0;font-size:13px">La guardo en el <b>cajón</b> y se clasificará sola al ordenar el cajón.</div><button id="buzon-pdf" style="padding:8px 18px;border:none;border-radius:8px;background:#854F0B;color:#fff;cursor:pointer;font-weight:700">Guardar en el cajón</button><div id="buzon-pdfres" style="margin-top:8px"></div>';
     document.getElementById('buzon-pdf').onclick=async function(){ var b=document.getElementById('buzon-pdf'); b.disabled=true; b.textContent='Guardando…';

@@ -172,6 +172,7 @@ async function cargar(){
       lineas: c.lineas.map(l=>({pid:l.pid, nombre:l.nombre, precio:l.precio, cantidad:l.cantidad, vatid:l.vatid, nota:l.nota||''}))
     }));
     $('#diasInfo').textContent = (j.dias_con_datos||[]).length+' días con datos · origen '+nombreMes(mes);
+    try{ const fu=await fetch(API+'/facturacion/factura_unica?_='+Date.now()).then(r=>r.json()); window.FACT_UNICA = fu.clientes||{}; }catch(e){ window.FACT_UNICA = window.FACT_UNICA||{}; }
     render();
   }catch(e){ $('#list').innerHTML='<div class="loading">No se pudo cargar ('+esc(e.message)+')</div>'; }
 }
@@ -189,7 +190,12 @@ function render(){
       + folded.map(f=>esc(f.centro_raw||'cuota')+' ('+eur(propTotal(f))+')').join(' · ')+'</div>';
     folded=[]; } };
   PROPS.forEach(p=>{
-    if(p.cliente!==lastCli){ flush(); html += '<div class="grp">'+esc(p.cliente)+(p.cif?' · '+esc(p.cif):'')+'</div>'; lastCli=p.cliente; }
+    if(p.cliente!==lastCli){ flush();
+      const fu = !!(window.FACT_UNICA && window.FACT_UNICA[p.customer_id]);
+      const nCentros = PROPS.filter(x=>x.customer_id===p.customer_id).length;
+      html += '<div class="grp">'+esc(p.cliente)+(p.cif?' · '+esc(p.cif):'')
+        + (nCentros>1 ? ' <button onclick="toggleFacturaUnica('+p.customer_id+',\''+esc((p.cliente||'').replace(/\\/g,"").replace(/\x27/g,""))+'\',\''+esc(p.cif||'')+'\')" title="Agrupar TODOS los centros de este cliente en UNA sola factura (cuota desglosada por centro; el nombre del centro va en la última línea de cada bloque). Solo cuotas. Se puede desactivar." style="margin-left:10px;padding:3px 10px;border-radius:8px;border:1px solid '+(fu?'#0F6E56':'#cbd5e1')+';background:'+(fu?'#0F6E56':'#fff')+';color:'+(fu?'#fff':'#64748b')+';cursor:pointer;font-size:11px;font-weight:700;vertical-align:middle">'+(fu?'🧩 Factura única: SÍ ('+nCentros+' centros)':'🧩 Una sola factura')+'</button>' : '')
+        + '</div>'; lastCli=p.cliente; }
     // Apartada por etiqueta de mes (puesta al día, no duplicado) → se pliega en una nota, no como tarjeta
     if(p.aviso && p.atrasada && !p.dup){ folded.push(p); }
     else html += card(p);
@@ -406,12 +412,38 @@ async function taylorEmitir(){
 }
 
 function selPayload(){
-  return PROPS.filter(p=>p.sel && p.lineas.length).map(p=>({
-    cliente:p.cliente, cif:p.cif, customer_id:p.customer_id, centro:p.centro,
-    forma_pago_id:p.forma_pago_id, mes_destino:MESDEST, total:Number(propTotal(p).toFixed(2)),
-    lineas:p.lineas.map(l=>({saleformat:l.saleformat, pid:l.pid, nombre:l.nombre, precio:l.precio,
-                             cantidad:l.cantidad, vatid:l.vatid, vatrate:l.vatrate, nota:l.nota}))
-  }));
+  const sel = PROPS.filter(p=>p.sel && p.lineas.length);
+  const out = []; const merged = {};
+  sel.forEach(p=>{
+    const lineas = p.lineas.map(l=>({saleformat:l.saleformat, pid:l.pid, nombre:l.nombre, precio:l.precio,
+        cantidad:l.cantidad, vatid:l.vatid, vatrate:l.vatrate, nota:l.nota}));
+    const base = {cliente:p.cliente, cif:p.cif, customer_id:p.customer_id, centro:p.centro,
+        forma_pago_id:p.forma_pago_id, mes_destino:MESDEST, total:Number(propTotal(p).toFixed(2)), lineas:lineas};
+    if(window.FACT_UNICA && window.FACT_UNICA[p.customer_id]){
+      // FACTURA ÚNICA: el nombre del centro va en la ÚLTIMA línea de cada bloque; se concatenan los centros
+      const lns = lineas.map(l=>Object.assign({},l));
+      if(lns.length && p.centro){ lns[lns.length-1].nota = p.centro; }
+      if(!merged[p.customer_id]){
+        merged[p.customer_id] = {cliente:p.cliente, cif:p.cif, customer_id:p.customer_id, centro:'Varios centros',
+          forma_pago_id:p.forma_pago_id, mes_destino:MESDEST, total:0, lineas:[], factura_unica:true};
+        out.push(merged[p.customer_id]);
+      }
+      merged[p.customer_id].lineas = merged[p.customer_id].lineas.concat(lns);
+      merged[p.customer_id].total = Number((merged[p.customer_id].total + base.total).toFixed(2));
+    } else { out.push(base); }
+  });
+  return out;
+}
+async function toggleFacturaUnica(cid, cliente, cif){
+  window.FACT_UNICA = window.FACT_UNICA || {};
+  const on = !!window.FACT_UNICA[cid];
+  if(on && !confirm('Desactivar "factura única" para '+cliente+'?\n\nVolverá a emitir UNA factura por centro (como hasta ahora).')) return;
+  try{
+    const body = on ? {quitar:1, customer_id:cid} : {customer_id:cid, cliente:cliente, cif:cif};
+    const j = await fetch(API+'/facturacion/factura_unica',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(j.ok){ window.FACT_UNICA = j.clientes||{}; render(); }
+    else alert('No se pudo: '+(j.error||'?'));
+  }catch(e){ alert('Error: '+e.message); }
 }
 $('#bEmit').onclick = ()=>{
   const sel = selPayload();

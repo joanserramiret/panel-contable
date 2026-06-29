@@ -4358,7 +4358,7 @@ let _calVencMes = 0;   // offset de mes respecto al actual
 function calVencNav(d) { _calVencMes += d; if (window._calVencRerender) window._calVencRerender(); }
 function _calVencItems(pagosArr) {
   return (pagosArr || []).filter(p => p.estado !== 'pagada' && p.estado !== 'externo' && p.vencimiento)
-    .map(p => ({ venc: (p.vencimiento || '').slice(0, 10), prov: (p.proveedor || '—'),
+    .map(p => ({ venc: (p.vencimiento || '').slice(0, 10), prov: (p.proveedor_nombre || p.proveedor || '—'),
                  imp: (p.pendiente != null ? p.pendiente : (p.a_pagar || p.total || 0)),
                  dom: !!p.domiciliado, est: (p.like || p.cal) }));
 }

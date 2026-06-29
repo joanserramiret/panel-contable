@@ -8577,22 +8577,39 @@ function bkCerrarModal() {
 }
 
 // ── Saldos bancarios (dashboard) ──
-async function cargarSaldos() {
+// 🔄 Actualizar = re-lee GRATIS (prioriza el saldo del último N43 importado, no gasta consulta de EB).
+async function sincronizarSaldos() {
+  const b = document.getElementById('saldos-sync');
+  if (b) { b.disabled = true; b.textContent = '⏳…'; }
+  await cargarSaldos(false);
+}
+// 🏦 Consultar al banco = fuerza Enable Banking en vivo (gasta 1 de las ~4 consultas/día). Solo si hace falta.
+async function consultarSaldoEB() {
+  if (!confirm('Consultar el saldo a Enable Banking gasta 1 de las ~4 consultas diarias por cuenta.\n\nSi acabas de subir los N43 por el Buzón, NO hace falta: el saldo ya viene del extracto.\n\n¿Consultar igualmente al banco?')) return;
+  const b = document.getElementById('saldos-eb');
+  if (b) { b.disabled = true; b.textContent = '⏳ Consultando al banco…'; }
+  await cargarSaldos(true);
+}
+async function cargarSaldos(forzar) {
   const el = document.getElementById('saldos-bancos');
   if (!el) return;
+  const btns = '<button id="saldos-sync" onclick="sincronizarSaldos()" title="Re-lee el saldo (usa el del último N43 importado — gratis)." style="margin-left:8px;padding:3px 9px;border:1px solid #185FA5;border-radius:7px;background:#e6f1fb;color:#185FA5;cursor:pointer;font-size:11px;font-weight:700;vertical-align:middle">🔄 Actualizar</button>'+
+    '<button id="saldos-eb" onclick="consultarSaldoEB()" title="Pregunta el saldo al banco AHORA por Enable Banking. Gasta 1 de ~4 consultas/día — solo si no has subido el N43." style="margin-left:6px;padding:3px 9px;border:1px solid #ccc;border-radius:7px;background:#fff;color:#777;cursor:pointer;font-size:11px;vertical-align:middle">🏦 Consultar al banco</button>';
   try {
-    const r = await fetch(BRIDGE_URL_C + '/banco/eb/saldos', { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const r = await fetch(BRIDGE_URL_C + '/banco/eb/saldos' + (forzar ? '?forzar=1&_=' + Date.now() : '?_=' + Date.now()), { headers: { 'ngrok-skip-browser-warning': 'true' } });
     const d = await r.json();
-    if (!d.saldos || !d.saldos.length) { el.innerHTML = '<span style="color:var(--texto-suave);font-size:12px">📄 Trabajamos con el extracto <b>N43</b> — sube el fichero del banco en 🏦 Tesorería. (Saldo en vivo desactivado.)</span>'; return; }
+    if (!d.saldos || !d.saldos.length) { el.innerHTML = '<span style="color:var(--texto-suave);font-size:12px">📄 Sube el extracto <b>N43</b> en 🏦 Tesorería (Buzón) y el saldo aparece aquí.</span>' + btns; return; }
     el.innerHTML = d.saldos.map(s => {
       if (s.saldo === null)
         return '<span><b style="color:#1a2e6e">' + s.banco + '</b> · <span style="color:#c0392b;font-size:12px">' + (s.error || 'error') + '</span></span>';
+      const fuente = s.fuente === 'N43'
+        ? ' <span style="font-size:10.5px;color:#0F6E56;background:#e7f5ee;padding:1px 6px;border-radius:6px" title="Saldo tomado del extracto N43 que subiste (gratis).">N43</span>'
+        : ' <span style="font-size:10.5px;color:#185FA5;background:#e6f1fb;padding:1px 6px;border-radius:6px" title="Saldo consultado a Enable Banking.">EB' + (s.cacheado ? ' ⏱' : '') + '</span>';
       const sello = s.actualizado
-        ? ' <span style="font-size:11px;color:var(--texto-suave)" title="Último dato bueno del banco">' +
-          s.actualizado.replace('T', ' ') + (s.cacheado ? ' ⏱' : '') + '</span>'
+        ? ' <span style="font-size:11px;color:var(--texto-suave)">' + s.actualizado.replace('T', ' ') + '</span>'
         : '';
-      return '<span><b style="color:#1a2e6e">' + s.banco + '</b> ·' + s.iban + ' → <b style="font-size:17px;color:' + (s.saldo >= 0 ? '#1a7a3f' : '#c0392b') + '">' + bkFmt(s.saldo) + '</b>' + sello + '</span>';
-    }).join('');
+      return '<span><b style="color:#1a2e6e">' + s.banco + '</b> ·' + s.iban + ' → <b style="font-size:17px;color:' + (s.saldo >= 0 ? '#1a7a3f' : '#c0392b') + '">' + bkFmt(s.saldo) + '</b>' + fuente + sello + '</span>';
+    }).join('') + btns;
   } catch(e) { el.textContent = 'No se pudieron cargar los saldos: ' + e.message; }
 }
 

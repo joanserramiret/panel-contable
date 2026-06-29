@@ -4377,9 +4377,9 @@ async function cargarTarjetaLiq() {
     exs.sort((a, b) => (a.fecha_corte < b.fecha_corte ? 1 : -1));
     const e = exs[0];
     const det = (d.detalle || {})[e.clave] || {};
-    const aplazado = det.saldo_aplazado != null ? det.saldo_aplazado : (e.importe_liquidar || 0);
-    window._tarjetaLiq = { imp: Math.round((aplazado / 3) * 100) / 100, base: aplazado,
-                           tarjeta: e.tarjeta, fecha_corte: e.fecha_corte };
+    // Importe a pagar el día 5 = lo que dice el extracto ("a liquidar"). Ya no aplazan → es el importe real.
+    const aLiquidar = (e.importe_liquidar != null ? e.importe_liquidar : (det.importe_liquidar || 0));
+    window._tarjetaLiq = { imp: Math.round(aLiquidar * 100) / 100, tarjeta: e.tarjeta, fecha_corte: e.fecha_corte };
     if (window._calVencRerender) window._calVencRerender();   // repinta el calendario con la tarjeta ya cargada
   } catch (e) { window._tarjetaLiq = null; }
 }
@@ -4393,14 +4393,15 @@ function renderCalVenc(contId, pagosArr, debenTotal) {
     const tl = window._tarjetaLiq;
     const pad = n => String(n).padStart(2, '0');
     const hoy5 = _calVencHoyISO();
-    const offs = new Set([0, 1, 2, 3, _calVencMes]);   // este mes + siguientes (grid + lista 14d) + el mes mostrado
+    // Solo el PRÓXIMO día 5 (el importe sale del último extracto; cada mes que subas uno se actualiza).
     const baseM = new Date(); baseM.setDate(1);
-    offs.forEach(k => {
+    let iso = null;
+    for (let k = 0; k <= 13; k++) {
       const dd = new Date(baseM.getFullYear(), baseM.getMonth() + k, 5);
-      const iso = dd.getFullYear() + '-' + pad(dd.getMonth() + 1) + '-05';
-      if (iso < hoy5) return;   // día 5 ya pasado = ya liquidado este mes → no lo muestres
-      items.push({ venc: iso, imp: tl.imp, prov: '💳 Tarjeta MC Oro (liquidación 33,3%)', dom: true, _tarjeta: true });
-    });
+      const cand = dd.getFullYear() + '-' + pad(dd.getMonth() + 1) + '-05';
+      if (cand >= hoy5) { iso = cand; break; }
+    }
+    if (iso) items.push({ venc: iso, imp: tl.imp, prov: '💳 Tarjeta MC Oro (Sabadell)', dom: true, _tarjeta: true });
   }
   const byDay = {};
   items.forEach(it => { const b = (byDay[it.venc] = byDay[it.venc] || { total: 0, n: 0, provs: [] }); b.total += it.imp; b.n++; b.provs.push(it.prov || '—'); });

@@ -4356,8 +4356,13 @@ function pagToggleClasif() { _pagVerClasif = !_pagVerClasif; renderPagos(); }
 // (a pagar vs nos deben). Datos = pagos PENDIENTES (no pagada, no externo) con su vencimiento.
 let _calVencMes = 0;   // offset de mes respecto al actual
 function calVencNav(d) { _calVencMes += d; if (window._calVencRerender) window._calVencRerender(); }
+function _calVencHoyISO() { const t = new Date(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }
 function _calVencItems(pagosArr) {
+  const hoy = _calVencHoyISO();
   return (pagosArr || []).filter(p => p.estado !== 'pagada' && p.estado !== 'externo' && p.vencimiento)
+    // Atrasado + domiciliado = ya cobrado por el banco (los domiciliados SE PAGAN) → no ensucia el calendario.
+    // Lo atrasado NO domiciliado (acción manual pendiente) SÍ se mantiene.
+    .filter(p => !(((p.vencimiento || '').slice(0, 10) < hoy) && p.domiciliado))
     .map(p => ({ venc: (p.vencimiento || '').slice(0, 10), prov: (p.proveedor_nombre || p.proveedor || '—'),
                  imp: (p.pendiente != null ? p.pendiente : (p.a_pagar || p.total || 0)),
                  dom: !!p.domiciliado, est: (p.like || p.cal) }));
@@ -4387,16 +4392,19 @@ function renderCalVenc(contId, pagosArr, debenTotal) {
   if (window._tarjetaLiq && window._tarjetaLiq.imp > 0) {
     const tl = window._tarjetaLiq;
     const pad = n => String(n).padStart(2, '0');
+    const hoy5 = _calVencHoyISO();
     const offs = new Set([0, 1, 2, 3, _calVencMes]);   // este mes + siguientes (grid + lista 14d) + el mes mostrado
     const baseM = new Date(); baseM.setDate(1);
     offs.forEach(k => {
       const dd = new Date(baseM.getFullYear(), baseM.getMonth() + k, 5);
-      items.push({ venc: dd.getFullYear() + '-' + pad(dd.getMonth() + 1) + '-05', imp: tl.imp,
-                   prov: '💳 Tarjeta MC Oro (liquidación 33,3%)', dom: true, _tarjeta: true });
+      const iso = dd.getFullYear() + '-' + pad(dd.getMonth() + 1) + '-05';
+      if (iso < hoy5) return;   // día 5 ya pasado = ya liquidado este mes → no lo muestres
+      items.push({ venc: iso, imp: tl.imp, prov: '💳 Tarjeta MC Oro (liquidación 33,3%)', dom: true, _tarjeta: true });
     });
   }
   const byDay = {};
-  items.forEach(it => { (byDay[it.venc] = byDay[it.venc] || { total: 0, n: 0 }); byDay[it.venc].total += it.imp; byDay[it.venc].n++; });
+  items.forEach(it => { const b = (byDay[it.venc] = byDay[it.venc] || { total: 0, n: 0, provs: [] }); b.total += it.imp; b.n++; b.provs.push(it.prov || '—'); });
+  const _provCorto = s => (s || '—').replace(/^💳\s*/, '').replace(/\s*\(liquidación.*\)/, '').trim();
   const base = new Date(); base.setDate(1); base.setMonth(base.getMonth() + _calVencMes);
   const y = base.getFullYear(), m = base.getMonth();
   const offset = (new Date(y, m, 1).getDay() + 6) % 7;   // lunes = 0
@@ -4418,10 +4426,12 @@ function renderCalVenc(contId, pagosArr, debenTotal) {
     const iso = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
     const day = byDay[iso]; const esHoy = iso === hoyISO;
     if (day) {
-      h += '<div title="' + day.n + ' pago(s) · ' + bkFmt(day.total) + '" style="border:1.5px solid ' + (esHoy ? '#1a2e6e' : '#f0a0a0') + ';border-radius:7px;padding:3px 4px;min-height:48px;background:#fcebeb">' +
+      const _provs = [...new Set(day.provs.map(_provCorto))];
+      const _provLbl = _provs.length === 1 ? _provs[0] : (_provs[0] + ' +' + (_provs.length - 1));
+      h += '<div title="' + day.provs.map(_provCorto).join(' · ') + ' — ' + bkFmt(day.total) + '" style="border:1.5px solid ' + (esHoy ? '#1a2e6e' : '#f0a0a0') + ';border-radius:7px;padding:3px 4px;min-height:48px;background:#fcebeb">' +
         '<div style="font-size:11px;font-weight:700;color:' + (esHoy ? '#1a2e6e' : '#555') + '">' + d + '</div>' +
         '<div style="font-size:10.5px;font-weight:800;color:#c0392b;line-height:1.1;margin-top:2px">' + bkFmt(day.total) + '</div>' +
-        (day.n > 1 ? '<div style="font-size:9px;color:#a32d2d">' + day.n + ' fac</div>' : '') + '</div>';
+        '<div style="font-size:8.5px;color:#7a3030;line-height:1.15;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + day.provs.map(_provCorto).join(' · ') + '">' + _provLbl + '</div>' + '</div>';
     } else {
       h += '<div style="border:1px solid #eee;border-radius:7px;padding:3px 4px;min-height:48px;background:' + (esHoy ? '#eef2fb' : '#fafafa') + '">' +
         '<div style="font-size:11px;color:' + (esHoy ? '#1a2e6e' : '#ccc') + ';font-weight:' + (esHoy ? '700' : '400') + '">' + d + '</div></div>';

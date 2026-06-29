@@ -5193,7 +5193,20 @@ async function buzonDetectado(file, tipo, txt){
           (j.nuevos>0?'<button id="buzon-imp" style="padding:8px 18px;border:none;border-radius:8px;background:#0F6E56;color:#fff;cursor:pointer;font-weight:700">Importar '+j.nuevos+' nuevos</button>':'<div style="color:#0F6E56;font-size:13px;font-weight:700">✅ Nada nuevo: ya está todo importado.</div>');
         var bi=document.getElementById('buzon-imp'); if(bi) bi.onclick=async function(){ bi.disabled=true; bi.textContent='Importando…';
           var ji=await fetch(BRIDGE_URL_C+'/banco/importar',{method:'POST',headers:HP,body:JSON.stringify({contenido:full,banco:banco,dedup_por:'fecha_importe',simular:false})}).then(function(r){return r.json();});
-          nr.innerHTML = ji.ok? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Importados '+(ji.nuevos||0)+' movimientos. Ya están en Tesorería.</div>' : '<div style="color:#dc2626">'+(ji.error||'Error')+'</div>'; };
+          if(ji.ok){
+            // 🔄 Refresco EN VIVO de todo lo que depende del extracto (sin recargar la página):
+            nr.innerHTML='<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Importados '+(ji.nuevos||0)+' movimientos. Actualizando Tesorería y Cobros…</div>';
+            try{ window._enRemesa=undefined; }catch(e){}
+            try{ await refrescarEstadosCobro(); }catch(e){}          // recarga conciliados → 3 columnas
+            try{ await cargarEnRemesa(); actualizarCobros(); }catch(e){}// recalcula "en proceso"
+            try{ if(typeof cargarSaldos==='function') cargarSaldos(); }catch(e){}
+            try{ if(typeof bkRemesasRealizadas==='function') bkRemesasRealizadas(); }catch(e){} // remesas pdte→liquidada
+            try{ if(typeof bkRemesas==='function' && document.getElementById('ctc-remesas') && document.getElementById('ctc-remesas').classList.contains('active')) bkRemesas(); }catch(e){}
+            try{ if(typeof bkCargar==='function' && document.getElementById('ctc-banco') && document.getElementById('ctc-banco').classList.contains('active')) bkCargar(); }catch(e){}
+            try{ if(typeof cargarPulso==='function' && document.getElementById('ctc-pulso') && document.getElementById('ctc-pulso').classList.contains('active')) cargarPulso(); }catch(e){}
+            nr.innerHTML='<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Importados '+(ji.nuevos||0)+' movimientos. Tesorería y Cobros actualizados.</div>'+
+              '<div style="color:#92591b;background:#fdf6e3;border-left:3px solid #d9a441;border-radius:7px;padding:8px 11px;font-size:12px;margin-top:8px">ℹ️ Los abonos entran como movimientos del banco. Las facturas pasan de «en proceso/a perseguir» a «cobradas» al <b>conciliarlos</b> (las remesas giradas ya se marcan liquidadas solas).</div>';
+          } else { nr.innerHTML='<div style="color:#dc2626">'+(ji.error||'Error')+'</div>'; } };
       }catch(e){ nr.innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; }
     };
   } else if(tipo==='tarjeta'){

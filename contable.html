@@ -426,6 +426,15 @@
 </head>
 <body>
 
+<!-- 🧠 BADGE FIJO: estado de saldo de la IA (OCR/FINA, API de Anthropic) -->
+<div id="ocr-saldo-badge" onclick="ocrSaldoCheck()" title="Estado de la IA (OCR de facturas y FINA). Clic = comprobar saldo ahora."
+     style="display:none;position:fixed;top:8px;right:12px;z-index:99999;cursor:pointer;
+            font:600 12px/1 system-ui,Segoe UI,sans-serif;padding:6px 10px;border-radius:999px;
+            box-shadow:0 2px 8px rgba(0,0,0,.25);user-select:none;white-space:nowrap;
+            background:#6b7280;color:#fff;border:1px solid rgba(255,255,255,.3);transition:background .3s;">
+  <span id="ocr-saldo-dot">●</span> <span id="ocr-saldo-txt">IA…</span>
+</div>
+
 <!-- LOGIN -->
 <div id="login-screen">
   <div class="login-card">
@@ -1187,7 +1196,49 @@ function cerrarSesionContable() {
 }
 
 // ===== INIT =====
+// ── 🧠 Badge de saldo de la IA (OCR/FINA) ──────────────────────────────────
+// Anthropic NO da el saldo por API; el estado se deriva del resultado real de las
+// llamadas (y de un ping bajo demanda). Verde=con saldo · Rojo=SIN saldo · Gris=sin comprobar.
+const _OCR_SALDO_COLORES = {
+  ok:            { bg:'#16a34a', dot:'●', txt:'IA con saldo' },
+  sin_saldo:     { bg:'#dc2626', dot:'●', txt:'IA SIN SALDO' },
+  clave_invalida:{ bg:'#dc2626', dot:'●', txt:'Clave IA inválida' },
+  sin_clave:     { bg:'#dc2626', dot:'●', txt:'Sin clave IA' },
+  limite:        { bg:'#d97706', dot:'●', txt:'IA al límite' },
+  error:         { bg:'#d97706', dot:'●', txt:'IA con error' },
+  desconocido:   { bg:'#6b7280', dot:'○', txt:'IA sin comprobar' }
+};
+function _ocrSaldoPinta(st) {
+  const c = _OCR_SALDO_COLORES[st && st.estado] || _OCR_SALDO_COLORES.desconocido;
+  const box = document.getElementById('ocr-saldo-badge');
+  if (!box) return;
+  box.style.display = 'block';
+  box.style.background = c.bg;
+  document.getElementById('ocr-saldo-dot').textContent = c.dot;
+  let t = (st && st.etiqueta) ? st.etiqueta : c.txt;
+  document.getElementById('ocr-saldo-txt').textContent = t;
+  box.title = 'Estado de la IA (OCR de facturas y FINA). ' +
+              (st && st.cuando ? 'Última comprobación: ' + (st.cuando||'').replace('T',' ') + '. ' : '') +
+              'Clic = comprobar saldo ahora.';
+}
+async function ocrSaldoSondear(check) {
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/agora/ocr_estado' + (check ? '?check=1' : '') + (check?'&':'?') + 'n=' + Date.now(),
+                          { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    _ocrSaldoPinta(await r.json());
+  } catch(e) { _ocrSaldoPinta({ estado:'desconocido' }); }
+}
+function ocrSaldoCheck() {
+  document.getElementById('ocr-saldo-txt').textContent = 'comprobando…';
+  ocrSaldoSondear(true);
+}
+function ocrSaldoInit() {
+  ocrSaldoSondear(false);               // pinta el último estado conocido (sin gastar)
+  setInterval(() => ocrSaldoSondear(false), 60000);  // refresco pasivo cada minuto
+}
+
 function initContable() {
+  try { ocrSaldoInit(); } catch(e) { console.warn(e); }      // 🧠 badge de saldo IA (arriba, fijo)
   try { finaFlotanteInit(); } catch(e) { console.warn(e); }   // 🧠 FINA flotante: SIEMPRE tras iniciar sesión
   try { cargarSaldos(); } catch(e) { console.warn(e); }
   try { setPeriod('year'); } catch(e) { console.warn(e); }  // año en curso entero: la caché del bridge lo hace ligero

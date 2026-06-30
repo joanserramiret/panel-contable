@@ -1242,6 +1242,7 @@ function ocrSaldoInit() {
 function initContable() {
   try { ocrSaldoInit(); } catch(e) { console.warn(e); }      // 🧠 badge de saldo IA (arriba, fijo)
   try { cargarTarjetaLiq(); } catch(e) { console.warn(e); }   // 💳 liquidación tarjeta para el calendario
+  try { cargarPagosFijos(); } catch(e) { console.warn(e); }   // 🏛️ pagos fijos (SS, tributos, seguro vida)
   try { finaFlotanteInit(); } catch(e) { console.warn(e); }   // 🧠 FINA flotante: SIEMPRE tras iniciar sesión
   try { cargarSaldos(); } catch(e) { console.warn(e); }
   try { setPeriod('year'); } catch(e) { console.warn(e); }  // año en curso entero: la caché del bridge lo hace ligero
@@ -4370,6 +4371,15 @@ function _calVencItems(pagosArr) {
                  dom: !!p.domiciliado, est: (p.like || p.cal) }));
 }
 // 💳 Lee el último extracto de tarjeta subido por el Buzón y calcula la liquidación mensual (33,3% del aplazado).
+// 🏛️ Carga los pagos fijos recurrentes (Seguridad Social, tributos, seguro de vida) detectados del banco.
+async function cargarPagosFijos() {
+  try {
+    const j = await fetch(BRIDGE_URL_C + '/contabilidad/pagos_fijos?_=' + Date.now(), { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
+    window._pagosFijos = (j && j.pagos_fijos) || [];
+    if (window._calVencRerender) window._calVencRerender();
+  } catch (e) { window._pagosFijos = []; }
+}
+
 async function cargarTarjetaLiq() {
   try {
     const d = await fetch(BRIDGE_URL_C + '/banco/tarjeta_extractos?_=' + Date.now(), { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
@@ -4404,6 +4414,12 @@ function renderCalVenc(contId, pagosArr, debenTotal) {
       if (cand >= hoy5) { iso = cand; break; }
     }
     if (iso) items.push({ venc: iso, imp: tl.imp, prov: '💳 Tarjeta MC Oro (Sabadell)', dom: true, _tarjeta: true });
+  }
+  // 🏛️ Pagos fijos recurrentes detectados del banco (Seguridad Social, tributos AEAT, seguro de vida): próximo cargo.
+  if (window._pagosFijos && window._pagosFijos.length) {
+    window._pagosFijos.forEach(function(pf){
+      if (pf.proxima && pf.importe > 0) items.push({ venc: pf.proxima, imp: pf.importe, prov: '🏛️ ' + pf.nombre, dom: true, _fijo: true });
+    });
   }
   const byDay = {};
   items.forEach(it => { const b = (byDay[it.venc] = byDay[it.venc] || { total: 0, n: 0, provs: [] }); b.total += it.imp; b.n++; b.provs.push(it.prov || '—'); });
@@ -4907,8 +4923,35 @@ async function finaDespachoPreguntar(){
   }catch(e){ if(out) out.innerHTML='<div style="color:#dc2626;font-size:12.5px">Error: '+e.message+'</div>'; }
 }
 
+// 🧾 Tu cuenta con la empresa (socio/nómina): nómina devengada + aportaciones + gastos que pagaste tú − cobros = saldo.
+async function cargarCuentaSocio(){
+  const cont=document.getElementById('pulso-cuenta-socio'); if(!cont) return;
+  const eur=x=>new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(x||0)+' €';
+  try{
+    const j=await fetch(BRIDGE_URL_C+'/contabilidad/cuenta_socio?_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(r=>r.json());
+    if(!j||!j.ok){ cont.innerHTML='<div style="color:#c0392b;font-size:13px">No se pudo cargar tu cuenta.</div>'; return; }
+    const g=j.gastos_pagados_por_ti||{total:0,detalle:[]};
+    const fila=(et,v,col)=>'<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f2f2f2;font-size:13px"><span>'+et+'</span><b style="color:'+(col||'#1a2e6e')+'">'+v+'</b></div>';
+    const adel=j.saldo<0;
+    cont.innerHTML=
+      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">'+
+        '<div class="card-title" style="margin:0">🧾 Tu cuenta con la empresa</div>'+
+        '<span style="font-size:11px;color:var(--texto-suave)">Joan Serra Miret · nómina '+eur(j.config&&j.config.nomina_mensual)+'/mes</span></div>'+
+      fila('Nómina devengada ('+(j.meses_devengados||0)+' meses)','+ '+eur(j.devengado),'#1b7a3d')+
+      fila('Aportaciones tuyas (a devolver)','+ '+eur(j.aportaciones&&j.aportaciones.total),'#1b7a3d')+
+      fila('Gastos que pagaste tú (tarjeta personal/efectivo)'+(g.detalle&&g.detalle.length?' · '+g.detalle.length:''),'+ '+eur(g.total),'#1b7a3d')+
+      '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:2px solid #e7ebf5;font-size:13px"><b>La empresa te debe</b><b style="color:#1b7a3d">'+eur(j.haber)+'</b></div>'+
+      fila('Cobros + adelantos','− '+eur(j.debe),'#c0392b')+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;background:'+(adel?'#fff3e0':'#e8f7ef')+';border:1px solid '+(adel?'#e8b27a':'#a7d7b8')+';border-radius:9px;padding:10px 13px">'+
+        '<b style="font-size:13px;color:'+(adel?'#b45309':'#1b7a3d')+'">'+(adel?'⚠️ Te has adelantado':'✅ La empresa te debe')+'</b>'+
+        '<b style="font-size:18px;color:'+(adel?'#b45309':'#1b7a3d')+'">'+eur(Math.abs(j.saldo))+'</b></div>'+
+      '<div style="font-size:11px;color:var(--texto-suave);margin-top:6px">Se calcula solo del banco: las facturas que marques 💳 «tarjeta personal»/«efectivo» suman a tu favor. '+(g.detalle&&g.detalle.length?'Gastos detectados: '+g.detalle.map(x=>(x.nombre||'').replace(/\.pdf$/i,'')+' '+eur(x.importe)).join(' · '):'')+'</div>';
+  }catch(e){ cont.innerHTML='<div style="color:#c0392b;font-size:13px">Error: '+e.message+'</div>'; }
+}
+
 // ===== PULSO — cuadro de salud =====
 async function cargarPulso(){
+  try{ cargarCuentaSocio(); }catch(e){}
   const H={headers:{'ngrok-skip-browser-warning':'true'}};
   finaCargarLecciones();
   const eur=x=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(Math.round(x||0))+' €';

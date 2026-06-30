@@ -112,12 +112,14 @@
     <div class="toolbar">
       <button class="btn pri" id="bNueva">➕ Añadir cuota</button>
       <button class="btn pri" id="bTaylor">🔁 Replicar (Andrew)</button>
+      <button class="btn pri" id="bGuardar" style="background:#0F6E56" title="Guarda tus cambios (cuotas añadidas, precios, forma de pago…) para no rehacerlos al volver a abrir.">💾 Guardar cambios</button>
       <button class="btn gho" id="bAll">✓ Marcar todas</button>
       <button class="btn gho" id="bNone">▢ Desmarcar</button>
       <button class="btn gho" id="bProp">↺ Solo propuestas</button>
       <button class="btn gho" id="bAudit">🔍 Auditar duplicados</button>
       <span class="muted" id="diasInfo"></span>
     </div>
+    <div id="borradorBanner"></div>
     <div id="list"><div class="loading">Cargando propuesta…</div></div>
   </div>
   <div id="histView" style="display:none"><div class="loading">Cargando histórico…</div></div>
@@ -173,12 +175,42 @@ async function cargar(){
     }));
     $('#diasInfo').textContent = (j.dias_con_datos||[]).length+' días con datos · origen '+nombreMes(mes);
     try{ const fu=await fetch(API+'/facturacion/factura_unica?_='+Date.now()).then(r=>r.json()); window.FACT_UNICA = fu.clientes||{}; }catch(e){ window.FACT_UNICA = window.FACT_UNICA||{}; }
+    // 💾 ¿Hay un borrador guardado para este mes destino? → carga TUS cambios en vez de la propuesta recién clonada.
+    window._borrador = null;
+    try{
+      const bj = await fetch(API+'/facturacion/borrador?mes='+MESDEST+'&_='+Date.now()).then(r=>r.json());
+      if(bj && bj.borrador && (bj.borrador.props||[]).length){ PROPS = bj.borrador.props; window._borrador = bj.borrador.guardado; }
+    }catch(e){}
+    pintarBorradorBanner();
     render();
   }catch(e){ $('#list').innerHTML='<div class="loading">No se pudo cargar ('+esc(e.message)+')</div>'; }
 }
 
 function catOptions(pid){
   return CAT.map(a=>'<option value="'+a.pid+'"'+(a.pid===pid?' selected':'')+'>'+esc(a.nombre)+' ('+a.pid+')</option>').join('');
+}
+
+// ── 💾 Borrador: guardar/recuperar los cambios de la propuesta por mes ──
+function pintarBorradorBanner(){
+  const b=$('#borradorBanner'); if(!b) return;
+  if(window._borrador){
+    b.innerHTML='<div style="background:#e7f5ee;border:1px solid #a7d7b8;border-radius:9px;padding:8px 12px;margin-bottom:10px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<span>📝 Trabajando sobre tu <b>borrador guardado</b> ('+esc((window._borrador||"").replace("T"," ").slice(0,16))+'). Tus cambios se conservan.</span>'
+      +'<button class="btn gho" style="font-size:12px;padding:5px 10px" onclick="regenerarBorrador()">🔄 Regenerar desde cero</button></div>';
+  } else b.innerHTML='';
+}
+async function guardarBorrador(){
+  const btn=$('#bGuardar'); const prev=btn?btn.textContent:''; if(btn){btn.disabled=true;btn.textContent='Guardando…';}
+  try{
+    const r=await fetch(API+'/facturacion/borrador',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes:MESDEST,props:PROPS})}).then(r=>r.json());
+    if(btn){ btn.textContent='✅ Guardado'; setTimeout(()=>{btn.textContent=prev||'💾 Guardar cambios';btn.disabled=false;},1500); }
+    window._borrador=new Date().toISOString(); pintarBorradorBanner();
+  }catch(e){ if(btn){btn.textContent='✗ Error';btn.disabled=false;} alert('No se pudo guardar: '+e.message); }
+}
+async function regenerarBorrador(){
+  if(!confirm('Esto descarta tu borrador guardado de '+nombreMes(MESDEST)+' y vuelve a generar la propuesta desde la clonación del mes anterior. ¿Seguro?')) return;
+  try{ await fetch(API+'/facturacion/borrador',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mes:MESDEST,borrar:1})}); }catch(e){}
+  window._borrador=null; cargar();
 }
 
 function render(){
@@ -273,6 +305,7 @@ function resumen(){
   $('#bEmit').textContent = 'Emitir seleccionadas ('+sel.length+')';
 }
 
+$('#bGuardar').onclick = guardarBorrador;
 $('#bAll').onclick = ()=>{ PROPS.forEach(p=>p.sel=!!p.lineas.length); render(); };
 $('#bNone').onclick = ()=>{ PROPS.forEach(p=>p.sel=false); render(); };
 $('#bProp').onclick = ()=>{ PROPS.forEach(p=>p.sel=p.propon!==undefined?p.propon:!p.aviso); render(); };

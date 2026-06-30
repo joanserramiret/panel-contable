@@ -5093,9 +5093,12 @@ async function cargarPulso(){
     // ⚠️ Remesas con el desglose descuadrado (suma de las facturas ≠ abono del banco)
     var _descR=0; ((jmov&&jmov.movimientos)||[]).forEach(function(m){ if(!m.conciliado||!/REMESA|REM\. RECIBOS/i.test(m.concepto||''))return; var c; try{c=JSON.parse(typeof m.conciliado==='string'?m.conciliado:JSON.stringify(m.conciliado));}catch(e){return;} if(!Array.isArray(c)||!c.length)return; var s=c.reduce(function(a,e){return a+(+e.importe||0);},0); if(Math.abs(s-(+m.importe||0))>0.02)_descR++; });
     if(_descR) al.push({ic:'⚠️',txt:'<b>'+_descR+'</b> remesa(s) con el desglose DESCUADRADO',act:"switchTabC('banco')",cta:'Revisar'});
-    let v60=0,v60n=0; for(const f of pend){ const dd=Math.floor((hoy-new Date(f.fecha))/86400000); if(dd>60){v60+=(+f.importe||0);v60n++;} }
+    // ⚠️ Las facturas EN PROCESO (ya en una remesa girada, esperando el abono del banco) NO son impagos a perseguir
+    // → se EXCLUYEN de las alertas de "perseguir/reclamar". (Joan: ARTFARM/Bonita estaban en remesa y no debían salir.)
+    const pendPerse = pend.filter(function(f){ return !f.en_remesa; });
+    let v60=0,v60n=0; for(const f of pendPerse){ const dd=Math.floor((hoy-new Date(f.fecha))/86400000); if(dd>60){v60+=(+f.importe||0);v60n++;} }
     if(v60n) al.push({ic:'🔴',txt:'<b>'+v60n+'</b> facturas vencidas +60 días · <b>'+eur(v60)+'</b>',act:"switchTabC('cobros')",cta:'Perseguir'});
-    const byc={}; for(const f of pend){ const c=(f.cliente||'?'); byc[c]=(byc[c]||0)+(+f.importe||0); }
+    const byc={}; for(const f of pendPerse){ const c=(f.cliente||'?'); byc[c]=(byc[c]||0)+(+f.importe||0); }
     Object.entries(byc).sort((a,b)=>b[1]-a[1]).slice(0,3).forEach(function(e){ al.push({ic:'👤',txt:'<b>'+e[0]+'</b> debe <b>'+eur(e[1])+'</b>',act:"switchTabC('cobros')",cta:'Ver',cli:e[0],imp:e[1]}); });
     // 🧾 IVA del trimestre a pagar (si es significativo) → revisar cuotas para afinarlo
     if(jiva&&jiva.ok&&(jiva.resultado||0)>300) al.push({ic:'🧾',txt:'IVA T'+jiva.trimestre+' estimado <b>a pagar '+eur(jiva.resultado)+'</b>'+(jiva.n_estimadas?' · '+jiva.n_estimadas+' cuotas sin afinar':''),act:"ivaDudosas("+jiva.trimestre+","+jiva.anio+")",cta:'Revisar'});

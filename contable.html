@@ -4745,7 +4745,7 @@ async function finaGatherDatos(){
     deudores_top:deudores,
     vencimientos_14d:venc.slice(0,12),
     girables_transferencia:(gir.girables||[]).map(function(x){return {cliente:x.cliente,factura:'F-'+x.numero,importe:x.importe};}),
-    remesa_guardarrail:{no_girar_rojo:(ver.rojo||[]).length, regirar:(ver.regirar||[]).length, posible_duplicado_ambar:(ver.ambar||[]).length},
+    remesa_a_regirar:(ver.regirar||[]).length, posible_doble_cobro:(ver.ambar||[]).length,
     interanual: pct!=null?{pct:pct,'2025':Math.round(m25),'2026':Math.round(m26)}:null
   };
   // 🔔 SEÑALES RÁPIDAS para la FINA flotante (sin IA, gratis) — las "notificaciones del día"
@@ -4754,7 +4754,8 @@ async function finaGatherDatos(){
   deudores.forEach(function(x){ if(x.dias!=null && x.dias>=60) sig.push({ico:'💸',txt:x.cliente+' te debe '+x.importe+'€ ('+x.dias+' días)',accion:'cobros'}); });
   venc.forEach(function(v){ if((v.fecha||'')<=d3s) sig.push({ico:'📅',txt:'Vence '+v.fecha+': '+v.proveedor+' '+v.importe+'€'+(v.domiciliado?' (domiciliado)':''),accion:'pagos'}); });
   if((gir.girables||[]).length) sig.push({ico:'🏦',txt:gir.girables.length+' facturas listas para girar ('+Math.round(gir.total||0)+'€)',accion:'cobros'});
-  if((ver.rojo||[]).length) sig.push({ico:'🛑',txt:(ver.rojo.length)+' recibo(s) a NO girar (abono FD ya los cancela)',accion:'cobros'});
+  // ⛔ Quitada la señal "recibos a NO girar (abono FD)": ruido interno, ya están canceladas, no es info de gerencia (Joan).
+  if((ver.regirar||[]).length) sig.push({ico:'🔄',txt:(ver.regirar.length)+' recibo(s) devuelto(s) a re-girar',accion:'cobros'});
   window._finaSignals=sig.slice(0,8);
   window._finaUltimoDatos=datos;
   return datos;
@@ -5079,6 +5080,31 @@ async function cargarPulso(){
 // 📥 BUZÓN — suelta cualquier archivo, yo detecto qué es y lo coloco
 // 📤→✅ Tras importar un N43: detecta remesas cuyo abono ya entró y ofrece marcar sus facturas como cobradas
 // (salen de «📤 en proceso»). Simula primero (preview) → botón Aplicar.
+// 💳→✅ Tras importar un N43: detecta los RECIBOS DE PROVEEDOR (IGT, PISTA CERO, DEPAU, Movistar…) que entraron
+// y los casa con sus facturas (1↔1 o suma de varias). Simula → botón Aplicar.
+async function buzonConciliarRecibosProv(){
+  var box=document.getElementById('buzon-recprov'); if(!box) return;
+  var H={'ngrok-skip-browser-warning':'true'};
+  var eur=function(v){return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0)+' €';};
+  var sim=await fetch(BRIDGE_URL_C+'/banco/conciliar_recibos_prov?anio=2026&_='+Date.now(),{headers:H}).then(function(r){return r.json();}).catch(function(){return null;});
+  if(!sim||!sim.ok||!sim.n) return;   // nada que casar → no molesta
+  var filas=sim.propuestas.map(function(p){
+    var det=p.facturas.map(function(f){return (f.nombre||'').replace(/\.pdf$/i,'')+' · '+eur(f.importe);}).join(' + ');
+    return '<div style="font-size:12px;padding:3px 0;border-bottom:1px solid #eef3ee"><b>'+p.proveedor+'</b> '+eur(p.importe)+(p.tipo==='agrupada'?' <span style="color:#7a3030">(agrupado)</span>':'')+'<br><span style="color:#666;font-size:11px">'+det+'</span></div>';
+  }).join('');
+  box.innerHTML='<div style="background:#eef4fb;border:1px solid #b8cde8;border-radius:9px;padding:11px;margin-top:10px">'+
+    '<div style="font-weight:800;color:#185FA5;font-size:13px;margin-bottom:6px">💳→✅ '+sim.n+' recibo(s) de proveedor del extracto → casar con sus facturas</div>'+
+    '<div style="font-size:11.5px;color:#555;margin-bottom:6px">Cargos reales del banco (IGT, PISTA CERO, DEPAU, Movistar…) que pagan facturas pendientes. Al casarlos, esas facturas salen de la deuda. (Reversible.)</div>'+
+    filas+
+    '<button id="buzon-recprov-ap" style="margin-top:9px;padding:8px 18px;border:none;border-radius:8px;background:#185FA5;color:#fff;cursor:pointer;font-weight:700">Casar recibos</button>'+
+    '<div id="buzon-recprov-done" style="margin-top:6px"></div></div>';
+  document.getElementById('buzon-recprov-ap').onclick=async function(){ var b=this; b.disabled=true; b.textContent='Casando…';
+    var ap=await fetch(BRIDGE_URL_C+'/banco/conciliar_recibos_prov?anio=2026&confirmar=1&_='+Date.now(),{method:'POST',headers:H,body:'{}'}).then(function(r){return r.json();}).catch(function(){return null;});
+    document.getElementById('buzon-recprov-done').innerHTML=(ap&&ap.ok)?'<div style="color:#0F6E56;font-weight:700;font-size:12.5px">✅ '+(ap.n||0)+' recibos casados. Salen de la deuda.</div>':'<div style="color:#dc2626;font-size:12.5px">Error al casar.</div>';
+    try{ if(typeof cargarPagos==='function') cargarPagos(); }catch(e){}
+    b.textContent='✅ Hecho'; };
+}
+
 async function buzonConciliarRemesas(){
   var box=document.getElementById('buzon-conc'); if(!box) return;
   var H={'ngrok-skip-browser-warning':'true'};
@@ -5270,7 +5296,9 @@ async function buzonDetectado(file, tipo, txt){
             try{ if(typeof bkRemesas==='function' && document.getElementById('ctc-remesas') && document.getElementById('ctc-remesas').classList.contains('active')) bkRemesas(); }catch(e){}
             try{ if(typeof bkCargar==='function' && document.getElementById('ctc-banco') && document.getElementById('ctc-banco').classList.contains('active')) bkCargar(); }catch(e){}
             try{ if(typeof cargarPulso==='function' && document.getElementById('ctc-pulso') && document.getElementById('ctc-pulso').classList.contains('active')) cargarPulso(); }catch(e){}
-            nr.innerHTML='<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Importados '+(ji.nuevos||0)+' movimientos. Tesorería y Cobros actualizados.</div><div id="buzon-conc"></div>';
+            nr.innerHTML='<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Importados '+(ji.nuevos||0)+' movimientos. Tesorería y Cobros actualizados.</div><div id="buzon-recprov"></div><div id="buzon-conc"></div>';
+            // 💳→✅ Recibos de proveedor (IGT, PISTA CERO, DEPAU, Movistar…) que entran en el N43: casarlos con sus facturas.
+            try{ await buzonConciliarRecibosProv(); }catch(e){}
             // 📤→✅ Remesas cuyo abono acaba de entrar: ofrece marcar sus facturas como cobradas (salen de «en proceso»).
             try{ await buzonConciliarRemesas(); }catch(e){}
           } else { nr.innerHTML='<div style="color:#dc2626">'+(ji.error||'Error')+'</div>'; } };

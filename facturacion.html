@@ -327,13 +327,14 @@ function ncElegir(id){
   const opts = CAT.map(a=>'<option value="'+a.pid+'">'+esc(a.nombre)+' ('+a.pid+')</option>').join('');
   const inp='style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px"';
   $('#mbox').innerHTML = '<h3>➕ Nueva cuota</h3><div class="hname">'+esc(c.nombre)+'</div><div class="hsub">'+esc(c.cif||'')+'</div>'
-    + '<div style="margin-top:12px"><label class="muted">Artículo de cuota</label><select id="ncArt" '+inp+'>'+opts+'</select></div>'
-    + '<div style="display:flex;gap:8px;margin-top:8px"><div style="flex:1"><label class="muted">Precio (neto, sin IVA)</label><input id="ncPre" type="number" step="0.01" value="62" '+inp+'></div>'
+    + '<div style="margin-top:12px"><label class="muted">Artículo de cuota</label><select id="ncArt" onchange="ncSetPrecio()" '+inp+'>'+opts+'</select></div>'
+    + '<div style="display:flex;gap:8px;margin-top:8px"><div style="flex:1"><label class="muted">Precio (neto, sin IVA)</label><input id="ncPre" type="number" step="0.01" value="'+((CAT[0]&&CAT[0].precio!=null)?CAT[0].precio:62)+'" '+inp+'></div>'
     + '<div style="width:84px"><label class="muted">Cant.</label><input id="ncCant" type="number" value="1" '+inp+'></div></div>'
     + '<div style="margin-top:8px"><label class="muted">Forma de pago</label><select id="ncPago" '+inp+'><option value="8">Recibo (domiciliado)</option><option value="4">Transferencia</option></select></div>'
     + '<div style="margin-top:8px"><label class="muted">Nota de centro (opcional)</label><input id="ncNota" '+inp+'></div>'
     + '<div class="toolbar" style="margin-top:14px;justify-content:flex-end"><button class="btn sec" onclick="$(\'#bNueva\').onclick()">← Otro cliente</button><button class="btn pri" onclick="ncAnadir('+c.id+')">Añadir a la propuesta</button></div>';
 }
+function ncSetPrecio(){ const a=CAT.find(c=>c.pid===Number($('#ncArt').value)); if(a&&a.precio!=null) $('#ncPre').value=a.precio; }
 function ncAnadir(id){
   const c=(CLIENTES||[]).find(x=>x.id===id); if(!c) return;
   const pid=Number($('#ncArt').value); const a=CAT.find(x=>x.pid===pid)||{}; const nota=$('#ncNota').value.trim();

@@ -4389,9 +4389,10 @@ async function cargarTarjetaLiq() {
     exs.sort((a, b) => (a.fecha_corte < b.fecha_corte ? 1 : -1));
     const e = exs[0];
     const det = (d.detalle || {})[e.clave] || {};
-    // Importe a pagar el día 5 = lo que dice el extracto ("a liquidar"). Ya no aplazan → es el importe real.
+    // La tarjeta es APLAZADA: el día 5 te cobran el 33,3% del total a liquidar (no el total entero).
     const aLiquidar = (e.importe_liquidar != null ? e.importe_liquidar : (det.importe_liquidar || 0));
-    window._tarjetaLiq = { imp: Math.round(aLiquidar * 100) / 100, tarjeta: e.tarjeta, fecha_corte: e.fecha_corte };
+    window._tarjetaLiq = { imp: Math.round((aLiquidar / 3) * 100) / 100, base: Math.round(aLiquidar * 100) / 100,
+                           tarjeta: e.tarjeta, fecha_corte: e.fecha_corte };
     if (window._calVencRerender) window._calVencRerender();   // repinta el calendario con la tarjeta ya cargada
   } catch (e) { window._tarjetaLiq = null; }
 }
@@ -4413,7 +4414,7 @@ function renderCalVenc(contId, pagosArr, debenTotal) {
       const cand = dd.getFullYear() + '-' + pad(dd.getMonth() + 1) + '-05';
       if (cand >= hoy5) { iso = cand; break; }
     }
-    if (iso) items.push({ venc: iso, imp: tl.imp, prov: '💳 Tarjeta MC Oro (Sabadell)', dom: true, _tarjeta: true });
+    if (iso) items.push({ venc: iso, imp: tl.imp, prov: '💳 Tarjeta MC Oro (33,3%)', dom: true, _tarjeta: true });
   }
   // 🏛️ Pagos fijos recurrentes detectados del banco (Seguridad Social, tributos AEAT, seguro de vida): próximo cargo.
   if (window._pagosFijos && window._pagosFijos.length) {

@@ -154,7 +154,7 @@ function nombreMes(m){ const [y,mo]=m.split('-').map(Number);
 
 // IVA por VatId (Ágora JST: 4 = 21%)
 function ivaDe(vatid){ return 0.21; }
-function lineaTotal(l){ return (Number(l.precio)||0) * (Number(l.cantidad)||0) * (1+ivaDe(l.vatid)); }
+function lineaTotal(l){ return (Number(l.precio)||0) * (Number(l.cantidad)||0) * (1-((Number(l.descuento)||0)/100)) * (1+ivaDe(l.vatid)); }
 function propTotal(p){ return p.lineas.reduce((s,l)=>s+lineaTotal(l),0); }
 
 async function cargar(){
@@ -244,8 +244,9 @@ function card(p){
   p.lineas.forEach((l,li)=>{
     lns += '<div class="ln">'
       + '<select onchange="setArt('+p._id+','+li+',this.value)">'+catOptions(l.pid)+'</select>'
-      + '<input class="num" type="number" step="0.01" value="'+(l.precio)+'" onchange="setVal('+p._id+','+li+',\'precio\',this.value)">'
-      + '<input class="num" type="number" step="1" value="'+(l.cantidad)+'" onchange="setVal('+p._id+','+li+',\'cantidad\',this.value)">'
+      + '<input class="num" type="number" step="0.01" value="'+(l.precio)+'" title="Precio (neto, sin IVA)" onchange="setVal('+p._id+','+li+',\'precio\',this.value)">'
+      + '<input class="num" type="number" step="1" value="'+(l.cantidad)+'" title="Cantidad" onchange="setVal('+p._id+','+li+',\'cantidad\',this.value)">'
+      + '<input class="num" type="number" step="1" min="0" max="100" value="'+(l.descuento||0)+'" title="Descuento % (100 = bonificada, neto 0)" placeholder="Desc%" style="max-width:64px" onchange="setVal('+p._id+','+li+',\'descuento\',this.value)"><span style="align-self:center;color:var(--muted);font-size:12px">%</span>'
       + '<button class="del" onclick="delLn('+p._id+','+li+')" title="Quitar línea">🗑</button>'
       + '</div>'
       + '<div class="ln2"><input type="text" placeholder="Nota del centro (en esta línea)" value="'+esc(l.nota)+'" onchange="setVal('+p._id+','+li+',\'nota\',this.value)"></div>';
@@ -453,7 +454,7 @@ function selPayload(){
   const out = []; const merged = {};
   sel.forEach(p=>{
     const lineas = p.lineas.map(l=>({saleformat:l.saleformat, pid:l.pid, nombre:l.nombre, precio:l.precio,
-        cantidad:l.cantidad, vatid:l.vatid, vatrate:l.vatrate, nota:l.nota}));
+        cantidad:l.cantidad, vatid:l.vatid, vatrate:l.vatrate, nota:l.nota, descuento:Number(l.descuento)||0}));
     const base = {cliente:p.cliente, cif:p.cif, customer_id:p.customer_id, centro:p.centro,
         forma_pago_id:p.forma_pago_id, mes_destino:MESDEST, total:Number(propTotal(p).toFixed(2)), lineas:lineas};
     if(window.FACT_UNICA && window.FACT_UNICA[p.customer_id]){

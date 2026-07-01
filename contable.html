@@ -2837,7 +2837,8 @@ function actualizarCobros() {
     const devuelta = !!(banco && banco.devueltas.has(clave));
     const recibo = (f.Payments || []).some(p => String(p.MethodName || '').toLowerCase().includes('recibo'));
     const enRem = !!(window._enRemesa && window._enRemesa.has(clave));
-    let destino = carteraDestinos[clave];   // el ajuste manual manda
+    let destino = carteraDestinos[clave];   // el ajuste manual manda…
+    if (enRem && destino === 'girar') destino = '';   // …PERO si la factura YA está en una remesa real, un 'girar' manual es OBSOLETO (no se gira algo ya girado) → se ignora y cae a 'proceso'
     if (!destino) destino = devuelta ? 'perseguir' : (enRem ? 'proceso' : (recibo ? 'girar' : 'perseguir'));
     if (destino === 'esperando') destino = 'proceso';   // 'esperando' (girada, espera remesa) = 📤 en proceso
     if (!cols[destino]) destino = 'perseguir';          // valor inesperado → perseguir (a prueba de fallos)

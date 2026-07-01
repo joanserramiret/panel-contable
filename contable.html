@@ -5257,6 +5257,7 @@ function buzonFile(file){
     }
     else if(/\.xlsx?$/i.test(file.name)) tipo='tarjeta';   // extracto de tarjeta de crédito (Sabadell .xls)
     else if(/^0119143/.test(head)) tipo='remesa';
+    else if(/\.xml$/i.test(file.name)||/pain\.008|<CstmrDrctDbtInitn|<Document[\s>]/i.test(head)) tipo='remesa';   // remesa Bankinter pain.008 (Remesa_Exportada_*.xml)
     else if(/\.n43$/i.test(file.name)||/^(11|00)\d{6}/.test(head)) tipo='n43';
     else if(/\n/.test(txt)&&/[;,].*[;,]/.test(head)) tipo='csv';
     buzonDetectado(file, tipo, txt);
@@ -5515,7 +5516,7 @@ async function buzonDetectado(file, tipo, txt){
     if(!esPdf){
       // Fichero de remesa SEPA (el GIRO que se envía al banco, Sabadell Norma19 o Bankinter) → REGISTRAR como girada.
       var full=await file.text();
-      var recibos=full.split(/\r?\n/).filter(function(l){return l.slice(0,2)==='03';}).length;
+      var recibos=(full.match(/<DrctDbtTxInf>/g)||[]).length || full.split(/\r?\n/).filter(function(l){return l.slice(0,2)==='03';}).length;
       res.innerHTML=badge('🏦 Remesa SEPA (girada) detectada','#ede9fe')+
         '<div style="margin:12px 0;font-size:13px">Fichero de remesa'+(recibos?(' con <b>'+recibos+' recibos</b>'):'')+'. Al registrarla, sus facturas pasan a <b>📤 En proceso</b> en Cobros (ya no se vuelven a girar → evita re-giros indebidos) y la remesa aparece en <b>Remesas → pendiente de liquidar</b>. Se concilia sola cuando llegue el abono del banco (N43).</div>'+
         '<button id="buzon-rem-reg" style="padding:8px 18px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-weight:700">🏦 Registrar remesa girada</button>'+

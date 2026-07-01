@@ -426,13 +426,17 @@
 </head>
 <body>
 
-<!-- 🧠 BADGE FIJO: estado de saldo de la IA (OCR/FINA, API de Anthropic) -->
-<div id="ocr-saldo-badge" onclick="ocrSaldoCheck()" title="Estado de la IA (OCR de facturas y FINA). Clic = comprobar saldo ahora."
-     style="display:none;position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:99999;cursor:pointer;
-            font:600 12px/1 system-ui,Segoe UI,sans-serif;padding:6px 10px;border-radius:999px;
-            box-shadow:0 2px 8px rgba(0,0,0,.25);user-select:none;white-space:nowrap;
-            background:#6b7280;color:#fff;border:1px solid rgba(255,255,255,.3);transition:background .3s;">
-  <span id="ocr-saldo-dot">●</span> <span id="ocr-saldo-txt">IA…</span>
+<!-- 🧠 BADGE FIJO (saldo IA) + 🛠️ botón ¡A CURRAR! (fuerza a TODOS los agentes a trabajar ya) -->
+<div id="top-fixed-bar" style="position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:99999;display:flex;gap:8px;align-items:center">
+  <div id="ocr-saldo-badge" onclick="ocrSaldoCheck()" title="Estado de la IA (OCR de facturas y FINA). Clic = comprobar saldo ahora."
+       style="display:none;cursor:pointer;font:600 12px/1 system-ui,Segoe UI,sans-serif;padding:6px 10px;border-radius:999px;
+              box-shadow:0 2px 8px rgba(0,0,0,.25);user-select:none;white-space:nowrap;
+              background:#6b7280;color:#fff;border:1px solid rgba(255,255,255,.3);transition:background .3s;">
+    <span id="ocr-saldo-dot">●</span> <span id="ocr-saldo-txt">IA…</span>
+  </div>
+  <button id="btn-a-currar" onclick="agentesACurrar()" title="Forzar a TODOS los agentes a trabajar AHORA (tesorería, impagos, remesador…) y avisarte por ntfy si hay algo."
+          style="cursor:pointer;font:800 12px/1 system-ui,Segoe UI,sans-serif;padding:7px 13px;border-radius:999px;border:none;
+                 box-shadow:0 2px 8px rgba(0,0,0,.28);white-space:nowrap;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff">🛠️ ¡A currar!</button>
 </div>
 
 <!-- LOGIN -->
@@ -1224,6 +1228,18 @@ function _ocrSaldoPinta(st) {
   box.title = 'Estado de la IA (OCR de facturas y FINA). ' +
               (st && st.cuando ? 'Última comprobación: ' + (st.cuando||'').replace('T',' ') + '. ' : '') +
               'Clic = comprobar saldo ahora.';
+}
+// 🛠️ ¡A CURRAR! — fuerza a TODOS los agentes a trabajar YA (ignora la cadencia) y avisa por ntfy si hay algo.
+async function agentesACurrar(){
+  var btn=document.getElementById('btn-a-currar'); if(!btn) return;
+  if(!confirm('¿Poner a TODOS los agentes a currar AHORA?\n\nRevisarán tesorería, impagos y remesas con los datos de hoy y te avisan por ntfy si hay algo. Tarda un par de minutos; puedes seguir trabajando.')) return;
+  var txt=btn.textContent; btn.disabled=true; btn.textContent='🛠️ Currando…';
+  // fire-and-forget: cada agente razona con FINA (varios minutos). No bloqueamos la UI.
+  fetch(BRIDGE_URL_C+'/agentes/ejecutar?id=all&forzar=1&enviar=ntfy&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}})
+    .then(function(r){return r.json();})
+    .then(function(j){ btn.disabled=false; btn.textContent='✅ Hecho ('+(j.ejecutados||0)+')'; setTimeout(function(){btn.textContent=txt;},5000);
+       try{ if(typeof cargarAgentes==='function') cargarAgentes(); }catch(e){} })
+    .catch(function(){ btn.disabled=false; btn.textContent=txt; });
 }
 async function ocrSaldoSondear(check) {
   try {

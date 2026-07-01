@@ -2835,6 +2835,7 @@ function actualizarCobros() {
   // 📤 EN PROCESO: facturas que ya están en un .txt de remesa (giradas, esperando que el banco ingrese) → ni "girar"
   // ni "perseguir". Se cargan una vez del backend (que reusa el lector unificado de remesas).
   if (window._enRemesa === undefined) { window._enRemesa = null; cargarEnRemesa().then(actualizarCobros); }
+  if (window._aplazadosSet === undefined) { window._aplazadosSet = null; cargarAplazados().then(actualizarCobros); }
 
   const buckets = { '0-30': [0, 0], '31-60': [0, 0], '61-90': [0, 0], '+90': [0, 0] };
   // DOS CARTERAS por método de pago (el ajuste manual prevalece):
@@ -2853,8 +2854,9 @@ function actualizarCobros() {
     const devuelta = !!(banco && banco.devueltas.has(clave));
     const recibo = (f.Payments || []).some(p => String(p.MethodName || '').toLowerCase().includes('recibo'));
     const enRem = !!(window._enRemesa && window._enRemesa.has(clave));
+    const aplazada = !!(window._aplazadosSet && window._aplazadosSet.has(clave));   // giro aguantado unos días → fuera de girar
     let destino = carteraDestinos[clave];   // el ajuste manual MANDA (p.ej. una devuelta que Joan pone a 'girar' para re-girar debe quedarse en girar, aunque esté en una remesa)
-    if (!destino) destino = devuelta ? 'perseguir' : (enRem ? 'proceso' : (recibo ? 'girar' : 'perseguir'));
+    if (!destino) destino = devuelta ? 'perseguir' : (aplazada ? 'proceso' : (enRem ? 'proceso' : (recibo ? 'girar' : 'perseguir')));
     if (destino === 'esperando') destino = 'proceso';   // 'esperando' (girada, espera remesa) = 📤 en proceso
     if (!cols[destino]) destino = 'perseguir';          // valor inesperado → perseguir (a prueba de fallos)
     carteraFacts[clave] = { destino: destino };
@@ -2924,6 +2926,7 @@ function actualizarCobros() {
           '<b>' + x.total.toFixed(2) + '€</b>' +
           '<span style="color:' + (x.dias > 30 ? 'var(--rojo)' : 'var(--texto-suave)') + ';font-size:11px;width:32px;text-align:right">' + x.dias + 'd</span>' +
           '<button onclick="verEmitidaClave(\'' + x.num + '\')" title="Ver la factura emitida" style="padding:1px 7px;background:#1a2e6e;color:#fff;border:none;border-radius:5px;font-size:10.5px;cursor:pointer;margin-right:3px">👁</button>' +
+          (destino === 'girar' ? '<button onclick="cobAguantarGiro(\'' + x.num + '\')" title="Aguantar el giro de esta factura unos días (el cliente lo pide). Sale de la remesa hasta esa fecha y luego vuelve solo." style="padding:1px 7px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;border-radius:5px;font-size:10.5px;cursor:pointer;margin-right:3px">⏸</button>' : '') +
           '<button onclick="carteraMoverUna(\'' + x.clave + '\')" title="Mover SOLO esta factura a la otra columna (se recuerda)" style="padding:1px 7px;background:#f0f4fb;border:1px solid #c0cbea;border-radius:5px;font-size:10.5px;cursor:pointer">⇄</button></div>';
         }).join('') +
         '</details>';
@@ -3623,6 +3626,25 @@ const _COB_EST = {
   perseguir: { e: '✋', lbl: 'A perseguir',      col: '#a32d2d', bg: '#fcebeb', bd: '#f09595', tip: 'Cobro manual · reclamar al cliente' }
 };
 function _cobClave(x) { return bkNormClave((x.serie || '') + '-' + (x.numero || '')); }
+// ⏸ Giros APLAZADOS (aguantados unos días a petición del cliente): salen de girar hasta su fecha y vuelven solos.
+async function cargarAplazados() {
+  try {
+    var j = await fetch(BRIDGE_URL_C + '/remesa/aplazar', { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(function (r) { return r.json(); });
+    var s = new Set();
+    Object.values(j.aplazados || {}).forEach(function (v) { if (v && v.factura) s.add(bkNormClave(v.factura)); });
+    window._aplazadosSet = s;
+  } catch (e) { window._aplazadosSet = window._aplazadosSet || new Set(); }
+}
+async function cobAguantarGiro(num) {
+  var dias = prompt('¿Cuántos días aguantas el giro de ' + num + '? (el cliente lo pide)\nSaldrá de la remesa y volverá solo al pasar esos días.', '2');
+  if (dias === null) return;
+  dias = parseInt(dias, 10) || 2;
+  try {
+    await fetch(BRIDGE_URL_C + '/remesa/aplazar', { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }, body: JSON.stringify({ factura: num, dias: dias }) });
+    await cargarAplazados();
+    if (typeof actualizarCobros === 'function') actualizarCobros();
+  } catch (e) { alert('Error: ' + e.message); }
+}
 function cobTicks(clave) {
   const est = (carteraDestinos || {})[clave] || '';
   return ['girar', 'esperando', 'perseguir'].map(k => {

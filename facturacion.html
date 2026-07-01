@@ -79,15 +79,36 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
-<div id="login-ov" style="position:fixed;inset:0;background:linear-gradient(135deg,#0f1f5c,#1e1b4b);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px">
-  <div style="background:#fff;border-radius:16px;padding:26px 24px;max-width:340px;width:100%;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,.35)">
-    <div style="font-size:30px">🧾</div>
-    <h2 style="margin:6px 0 2px;font-size:19px;color:#0f1f5c">Facturador de cuotas</h2>
-    <div style="color:#64748b;font-size:13px;margin-bottom:16px">JS Technology Menorca</div>
-    <input id="lg-user" placeholder="Usuario" autocomplete="username" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:10px;border:1px solid #e2e8f0;border-radius:9px;font-size:15px">
-    <input id="lg-pin" type="password" placeholder="PIN (déjalo vacío si no tienes)" autocomplete="current-password" style="width:100%;box-sizing:border-box;margin-bottom:14px;padding:10px;border:1px solid #e2e8f0;border-radius:9px;font-size:15px">
-    <button class="btn pri" style="width:100%;padding:11px;font-size:15px" onclick="doLogin()">Entrar</button>
-    <div id="lg-err" style="color:#dc2626;font-size:13px;margin-top:10px;min-height:18px"></div>
+<style>
+  /* LOGIN — misma ventana que el resto de apps (contable/averías/sepa) */
+  #login-ov { position:fixed; inset:0; background:linear-gradient(135deg,#0f1f5c 0%,#0f1c4a 60%,#1a2e6e 100%); display:flex; align-items:center; justify-content:center; z-index:1000; padding:16px; }
+  #login-ov .login-card { background:#fff; border-radius:20px; padding:44px 46px; width:420px; max-width:100%; box-sizing:border-box; box-shadow:0 32px 80px rgba(0,0,0,.3); text-align:center; animation:loginIn .5s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes loginIn { from{opacity:0;transform:translateY(30px) scale(.95);} to{opacity:1;transform:translateY(0) scale(1);} }
+  #login-ov .login-logo { width:82px; height:82px; margin:0 auto 20px; border-radius:18px; display:flex; align-items:center; justify-content:center; font-size:40px; background:linear-gradient(135deg,#0f1f5c,#1e1b4b); box-shadow:0 8px 24px rgba(26,46,110,.25); }
+  #login-ov .login-title { font-size:22px; font-weight:800; color:#0f1f5c; margin-bottom:4px; }
+  #login-ov .login-sub { font-size:13px; color:#64748b; margin-bottom:30px; }
+  #login-ov .login-label { display:block; text-align:left; font-size:11px; font-weight:700; color:#0f1f5c; text-transform:uppercase; letter-spacing:.8px; margin-bottom:6px; }
+  #login-ov .login-input { width:100%; box-sizing:border-box; padding:14px 16px; font-size:15px; border:2px solid #e2e8f0; border-radius:10px; outline:none; transition:border-color .2s; color:#0f1f5c; text-align:center; letter-spacing:2px; }
+  #login-ov .login-input:focus { border-color:#0f1f5c; }
+  #login-ov .login-btn { width:100%; padding:15px; background:#0f1f5c; color:#fff; border:none; border-radius:10px; font-size:15px; font-weight:700; cursor:pointer; margin-top:20px; transition:all .2s; }
+  #login-ov .login-btn:hover { background:#1e1b4b; transform:translateY(-1px); }
+  #login-ov .login-error { color:#dc2626; font-size:13px; margin-top:12px; min-height:18px; }
+  #login-ov .login-footer { font-size:11px; color:#bbb; margin-top:22px; }
+</style>
+<div id="login-ov">
+  <div class="login-card">
+    <div class="login-logo">🧾</div>
+    <div class="login-title">Facturador de cuotas</div>
+    <div class="login-sub">JS Technology Menorca SL</div>
+    <label class="login-label">Usuario</label>
+    <input class="login-input" type="text" id="lg-user" placeholder="Nombre de usuario" autocomplete="off"
+      onkeydown="if(event.key==='Enter') document.getElementById('lg-pin').focus()">
+    <label class="login-label" style="margin-top:14px">PIN o contraseña</label>
+    <input class="login-input" type="password" id="lg-pin" placeholder="Déjalo vacío si no tienes" maxlength="20" autocomplete="off"
+      onkeydown="if(event.key==='Enter') doLogin()">
+    <div class="login-error" id="lg-err"></div>
+    <button class="login-btn" onclick="doLogin()">Acceder al facturador →</button>
+    <div class="login-footer">Acceso exclusivo para personal autorizado</div>
   </div>
 </div>
 <header>

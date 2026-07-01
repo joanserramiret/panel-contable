@@ -787,15 +787,33 @@ async function auditarDobleGiro(){
       +'<div class="toolbar" style="margin-top:12px;justify-content:flex-end"><button class="btn pri" onclick="cerrarModal()">Cerrar</button></div>';
   }catch(e){ $('#mbox').innerHTML='<h3>Error</h3><div class="note">'+esc(e.message)+'</div><div class="toolbar" style="justify-content:flex-end"><button class="btn sec" onclick="cerrarModal()">Cerrar</button></div>'; }
 }
-// Pregunta el banco de la remesa (Sabadell / Bankinter). Devuelve el nombre o null si cancela.
+// Pregunta el banco de la remesa con dos botones (Sabadell / Bankinter). Devuelve una Promise con el
+// nombre o null si cancela. Más elegante que teclear S/B.
 function pedirBancoRemesa(){
-  const b=(prompt('¿Con qué banco generas la remesa?\n\nEscribe  S  (Sabadell)  o  B  (Bankinter):','S')||'').trim().toUpperCase();
-  if(!b) return null;
-  return b[0]==='B' ? 'Bankinter' : 'Sabadell';
+  return new Promise(resolve=>{
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,31,92,.55);display:flex;align-items:center;justify-content:center;z-index:99999';
+    ov.innerHTML='<div style="background:#fff;border-radius:16px;padding:22px 24px;max-width:430px;box-shadow:0 14px 44px rgba(0,0,0,.32)">'
+      +'<div style="font-size:17px;font-weight:800;color:#0f1f5c;margin-bottom:3px">¿Con qué banco giras la remesa?</div>'
+      +'<div style="font-size:13px;color:#667;margin-bottom:16px">Elige la cuenta desde la que se cobrarán los recibos.</div>'
+      +'<div style="display:flex;gap:12px">'
+      +'<button data-b="Sabadell" style="flex:1;border:2px solid #0072ce;background:#eaf4ff;color:#0072ce;font-weight:800;font-size:15px;padding:18px 8px;border-radius:12px;cursor:pointer">🏦 Sabadell</button>'
+      +'<button data-b="Bankinter" style="flex:1;border:2px solid #ff6a13;background:#fff2e8;color:#ff6a13;font-weight:800;font-size:15px;padding:18px 8px;border-radius:12px;cursor:pointer">🏦 Bankinter</button>'
+      +'</div>'
+      +'<div style="text-align:right;margin-top:14px"><button data-b="" style="border:0;background:none;color:#888;cursor:pointer;font-size:13px">Cancelar</button></div>'
+      +'</div>';
+    function done(v){ if(ov.parentNode) document.body.removeChild(ov); resolve(v||null); }
+    ov.addEventListener('click',ev=>{
+      if(ev.target===ov) return done(null);
+      const t=ev.target.closest('button'); if(!t) return;
+      done(t.getAttribute('data-b'));
+    });
+    document.body.appendChild(ov);
+  });
 }
 async function generarRemesaGlobal(){
   const pend=(REM&&REM.pendientes)||[]; if(!pend.length){ alert('No hay pendientes.'); return; }
-  const banco=pedirBancoRemesa(); if(!banco) return;
+  const banco=await pedirBancoRemesa(); if(!banco) return;
   if(!confirm('Generar remesa SEPA ('+banco+') de '+pend.length+' facturas domiciliadas pendientes ('+eur(REM.total_pendiente)+')?\n\nCuotas + material, todo lo que sea Recibo y no esté girado.')) return;
   const recibos = pend.map(f=>({cliente:f.cliente, nif:f.cif, importe:f.total, facturas:[f.serie+'-'+f.numero]}));
   const b=$('#bRemGlobal'); if(b){ b.disabled=true; b.textContent='Generando…'; }
@@ -910,7 +928,7 @@ async function emailDe(id){
 async function generarRemesa(){
   const domic = HIST.filter(f=>f.forma_pago_id==8 && !f.remesada);
   if(!domic.length){ alert('No hay domiciliadas pendientes.'); return; }
-  const banco=pedirBancoRemesa(); if(!banco) return;
+  const banco=await pedirBancoRemesa(); if(!banco) return;
   if(!confirm('Generar remesa SEPA ('+banco+') de '+domic.length+' recibos ('+eur(domic.reduce((s,f)=>s+f.total,0))+')?')) return;
   const recibos = domic.map(f=>({cliente:f.cliente, nif:f.cif, importe:f.total, facturas:[f.serie+'-'+f.numero]}));
   try{

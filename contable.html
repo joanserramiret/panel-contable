@@ -702,6 +702,8 @@
 
       <div class="card" style="margin-top:12px"><div id="pulso-cuenta-socio"><div style="color:var(--texto-suave);font-size:13px">Cargando tu cuenta…</div></div></div>
 
+      <div class="card" style="margin-top:12px"><div id="pulso-agentes"><div style="color:var(--texto-suave);font-size:13px">Cargando agentes…</div></div></div>
+
       <div style="display:grid;grid-template-columns:1.1fr 1fr 0.8fr;gap:16px">
         <div class="card"><div class="card-title">⏳ Antigüedad de la deuda</div>
           <div id="pl-aging"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div></div>
@@ -4950,9 +4952,52 @@ async function cargarCuentaSocio(){
   }catch(e){ cont.innerHTML='<div style="color:#c0392b;font-size:13px">Error: '+e.message+'</div>'; }
 }
 
+// 🤖 CENTRO DE AGENTES — auditores que razonan con FINA y avisan por ntfy. Se controlan desde aquí.
+function esc(s){ return (s==null?'':(''+s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+async function cargarAgentes(){
+  const cont=document.getElementById('pulso-agentes'); if(!cont) return;
+  try{
+    const j=await fetch(BRIDGE_URL_C+'/agentes?_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(r=>r.json());
+    const ags=(j&&j.agentes)||[];
+    let h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title" style="margin:0">🤖 Centro de agentes</div>'+
+      '<span style="font-size:11px;color:var(--texto-suave)">Auditores que razonan con FINA · avisan por ntfy al móvil</span></div>';
+    h+=ags.map(function(a){
+      const cronTxt={diario:'cada día',semanal:'cada lunes',mensual:'día 1'}[a.cron]||(a.cron&&a.cron.replace('dia_','día '))||a.cron;
+      const on=a.enabled!==false;
+      const ult=a.ultimo?('<div style="font-size:11.5px;color:'+(a.ultimo_alerta?'#b45309':'#1b7a3d')+';margin-top:4px;line-height:1.4">'+(a.ultimo_alerta?'⚠️ ':'✓ ')+esc(a.ultimo).replace(/\n/g,' ')+(a.ultimo_cuando?' <span style="color:var(--texto-suave)">· '+esc((a.ultimo_cuando||'').replace('T',' '))+'</span>':'')+'</div>'):'';
+      return '<div style="border-top:1px solid #f0f0f0;padding:8px 0">'+
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+          '<span style="font-size:15px">'+a.icono+'</span>'+
+          '<b style="font-size:13px;'+(on?'':'opacity:.5')+'">'+esc(a.nombre)+'</b>'+
+          '<span style="font-size:10.5px;color:var(--texto-suave)">· '+cronTxt+'</span>'+
+          '<span style="flex:1"></span>'+
+          '<button onclick="agenteEjecutar(\''+a.id+'\')" style="padding:3px 9px;border:1px solid #c0cbea;border-radius:7px;background:#f0f4fb;color:#1a2e6e;cursor:pointer;font-size:11px;font-weight:700">▶ Ejecutar</button>'+
+          '<button onclick="agenteToggle(\''+a.id+'\','+(!on)+')" title="Activar/desactivar" style="padding:3px 9px;border:1px solid '+(on?'#a7d7b8':'#ddd')+';border-radius:7px;background:'+(on?'#e8f7ef':'#f5f5f5')+';color:'+(on?'#1b7a3d':'#999')+';cursor:pointer;font-size:11px;font-weight:700">'+(on?'ON':'OFF')+'</button>'+
+        '</div>'+
+        '<div style="font-size:11.5px;color:var(--texto-suave);margin-top:2px">'+esc(a.desc)+'</div>'+
+        '<div id="ag-out-'+a.id+'">'+ult+'</div>'+
+      '</div>';
+    }).join('');
+    cont.innerHTML=h;
+  }catch(e){ cont.innerHTML='<div style="color:#c0392b;font-size:13px">No se pudieron cargar los agentes.</div>'; }
+}
+async function agenteToggle(id,enabled){
+  try{ await fetch(BRIDGE_URL_C+'/agentes/toggle',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({id:id,enabled:enabled})}); }catch(e){}
+  cargarAgentes();
+}
+async function agenteEjecutar(id){
+  const o=document.getElementById('ag-out-'+id); if(o) o.innerHTML='<div style="color:var(--texto-suave);font-size:12px;margin-top:4px"><span class="spinner"></span> FINA está analizando…</div>';
+  try{
+    const j=await fetch(BRIDGE_URL_C+'/agentes/ejecutar?id='+id+'&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(r=>r.json());
+    const r=(j.resultados||[])[0];
+    if(o) o.innerHTML=r? '<div style="font-size:12px;color:'+(r.alerta?'#b45309':'#1b7a3d')+';margin-top:4px;line-height:1.45;background:'+(r.alerta?'#fff7ed':'#f0faf4')+';border-radius:8px;padding:8px 10px">'+(r.alerta?'⚠️ ':'✓ ')+esc(r.parte).replace(/\n/g,'<br>')+'</div>' : '<div style="color:#c0392b;font-size:12px">Sin respuesta.</div>';
+  }catch(e){ if(o) o.innerHTML='<div style="color:#c0392b;font-size:12px">Error: '+e.message+'</div>'; }
+}
+
 // ===== PULSO — cuadro de salud =====
 async function cargarPulso(){
   try{ cargarCuentaSocio(); }catch(e){}
+  try{ cargarAgentes(); }catch(e){}
   const H={headers:{'ngrok-skip-browser-warning':'true'}};
   finaCargarLecciones();
   const eur=x=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(Math.round(x||0))+' €';

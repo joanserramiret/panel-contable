@@ -678,7 +678,7 @@ async function cargarAlb(){
 }
 function albTotal(a){ return (a.lineas||[]).reduce((s,l)=>s+(Number(l.precio)||0)*(Number(l.cantidad)||0)*(1+(l.vatrate==null?0.21:Number(l.vatrate))),0); }
 function renderAlb(){
-  if(!ALB.length){ $('#albView').innerHTML='<div class="hbar"><span class="pill" style="background:#dcfce7;color:#166534">✓ No hay albaranes APP pendientes de facturar</span></div>'; return; }
+  if(!ALB.length){ $('#albView').innerHTML='<div class="hbar"><span class="pill" style="background:#eef1f6;color:#475569">No hay albaranes pendientes de facturar</span></div>'; return; }
   let h='<div class="hbar"><span class="pill" style="background:#0f1f5c;color:#fff">🔧 Albaranes a facturar</span>'
     +'<span class="pill" style="background:#fff7ed;color:#9a3412"><b>'+ALB.length+'</b> pendientes</span>'
     +'<span class="muted" style="font-size:11.5px">Cada albarán → factura F real. Revisa las líneas; los productos que no existan se crean en Ágora.</span></div>';
@@ -787,14 +787,21 @@ async function auditarDobleGiro(){
       +'<div class="toolbar" style="margin-top:12px;justify-content:flex-end"><button class="btn pri" onclick="cerrarModal()">Cerrar</button></div>';
   }catch(e){ $('#mbox').innerHTML='<h3>Error</h3><div class="note">'+esc(e.message)+'</div><div class="toolbar" style="justify-content:flex-end"><button class="btn sec" onclick="cerrarModal()">Cerrar</button></div>'; }
 }
+// Pregunta el banco de la remesa (Sabadell / Bankinter). Devuelve el nombre o null si cancela.
+function pedirBancoRemesa(){
+  const b=(prompt('¿Con qué banco generas la remesa?\n\nEscribe  S  (Sabadell)  o  B  (Bankinter):','S')||'').trim().toUpperCase();
+  if(!b) return null;
+  return b[0]==='B' ? 'Bankinter' : 'Sabadell';
+}
 async function generarRemesaGlobal(){
   const pend=(REM&&REM.pendientes)||[]; if(!pend.length){ alert('No hay pendientes.'); return; }
-  if(!confirm('Generar remesa SEPA de '+pend.length+' facturas domiciliadas pendientes ('+eur(REM.total_pendiente)+')?\n\nCuotas + material, todo lo que sea Recibo y no esté girado.')) return;
+  const banco=pedirBancoRemesa(); if(!banco) return;
+  if(!confirm('Generar remesa SEPA ('+banco+') de '+pend.length+' facturas domiciliadas pendientes ('+eur(REM.total_pendiente)+')?\n\nCuotas + material, todo lo que sea Recibo y no esté girado.')) return;
   const recibos = pend.map(f=>({cliente:f.cliente, nif:f.cif, importe:f.total, facturas:[f.serie+'-'+f.numero]}));
   const b=$('#bRemGlobal'); if(b){ b.disabled=true; b.textContent='Generando…'; }
   try{
     const r=await fetch(API+'/remesa/generar',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({banco:'Sabadell', confirmar:1, recibos:recibos})}).then(r=>r.json());
+      body:JSON.stringify({banco:banco, confirmar:1, recibos:recibos})}).then(r=>r.json());
     if(!r.ok){ alert('Error: '+(r.error||'')); cargarRem(); return; }
     if(r.contenido_b64){ const a=document.createElement('a'); a.href='data:text/plain;base64,'+r.contenido_b64; a.download=r.fichero||'remesa.txt'; a.click(); }
     const faltan=(r.faltan_mandato||[]).length;
@@ -903,11 +910,12 @@ async function emailDe(id){
 async function generarRemesa(){
   const domic = HIST.filter(f=>f.forma_pago_id==8 && !f.remesada);
   if(!domic.length){ alert('No hay domiciliadas pendientes.'); return; }
-  if(!confirm('Generar remesa SEPA de '+domic.length+' recibos ('+eur(domic.reduce((s,f)=>s+f.total,0))+')?')) return;
+  const banco=pedirBancoRemesa(); if(!banco) return;
+  if(!confirm('Generar remesa SEPA ('+banco+') de '+domic.length+' recibos ('+eur(domic.reduce((s,f)=>s+f.total,0))+')?')) return;
   const recibos = domic.map(f=>({cliente:f.cliente, nif:f.cif, importe:f.total, facturas:[f.serie+'-'+f.numero]}));
   try{
     const r = await fetch(API+'/remesa/generar',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({banco:'Sabadell', confirmar:1, recibos:recibos})}).then(r=>r.json());
+      body:JSON.stringify({banco:banco, confirmar:1, recibos:recibos})}).then(r=>r.json());
     if(!r.ok){ alert('Error: '+(r.error||'')); return; }
     if(r.contenido_b64){ const a=document.createElement('a');
       a.href='data:text/plain;base64,'+r.contenido_b64; a.download=r.fichero||'remesa.txt'; a.click(); }

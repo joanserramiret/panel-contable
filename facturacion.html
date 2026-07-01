@@ -520,6 +520,36 @@ async function emitirReal(sel){
 function cerrarModal(){ $('#mbg').style.display='none'; }
 $('#mbg').onclick = e=>{ if(e.target===$('#mbg')) cerrarModal(); };
 
+// Resultado de una remesa en modal: recibos girados + LISTA de los que quedan FUERA con su motivo.
+function mostrarResultadoRemesa(r, banco){
+  const faltan = r.faltan_mandato || [];
+  const ok = r.recibos_ok || [];
+  const nFrst = ok.filter(x=>x.esquema==='FRST').length;
+  let h = '<h3>Remesa '+esc(banco||'')+'</h3>';
+  h += '<div class="muted">✅ '+r.n+' recibos · '+eur(r.total)+(nFrst?(' · '+nFrst+' como primer adeudo'):'')+'</div>';
+  h += '<div class="note" style="margin-top:8px">Súbela al banco por <b>«Enviar ficheros»</b>. Al recargar, las giradas saldrán como remesadas.</div>';
+  if(faltan.length){
+    h += '<div style="margin-top:16px;font-weight:800;color:#b45309">⚠️ '+faltan.length+' quedan FUERA (sin mandato):</div>';
+    h += '<div style="margin-top:6px;max-height:38vh;overflow:auto">'
+      + faltan.map(f=>{
+          const cli = esc(f.cliente||f.cli||'—');
+          const nif = f.nif?(' · '+esc(f.nif)):'';
+          const imp = eur(f.importe||f.imp||0);
+          let why = f.motivo||'';
+          why = /sin mandato|sin iban/i.test(why) || !why
+              ? 'No tiene IBAN registrado (ni firmado ni en la app de SEPAs)'
+              : why;
+          return '<div class="row" style="align-items:flex-start"><span>'+cli+nif+'</span><span>'+imp+'</span></div>'
+               + '<div class="muted" style="margin:-4px 0 9px 0;font-size:12px">↳ '+esc(why)+'</div>';
+        }).join('')
+      + '</div>';
+    h += '<div class="note" style="margin-top:6px">Para meterlos: añade su <b>IBAN en la app de SEPAs</b> (aunque no firmen) y la próxima remesa los coge solos como primer adeudo. Si pagan por transferencia, déjalos fuera → van al reclamador.</div>';
+  }
+  h += '<div class="toolbar" style="margin-top:16px;justify-content:flex-end"><button class="btn pri" onclick="cerrarModal()">Cerrar</button></div>';
+  $('#mbox').innerHTML = h;
+  $('#mbg').style.display='flex';
+}
+
 // ── Plantilla de factura EXACTA del panel contable (réplica Ágora) ──
 var CABECERA_FACTURA_URL = 'https://joanserramiret.github.io/averias-jstech/cabecera_factura.png';
 function fmC(v){ return (parseFloat(v)||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
@@ -822,8 +852,7 @@ async function generarRemesaGlobal(){
       body:JSON.stringify({banco:banco, confirmar:1, recibos:recibos})}).then(r=>r.json());
     if(!r.ok){ alert('Error: '+(r.error||'')); cargarRem(); return; }
     if(r.contenido_b64){ const a=document.createElement('a'); a.href='data:text/plain;base64,'+r.contenido_b64; a.download=r.fichero||'remesa.txt'; a.click(); }
-    const faltan=(r.faltan_mandato||[]).length;
-    alert('✅ Remesa generada: '+r.n+' recibos · '+eur(r.total)+(faltan?('\n\n⚠️ '+faltan+' sin mandato SEPA (fuera) — necesitan firmar el mandato primero.'):'')+'\n\nSúbela al banco por "Enviar ficheros". Al recargar, las giradas saldrán como remesadas.');
+    mostrarResultadoRemesa(r, banco);
     cargarRem();
   }catch(e){ alert('Error: '+e.message); cargarRem(); }
 }
@@ -941,8 +970,7 @@ async function generarRemesa(){
     for(const f of domic){ if(okNifs.has((f.cif||'').toUpperCase())){
       await fetch(API+'/facturacion/historico/marcar',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({id:f.id, campo:'remesada', valor:new Date().toISOString().slice(0,19)})}); } }
-    const faltan=(r.faltan_mandato||[]).length;
-    alert('Remesa: '+r.n+' recibos · '+eur(r.total)+(faltan?(' · '+faltan+' sin mandato (fuera)'):'')+'. Súbela al banco por "Enviar ficheros".');
+    mostrarResultadoRemesa(r, banco);
     cargarHist();
   }catch(e){ alert('Error: '+e.message); }
 }

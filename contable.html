@@ -1569,6 +1569,20 @@ async function refrescarEstadosCobro() {
   try { actualizarCobros(); } catch(e) {}
 }
 
+// COBROS es lo MÁS sensible: cada vez que se abre la vista (pestaña Cobrar o desde Pulso) se recarga TODO de RAÍZ,
+// nunca se fía del estado cacheado del navegador. Invalida los sets cacheados (en_remesa, aplazados, guardarraíl,
+// cartera, banco) → refrescarEstadosCobro re-pide el banco y los lazy-loads se vuelven a pedir solos. [Joan 2026-07-02]
+async function abrirCobros() {
+  try {
+    window._enRemesa = undefined;      // 📤 en proceso (facturas ya en una remesa girada)
+    window._aplazadosSet = undefined;  // ⏸ giros aguantados unos días
+    window._cobGuard = undefined;      // 🛡️ guardarraíl (verde/regirar/ámbar/rojo)
+    carteraDestinos = null;            // ajustes manuales girar↔perseguir
+    bkCobradasBanco = null;            // verdad bancaria (cobradas/devueltas)
+  } catch(e) {}
+  try { await refrescarEstadosCobro(); } catch(e) {}
+}
+
 // Marca una factura como DEVUELTA dentro de la remesa donde figura como abonada
 // (el fichero de presentación del Sabadell la daba por cobrada — esto lo corrige)
 async function bkMarcarDevueltaEnOrigen(clave, importe, deudor) {
@@ -4706,6 +4720,7 @@ function switchTabC(tab) {
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
   document.getElementById('ctab-' + tab).classList.add('active');
   document.getElementById('ctc-' + tab).classList.add('active');
+  if (tab === 'cobros') abrirCobros();   // lo más sensible: SIEMPRE recarga de raíz al abrir
   if (tab === 'calendario') renderCalendar();
   if (tab === 'banco') { bkCargar(); bkGcEstado(); }
   if (tab === 'remesas') bkRemesas();

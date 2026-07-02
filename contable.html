@@ -7179,7 +7179,10 @@ async function bkRemesas() {
         v.filter(x => !x.dev).map(x => x.fecha).sort().join(', ') +
         (v.some(x => x.dev) ? ' <span style="color:#888">(y ↩ devuelta en: ' + v.filter(x => x.dev).map(x => x.fecha).sort().join(', ') + ' — eso es correcto)</span>' : '') + '</div>').join('') +
       (dupsRem.length > 10 ? '<div style="color:#888;margin-top:4px">…y ' + (dupsRem.length - 10) + ' más</div>' : '') +
-      '<div style="margin-top:8px"><button onclick="remesaDesdesglosarConflictivas()" title="Quita estas facturas de TODAS las remesas donde figuran abonadas (las ↩ devueltas se conservan). El resto de cada desglose no se toca — luego pones la buena con ➕/✎ o re-importas el 📎" style="padding:6px 14px;background:#c0392b;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">🧹 Desdesglosar SOLO las conflictivas</button></div></div>';
+      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">'+
+        '<button onclick="remesaMarcarRegiros()" title="Marca la aparición ANTERIOR de cada factura como ↩ devuelta y conserva la más reciente como cobrada (= re-giro botó-y-se-recobró). Hazlo solo si botaron de verdad." style="padding:6px 14px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">🔄 Marcar re-giros (anterior → devuelta)</button>'+
+        '<button onclick="remesaDesdesglosarConflictivas()" title="Quita estas facturas de TODAS las remesas donde figuran abonadas (las ↩ devueltas se conservan). El resto de cada desglose no se toca — luego pones la buena con ➕/✎ o re-importas el 📎" style="padding:6px 14px;background:#c0392b;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">🧹 Desdesglosar SOLO las conflictivas</button>'+
+      '</div></div>';
   }
   if (remesas.length) {
     const total = remesas.reduce((s, m) => s + m.importe, 0);
@@ -7889,6 +7892,50 @@ async function remesaDesdesglosarConflictivas() {
   }
   alert('🧹 ' + quitadas + ' imputación(es) conflictiva(s) quitadas de ' + tocadas + ' remesa(s).\n' +
     'Esas facturas vuelven a Pendiente hasta que las pongas donde tocan (➕/✎/📎).');
+  refrescarEstadosCobro();
+  bkRemesas();
+}
+
+// 🔄 RE-GIRO: una factura abonada en VARIAS remesas → marca la(s) ANTERIOR(es) como DEVUELTA y conserva la MÁS
+// RECIENTE abonada (= el giro bueno). Para el caso legítimo botó-en-A → re-girado-y-cobrado-en-B, sin ir a mano.
+async function remesaMarcarRegiros() {
+  const remesas = bkRemesasDatos.remesas || [];
+  const porClave = {};
+  remesas.forEach(m => bkClavesDeConciliado(m.conciliado).forEach(([k, f]) => {
+    const s = (f.serie || '').toUpperCase();
+    if (s === 'REF' || s === 'GASTOS' || s === 'DESCUADRE' || f.serie === '—' || s === '—') return;
+    if (!String(f.numero == null ? '' : f.numero).trim()) return;
+    if ((f.situacion || 'abonado') === 'devuelto') return;   // solo cuentan las ABONADAS
+    (porClave[k] = porClave[k] || []).push({ mov: m, fecha: m.fecha || '' });
+  }));
+  const conflictivas = Object.entries(porClave).filter(([, v]) => v.length > 1);
+  if (!conflictivas.length) { alert('✓ No hay facturas abonadas en varias remesas.'); return; }
+  const lista = conflictivas.map(([k, v]) => '· ' + k + '  (se queda ' + v.map(x => x.fecha).sort().slice(-1)[0] + ', las anteriores → ↩ devueltas)').join('\n');
+  if (!confirm('🔄 Marco como DEVUELTA la aparición ANTERIOR de cada factura y conservo la MÁS RECIENTE abonada (= el re-giro bueno):\n\n' + lista +
+    '\n\n⚠️ Hazlo SOLO si botaron de verdad en la remesa anterior. Si no botaron, esto ocultaría un doble cobro (habría que devolver, no marcar).\n\n¿Adelante?')) return;
+  let n = 0;
+  for (const [k, occ] of conflictivas) {
+    occ.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));   // ascendente por fecha
+    for (let i = 0; i < occ.length - 1; i++) {                          // todas menos la última (más reciente) → devuelta
+      const m = occ[i].mov;
+      const nuevo = (m.conciliado || []).map(e => {
+        if (bkNormClave((e.serie || '') + '-' + (e.numero || '')) === k && (e.situacion || 'abonado') !== 'devuelto') {
+          return Object.assign({}, e, { situacion: 'devuelto' });
+        }
+        return e;
+      });
+      try {
+        await fetch(BRIDGE_URL_C + '/banco/conciliar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+          body: JSON.stringify({ id: m.id, facturas: nuevo })
+        });
+        n++;
+      } catch(e) { /* seguir */ }
+    }
+  }
+  alert('🔄 ' + n + ' aparición(es) anterior(es) marcadas como devueltas (re-giro). La más reciente se conserva cobrada.');
+  try { window._enRemesa = undefined; } catch(e) {}
   refrescarEstadosCobro();
   bkRemesas();
 }

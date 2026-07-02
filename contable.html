@@ -5316,6 +5316,7 @@ function buzonFile(file){
       // PDF de banco. "recibo devuelto"/"devolución"/"avance de extracto" = devolución SEPA individual → casador.
       // "adeudos/listado/impagados/remesa" = listado de remesa → flujo de remesa. Lo demás = factura → cajón.
       if(/aviso.?de.?pago|aviso_de_pago|aviso.*pago/i.test(file.name)) tipo='aviso';
+      else if(/liquidaci|liquidacion.*recibo|recibos.*liquidaci/i.test(file.name)) tipo='liquidacion';  // Liquidación de recibos Bankinter (detalle por remesa)
       else if(/devuelt|devoluci[oó]n|avance.*extracto|r\.?d\.?\s*sepa/i.test(file.name)) tipo='devolucion';
       else if(/adeudo|listado de adeudos|cumovements|remesa|impagad/i.test(file.name)) tipo='remesa';
       else tipo='pdf';
@@ -5526,6 +5527,14 @@ async function buzonDetectado(file, tipo, txt){
       tj.innerHTML='<div style="color:#dc2626;font-size:13px">No reconozco este Excel (ni extracto de tarjeta del Sabadell ni remesa Bankinter).</div>';
     }catch(e){ if(tj) tj.innerHTML='<div style="color:#dc2626;font-size:13px">Error leyendo el Excel: '+e.message+'</div>'; }
   } else if(tipo==='pdf'){
+    // Un PDF de nombre solo-números (típico de Bankinter) no se detecta por nombre → pruebo en el backend si es una
+    // Liquidación de recibos (pypdf lo lee). Si lo es, muestro el mapeo; si no, va al cajón como factura de proveedor.
+    res.innerHTML=badge('📄 PDF detectado','#faeeda')+'<div style="margin:12px 0;font-size:13px">Analizando el PDF…</div>';
+    try{
+      var b64probe=await buzonB64(file);
+      var lj=await fetch(BRIDGE_URL_C+'/banco/liquidacion_pdf',{method:'POST',headers:HP,body:JSON.stringify({pdf_base64:b64probe})}).then(function(r){return r.json();});
+      if(lj && lj.es_liquidacion){ buzonDetectado(file,'liquidacion',''); return; }
+    }catch(e){}
     res.innerHTML=badge('📄 Factura (PDF) detectada','#faeeda')+'<div style="margin:12px 0;font-size:13px">La guardo en el <b>cajón</b> y se clasificará sola al ordenar el cajón.</div><button id="buzon-pdf" style="padding:8px 18px;border:none;border-radius:8px;background:#854F0B;color:#fff;cursor:pointer;font-weight:700">Guardar en el cajón</button><div id="buzon-pdfres" style="margin-top:8px"></div>';
     document.getElementById('buzon-pdf').onclick=async function(){ var b=document.getElementById('buzon-pdf'); b.disabled=true; b.textContent='Guardando…';
       try{ var b64=await buzonB64(file);
@@ -5544,6 +5553,32 @@ async function buzonDetectado(file, tipo, txt){
       ar.innerHTML='<div style="font-size:13px;margin:6px 0"><b>'+(j.proveedor||'')+'</b> · cargo el <b style="color:#c0392b">'+j.vencimiento+'</b>'+(j.total?(' · total '+(+j.total).toFixed(2)+'€'):'')+'</div>'+filas+
         '<div style="color:#0F6E56;font-weight:700;font-size:13px;margin-top:8px">✅ Guardado. En Pagos, estas facturas vencen el '+j.vencimiento+'.</div>';
     }catch(e){ document.getElementById('buzon-avres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; }
+  } else if(tipo==='liquidacion'){
+    res.innerHTML=badge('🏦 Liquidación de recibos (Bankinter)','#e0f2fe')+
+      '<div style="margin:12px 0;font-size:13px">Leo el detalle por deudor y lo cruzo con las facturas de la remesa…</div><div id="buzon-liqres"></div>';
+    try{
+      var b64=await buzonB64(file);
+      var j=await fetch(BRIDGE_URL_C+'/banco/liquidacion_pdf',{method:'POST',headers:HP,body:JSON.stringify({pdf_base64:b64})}).then(function(r){return r.json();});
+      var lr=document.getElementById('buzon-liqres');
+      if(!j.ok){ lr.innerHTML='<div style="color:#dc2626;font-size:13px">'+(j.error||'No es una liquidación')+'</div>'; return; }
+      var col={cobrada:'#0F6E56',devuelta:'#c0392b',pendiente:'#b45309'};
+      var filas=(j.detalle||[]).map(function(d){
+        var facs=(d.facturas||[]).map(function(f){ return '<span style="background:#f3f4f6;border-radius:4px;padding:1px 5px;margin-left:4px;font-size:11px;color:'+(col[f.estado]||'#555')+'">'+f.factura+(f.estado==='devuelta'?' 🔄':'')+'</span>'; }).join('');
+        return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;padding:4px 0;border-bottom:1px solid #f3f3f3"><span>'+(d.deudor||'')+facs+(d.devuelta_n43?' <span style="color:#c0392b;font-weight:700;font-size:11px">(devuelta N43 → re-girar)</span>':'')+'</span><b>'+(+d.importe||0).toFixed(2)+'€</b></div>';
+      }).join('');
+      lr.innerHTML='<div style="font-size:13px;margin:6px 0"><b>Remesa '+(j.remesa||'?')+'</b> · total <b>'+(+j.total||0).toFixed(2)+'€</b> · valor '+(j.fecha_valor||'?')+(j.remesa_encontrada?'':' <span style="color:#c0392b">⚠ no encuentro la remesa en el panel</span>')+'</div>'+filas+
+        '<div style="color:#666;font-size:12px;margin:8px 0">'+(j.aviso||'')+'</div>'+
+        '<button id="buzon-liq-conf" style="padding:8px 18px;border:none;border-radius:8px;background:#185FA5;color:#fff;cursor:pointer;font-weight:700">🏦 Registrar liquidación</button><div id="buzon-liq-cres" style="margin-top:8px"></div>';
+      document.getElementById('buzon-liq-conf').onclick=async function(){
+        var bb=this; bb.disabled=true; bb.textContent='Registrando…';
+        var jr=await fetch(BRIDGE_URL_C+'/banco/liquidacion_pdf',{method:'POST',headers:HP,body:JSON.stringify({pdf_base64:b64, confirmar:1})}).then(function(r){return r.json();});
+        document.getElementById('buzon-liq-cres').innerHTML = jr.ok
+          ? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ '+(jr.aviso||'Registrada')+'</div>'
+          : '<div style="color:#dc2626;font-size:13px">'+(jr.error||'Error')+'</div>';
+        bb.textContent='✅ Registrada';
+        if(jr.ok){ try{ window._enRemesa=undefined; if(typeof actualizarCobros==='function') actualizarCobros(); }catch(e){} }
+      };
+    }catch(e){ document.getElementById('buzon-liqres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; }
   } else if(tipo==='devolucion'){
     res.innerHTML=badge('↩️ Devolución de recibo detectada','#fee2e2')+
       '<div style="margin:12px 0;font-size:13px">Leo el PDF y busco a qué factura/remesa corresponde…</div><div id="buzon-devres"></div>';

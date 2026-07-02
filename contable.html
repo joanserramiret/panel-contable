@@ -2869,8 +2869,20 @@ function actualizarCobros() {
     const recibo = (f.Payments || []).some(p => String(p.MethodName || '').toLowerCase().includes('recibo'));
     const enRem = !!(window._enRemesa && window._enRemesa.has(clave));
     const aplazada = !!(window._aplazadosSet && window._aplazadosSet.has(clave));   // giro aguantado unos días → fuera de girar
-    let destino = carteraDestinos[clave];   // el ajuste manual MANDA (p.ej. una devuelta que Joan pone a 'girar' para re-girar debe quedarse en girar, aunque esté en una remesa)
-    if (!destino) destino = devuelta ? 'perseguir' : (aplazada ? 'proceso' : (enRem ? 'proceso' : (recibo ? 'girar' : 'perseguir')));
+    // ⚠️⚠️ EL BANCO MANDA SOBRE EL AJUSTE MANUAL (regla de Joan 2026-07-02, DINERO REAL):
+    //  Una factura YA en una remesa (en proceso) o cobrada por el banco NO puede aparecer como candidata a girar
+    //  aunque tenga un ajuste manual 'girar' pegado — si no, se re-giraría y se cobraría DOS VECES.
+    //  Prioridad (de más fuerte a más débil):
+    //   1) cobrada  → ya sale de 'pendientes' antes de llegar aquí (el banco lo confirmó = sagrado).
+    //   2) devuelta → el banco confirmó que botó → vuelve al juego (girar si Joan la re-gira, o perseguir).
+    //   3) en_remesa / aplazada → girada / en proceso → 📤 PROCESO (manda sobre cualquier ajuste manual).
+    //   4) ajuste manual (girar/perseguir) → solo si el banco no dice nada de esta factura.
+    //   5) defecto: recibo→girar, transferencia→perseguir.
+    let destino;
+    if (devuelta)       destino = carteraDestinos[clave] || 'perseguir';
+    else if (enRem)     destino = 'proceso';
+    else if (aplazada)  destino = 'proceso';
+    else                destino = carteraDestinos[clave] || (recibo ? 'girar' : 'perseguir');
     if (destino === 'esperando') destino = 'proceso';   // 'esperando' (girada, espera remesa) = 📤 en proceso
     if (!cols[destino]) destino = 'perseguir';          // valor inesperado → perseguir (a prueba de fallos)
     carteraFacts[clave] = { destino: destino };

@@ -5702,7 +5702,11 @@ async function remesisarAbrir(banco){
     var jf=await fetch(BRIDGE_URL_C+'/agora/facturas?anio=2026&_='+Date.now(),{headers:H}).then(function(r){return r.json();});
     var byFac={};
     (jf.documentos||[]).forEach(function(d){var cu=d.Customer||{};byFac[norm(d.Serie+'-'+d.Number)]={cliente:cu.FiscalName||cu.BusinessName||'',nif:cu.Cif||cu.Id||''};});
-    var yaRem={}; (rm.claves||[]).forEach(function(k){yaRem[norm(k)]=true;});
+    // ⛔ ESTRUCTURA [Joan 2026-07-02]: NO ocultar por 'remesada' (esa marca la ponía GENERAR un borrador, que NO es
+    //   "en proceso"). El "en proceso" real lo determina el FICHERO de la remesa subido al Buzón tras ejecutarla en el
+    //   banco (lo detecta el backend vía _remesa_fs_cobradas, que ya excluye esas facturas del verde/girables). Así una
+    //   remesa rechazada por el banco no deja facturas atascadas. Candidato = giro/transferencia-girable y NO en proceso.
+    var yaRem={};
     var mk=function(v,tipo){var m=byFac[norm(v.fact)]||{};var gas=+(v.gastos||0);
       var imp=(tipo==='regirar'&&gas>0)?(+(v.total_regirar||((+v.importe)+gas))):(+v.importe);
       var con='COBRO '+v.fact+((tipo==='regirar'&&gas>0)?(' + gastos dev '+gas.toFixed(2)):'');
@@ -5757,11 +5761,10 @@ async function remesisarGenerar(){
       var bin=atob(j.contenido_b64);var by=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)by[i]=bin.charCodeAt(i);
       var blob=new Blob([by],{type:'text/plain'});var url=URL.createObjectURL(blob);
       var a=document.createElement('a');a.href=url;a.download=j.fichero||('REMESISAR_'+banco+'.txt');document.body.appendChild(a);a.click();a.remove();
-      // marcar 'remesada' SOLO las que entraron (no las que faltó mandato)
-      var faltN={}; (j.faltan_mandato||[]).forEach(function(x){faltN[norm(x.nif)]=true;});
-      var facturas=[]; recibos.forEach(function(r){ if(faltN[norm(r.nif)]) return; (r.facturas||[]).forEach(function(f){var p=(''+f).split('-'); facturas.push({serie:p[0]||'F',numero:p[1]||p[0]});}); });
-      try{ await fetch(BRIDGE_URL_C+'/remesa/remesada',{method:'POST',headers:H,body:JSON.stringify({facturas:facturas,fichero:j.fichero,banco:banco})}); }catch(e){}
-      if(body) body.insertAdjacentHTML('afterbegin','<div style="background:#e8f7ef;border:1px solid #a7d7b8;border-radius:8px;padding:9px 12px;margin-bottom:10px;color:#1b7a3d;font-size:13px;font-weight:700">✅ Descargado <b>'+j.fichero+'</b> · '+j.n+' recibos · '+new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(j.total)+' € · marcadas como remesada. Súbelo por Ficheros → Enviar ficheros.</div>');
+      // ⛔ NO se marca 'remesada' al generar [Joan 2026-07-02]: generar un borrador NO es "en proceso". El "en proceso"
+      //   real lo da el FICHERO subido al Buzón tras ENVIARLO al banco (backend _remesa_fs_cobradas). Así una remesa
+      //   rechazada por el banco no deja facturas atascadas como "remesada".
+      if(body) body.insertAdjacentHTML('afterbegin','<div style="background:#e8f7ef;border:1px solid #a7d7b8;border-radius:8px;padding:9px 12px;margin-bottom:10px;color:#1b7a3d;font-size:13px;font-weight:700">✅ Descargado <b>'+j.fichero+'</b> · '+j.n+' recibos · '+new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(j.total)+' €.<br><span style="font-weight:500">1) Súbelo al banco por <b>Ficheros → Enviar ficheros</b> y firma. 2) Cuando lo hayas enviado, suelta <b>ese mismo fichero en el 📥 Buzón</b> → sus facturas pasan a «en proceso».</span></div>');
     } else if(body){ body.insertAdjacentHTML('afterbegin','<div style="color:#dc2626">Error: '+(j.error||'no se generó el fichero')+'</div>'); }
   }catch(e){ if(body) body.insertAdjacentHTML('afterbegin','<div style="color:#dc2626">Error: '+e.message+'</div>'); }
 }

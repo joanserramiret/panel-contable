@@ -563,7 +563,11 @@ function presuForm(){
         +'<input class="num" type="number" '+inp+' value="'+l.cantidad+'" onchange="PRESU.lineas['+i+'].cantidad=+this.value;presuTot()">'
         +'<input class="num" type="number" step="0.01" '+inp+' value="'+l.precio+'" onchange="PRESU.lineas['+i+'].precio=+this.value;presuTot()" title="Precio neto (sin IVA); Ágora añade el 21%">'
         +'<div class="num" id="prp'+i+'" style="font-size:12px;line-height:30px;font-weight:600"></div></div>'
-        +(l.cuota?'<div class="ln2" style="font-size:11px;color:#92400e;margin:-2px 0 6px">⚠ cuota mensual — normalmente va por el proponedor de cuotas</div>':'');
+        +'<div class="ln2" style="display:flex;gap:6px;align-items:center;margin:-2px 0 6px">'
+        +  '<input style="padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px;flex:1;box-sizing:border-box" placeholder="📍 Nota del centro (al pie de esta línea, opcional)" value="'+esc(l.nota||'')+'" onchange="PRESU.lineas['+i+'].nota=this.value">'
+        +  '<button class="btn sec" style="padding:4px 9px;font-size:12px" onclick="presuDelLn('+i+')" title="Quitar esta línea">🗑</button>'
+        +'</div>'
+        +(l.cuota?'<div class="ln2" style="font-size:11px;color:#92400e;margin:-4px 0 6px">⚠ cuota mensual — normalmente va por el proponedor de cuotas</div>':'');
     });
   });
   $('#mbox').innerHTML='<h3>📄 Presup.'+(PRESU.ref?' '+esc(PRESU.ref):'')+' → '+esc(presuCli.nombre)+'</h3>'
@@ -573,20 +577,23 @@ function presuForm(){
     +'<span class="muted" style="margin-left:auto;font-size:11px">Precios NETOS · Ágora añade 21%</span></div>'
     +'<div class="ln" style="grid-template-columns:26px 1fr 46px 82px 78px;font-weight:700;font-size:11px;color:var(--mut)"><div>✓</div><div>Concepto</div><div class="num">Cant</div><div class="num">Neto</div><div class="num">c/IVA</div></div>'
     +html
+    +'<div style="margin:8px 0"><button class="btn sec" onclick="presuAddLn()">➕ Añadir línea</button></div>'
     +'<div class="row" style="border:0;font-weight:700;margin-top:8px"><span>TOTAL (con IVA) · <span id="prN"></span> líneas</span><span id="prTot"></span></div>'
     +'<div class="note">Emite una F REAL a '+esc(presuCli.nombre)+' con las líneas marcadas. Los artículos que no existan se crean en Ágora.</div>'
     +'<div class="toolbar" style="margin-top:12px;justify-content:space-between"><button class="btn sec" onclick="presuBuscarCliente()">← Otro cliente</button><button class="btn pri" id="prGo">Emitir factura</button></div>';
   presuTot(); $('#prGo').onclick=presuEmitir;
 }
+function presuAddLn(){ PRESU.lineas.push({ bloque:'Añadidas a mano', desc:'', cantidad:1, precio:0, con_iva:null, nota:'', cuota:false, sel:true }); presuForm(); }
+function presuDelLn(i){ PRESU.lineas.splice(i,1); if(PRESU.lineas.length) presuForm(); else presuBuscarCliente(); }
 function presuTot(){
   let tot=0, n=0;
-  PRESU.lineas.forEach((l,i)=>{ const p=(+l.precio||0), c=(+l.cantidad||0); const el=$('#prp'+i); if(el) el.textContent=(p*1.21).toFixed(2); if(l.sel){ tot+=p*c; n++; } });
+  PRESU.lineas.forEach((l,i)=>{ const p=(+l.precio||0), c=(+l.cantidad||0); const el=$('#prp'+i); if(el) el.textContent=(p*1.21).toFixed(2); if(l.sel && (l.desc||'').trim()){ tot+=p*c; n++; } });
   const t=$('#prTot'); if(t) t.textContent=eur(tot*1.21);
   const nn=$('#prN'); if(nn) nn.textContent=n;
 }
 async function presuEmitir(){
-  const sel=PRESU.lineas.filter(l=>l.sel);
-  if(!sel.length){ alert('Marca al menos una línea para facturar.'); return; }
+  const sel=PRESU.lineas.filter(l=>l.sel && (l.desc||'').trim());
+  if(!sel.length){ alert('Marca al menos una línea con descripción para facturar.'); return; }
   const totIva=sel.reduce((s,l)=>s+(+l.precio||0)*(+l.cantidad||0),0)*1.21;
   if(!confirm('Emitir factura REAL a '+presuCli.nombre+'\n\n'+sel.length+' líneas · total '+eur(totIva)+' · '+($('#prPago').value==='8'?'Recibo domiciliado':'Transferencia')+'\n\nEs una factura fiscal real. ¿Continuar?')) return;
   const btn=$('#prGo'); if(btn){ btn.disabled=true; btn.textContent='Emitiendo…'; }

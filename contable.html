@@ -117,11 +117,15 @@
       padding: 0 32px;
       display: flex; gap: 4px;
       border-bottom: 3px solid rgba(255,255,255,0.05);
+      position: sticky; top: 64px; z-index: 99;        /* fija junto a la cabecera al hacer scroll */
+      overflow-x: auto; scrollbar-width: none;          /* permite scroll lateral de las pestañas */
     }
+    nav::-webkit-scrollbar { height: 0; }
     .nav-tab {
       padding: 14px 20px; color: rgba(255,255,255,0.6); font-size: 13px;
       font-weight: 600; cursor: pointer; border-bottom: 3px solid transparent;
       margin-bottom: -3px; transition: all 0.15s; text-transform: uppercase; letter-spacing: 0.5px;
+      flex: 0 0 auto; white-space: nowrap;              /* no encoger: se scrollean de lado */
     }
     .nav-tab:hover { color: rgba(255,255,255,0.9); }
     .nav-tab.active { color: white; border-bottom-color: var(--naranja); }
@@ -393,6 +397,11 @@
           white-space: nowrap; gap: 4px; scrollbar-width: none; }
     nav::-webkit-scrollbar { display: none; }
     .nav-tab { flex: 0 0 auto; padding: 11px 13px !important; font-size: 12.5px !important; }
+    /* ── SOLO MÓVIL: al bajar se oculta toda la parte superior; al subir reaparece entera ── */
+    header, nav, #top-fixed-bar { transition: transform .28s ease, opacity .28s ease; }
+    body.top-oculto header { transform: translateY(-120px); }
+    body.top-oculto nav    { transform: translateY(-120px); }
+    body.top-oculto #top-fixed-bar { transform: translateX(-50%) translateY(-90px); opacity: 0; pointer-events: none; }
     /* barra de período: apilada y táctil */
     .period-bar { flex-wrap: wrap !important; gap: 6px !important; }
     .period-bar input[type="date"] { flex: 1; min-width: 132px; }
@@ -496,6 +505,21 @@
     <div class="nav-tab tab-clasico" onclick="switchTabC('calendario')" id="ctab-calendario">📅 Calendario</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('iva')" id="ctab-iva">📋 Impuestos · IVA</div> -->
   </nav>
+  <script>
+    // 📱 SOLO MÓVIL (≤760px): al bajar oculta cabecera+pestañas; al subir las devuelve enteras. En escritorio no hace nada.
+    (function(){
+      var lastY = 0, ticking = false;
+      function upd(){
+        ticking = false;
+        if (window.innerWidth > 760){ document.body.classList.remove('top-oculto'); return; }
+        var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+        if (y > lastY + 4 && y > 90) document.body.classList.add('top-oculto');       // bajando y ya lejos del top
+        else if (y < lastY - 4)      document.body.classList.remove('top-oculto');     // subiendo
+        lastY = y;
+      }
+      window.addEventListener('scroll', function(){ if(!ticking){ ticking = true; requestAnimationFrame(upd); } }, { passive: true });
+    })();
+  </script>
   <style>
     #cnav.modo-simple .tab-clasico { display: none; }
     #cnav-toggle { cursor: pointer; padding: 8px 14px; border-radius: 8px; font-size: 12.5px;

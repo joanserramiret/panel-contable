@@ -118,9 +118,13 @@
       display: flex; gap: 4px;
       border-bottom: 3px solid rgba(255,255,255,0.05);
       position: sticky; top: 64px; z-index: 99;        /* fija junto a la cabecera al hacer scroll */
-      overflow-x: auto; scrollbar-width: none;          /* permite scroll lateral de las pestañas */
+      overflow-x: auto; scrollbar-width: thin;          /* permite scroll lateral de las pestañas */
+      scrollbar-color: rgba(255,255,255,0.35) transparent;
     }
-    nav::-webkit-scrollbar { height: 0; }
+    nav::-webkit-scrollbar { height: 7px; }
+    nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.30); border-radius: 4px; }
+    nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.50); }
+    nav::-webkit-scrollbar-track { background: transparent; }
     .nav-tab {
       padding: 14px 20px; color: rgba(255,255,255,0.6); font-size: 13px;
       font-weight: 600; cursor: pointer; border-bottom: 3px solid transparent;
@@ -518,6 +522,15 @@
         lastY = y;
       }
       window.addEventListener('scroll', function(){ if(!ticking){ ticking = true; requestAnimationFrame(upd); } }, { passive: true });
+    })();
+    // 🖱️ Pestañas: la rueda del ratón mueve la barra de lado (para llegar a las de la derecha sin trackpad).
+    (function(){
+      var nav = document.getElementById('cnav');
+      if(!nav) return;
+      nav.addEventListener('wheel', function(e){
+        if(nav.scrollWidth <= nav.clientWidth) return;            // caben todas → no interceptar
+        if(Math.abs(e.deltaY) > Math.abs(e.deltaX)){ nav.scrollLeft += e.deltaY; e.preventDefault(); }
+      }, { passive: false });
     })();
   </script>
   <style>
@@ -5141,7 +5154,7 @@ async function cargarPulso(){
     const [jp,jpag,jt,js,jiva,jmov,jver,jprov,jcli]=await Promise.all([
       fetch(BRIDGE_URL_C+'/contabilidad/clientes_pendientes?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/contabilidad/pagos?anio=2026&_='+Date.now(),H).then(r=>r.json()),
-      fetch(BRIDGE_URL_C+'/agora/totales_mensuales?anios=2023,2024,2025,2026&_='+Date.now(),H).then(r=>r.json()),
+      fetch(BRIDGE_URL_C+'/agora/totales_mensuales?anios=2024,2025,2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/banco/eb/saldos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({saldos:[]})),
       fetch(BRIDGE_URL_C+'/contabilidad/iva?_='+Date.now(),H).then(r=>r.json()).catch(()=>({})),
       fetch(BRIDGE_URL_C+'/banco/movimientos?_='+Date.now(),H).then(r=>r.json()).catch(()=>({movimientos:[]})),
@@ -5213,7 +5226,7 @@ async function cargarPulso(){
     });
     ih+='<div style="margin-top:8px;font-size:11px;color:var(--texto-suave)">Facturación <b>ene–jun</b> de cada año (comparable). 2026 en curso.</div>';
     // 📅 TOTAL POR AÑO COMPLETO (años cerrados) + lo que va del año en curso a fecha de hoy
-    const anysF=['2023','2024','2025','2026'];
+    const anysF=['2024','2025','2026'];   // visión de negocio: partimos de 2024 (2023 oculto)
     const totY={}; anysF.forEach(y=>{ const m=(A[y]||{}).meses||{}; totY[y]=Object.values(m).reduce((a,v)=>a+(v||0),0); });
     const maxF=Math.max.apply(null,anysF.map(y=>totY[y]).concat([1]));
     const mesAct=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][new Date().getMonth()];
@@ -5414,6 +5427,7 @@ function buzonFile(file){
       else tipo='pdf';
     }
     else if(/\.xlsx?$/i.test(file.name)) tipo='tarjeta';   // extracto de tarjeta de crédito (Sabadell .xls)
+    else if(/^orders_/i.test(file.name)||/\|[\d.]*\d,\d{2}\s*EUR\|/i.test(head)) tipo='orders';  // resultado de remesa Sabadell (orders_*.txt)
     else if(/^0119143/.test(head)) tipo='remesa';
     else if(/\.xml$/i.test(file.name)||/pain\.008|<CstmrDrctDbtInitn|<Document[\s>]/i.test(head)) tipo='remesa';   // remesa Bankinter pain.008 (Remesa_Exportada_*.xml)
     else if(/\.n43$/i.test(file.name)||/^(11|00)\d{6}/.test(head)) tipo='n43';
@@ -5647,6 +5661,30 @@ async function buzonDetectado(file, tipo, txt){
       ar.innerHTML='<div style="font-size:13px;margin:6px 0"><b>'+(j.proveedor||'')+'</b> · cargo el <b style="color:#c0392b">'+j.vencimiento+'</b>'+(j.total?(' · total '+(+j.total).toFixed(2)+'€'):'')+'</div>'+filas+
         '<div style="color:#0F6E56;font-weight:700;font-size:13px;margin-top:8px">✅ Guardado. En Pagos, estas facturas vencen el '+j.vencimiento+'.</div>';
     }catch(e){ document.getElementById('buzon-avres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; }
+  } else if(tipo==='orders'){
+    res.innerHTML=badge('🏦 Resultado de remesa (Sabadell)','#e0f2fe')+
+      '<div style="margin:12px 0;font-size:13px">Leo el detalle por cliente y lo cruzo con las facturas…</div><div id="buzon-ordres"></div>';
+    try{
+      var full=await file.text();
+      var j=await fetch(BRIDGE_URL_C+'/banco/remesa_resultado',{method:'POST',headers:HP,body:JSON.stringify({contenido:full})}).then(function(r){return r.json();});
+      var lr=document.getElementById('buzon-ordres');
+      if(!j.ok){ lr.innerHTML='<div style="color:#dc2626;font-size:13px">'+(j.error||'No es un resultado de remesa')+'</div>'; return; }
+      var col={abonado:'#0F6E56',devuelto:'#c0392b'};
+      var filas=(j.detalle||[]).map(function(d){
+        var facs=(d.facturas||[]).map(function(f){ return '<span style="background:#f3f4f6;border-radius:4px;padding:1px 5px;margin-left:4px;font-size:11px;color:'+(col[d.situacion]||'#555')+'">'+f+'</span>'; }).join('')||' <span style="color:#c0392b;font-size:11px">⚠ sin factura</span>';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;padding:4px 0;border-bottom:1px solid #f3f3f3"><span>'+(d.cliente||'')+facs+' <span style="font-size:10.5px;color:'+(col[d.situacion]||'#666')+'">('+(d.estado||'')+')</span></span><b>'+(+d.importe||0).toFixed(2)+'€</b></div>';
+      }).join('');
+      lr.innerHTML='<div style="font-size:13px;margin:6px 0"><b>'+((j.detalle||[]).length)+' recibos</b> · total <b>'+(+j.total||0).toFixed(2)+'€</b> · ✅ '+(j.n_compensado||0)+' compensados'+(j.n_devuelto?' · ❌ '+j.n_devuelto+' devueltos':'')+'</div>'+filas+
+        '<div style="color:#666;font-size:12px;margin:8px 0">'+(j.aviso||'')+'</div>'+
+        '<button id="buzon-ord-conf" style="padding:8px 18px;border:none;border-radius:8px;background:#185FA5;color:#fff;cursor:pointer;font-weight:700">🏦 Registrar resultado</button><div id="buzon-ord-cres" style="margin-top:8px"></div>';
+      document.getElementById('buzon-ord-conf').onclick=async function(){
+        var bb=this; bb.disabled=true; bb.textContent='Registrando…';
+        var jr=await fetch(BRIDGE_URL_C+'/banco/remesa_resultado',{method:'POST',headers:HP,body:JSON.stringify({contenido:full, confirmar:1})}).then(function(r){return r.json();});
+        document.getElementById('buzon-ord-cres').innerHTML=(jr.ok)?'<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ '+(jr.aviso||'Registrado')+'</div>':'<div style="color:#dc2626;font-size:13px">'+(jr.error||'Error')+'</div>';
+        bb.textContent='✅ Registrado';
+        if(jr.ok){ try{ window._enRemesa=undefined; await refrescarEstadosCobro(); actualizarCobros(); }catch(e){} }
+      };
+    }catch(e){ document.getElementById('buzon-ordres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; }
   } else if(tipo==='liquidacion'){
     res.innerHTML=badge('🏦 Liquidación de recibos (Bankinter)','#e0f2fe')+
       '<div style="margin:12px 0;font-size:13px">Leo el detalle por deudor y lo cruzo con las facturas de la remesa…</div><div id="buzon-liqres"></div>';

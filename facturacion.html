@@ -77,6 +77,7 @@
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <style>
@@ -133,6 +134,7 @@
     <div class="toolbar">
       <button class="btn pri" id="bNueva">➕ Añadir cuota</button>
       <button class="btn pri" id="bTaylor">🔁 Replicar (Andrew)</button>
+      <button class="btn pri" id="bPresu" style="background:#7c3aed" title="Sube un presupuesto en Excel y conviértelo en factura: eliges el cliente de Ágora, marcas las líneas y emites.">📄 Presupuesto → Factura</button>
       <button class="btn pri" id="bGuardar" style="background:#0F6E56" title="Guarda tus cambios (cuotas añadidas, precios, forma de pago…) para no rehacerlos al volver a abrir.">💾 Guardar cambios</button>
       <button class="btn gho" id="bAll">✓ Marcar todas</button>
       <button class="btn gho" id="bNone">▢ Desmarcar</button>
@@ -468,6 +470,135 @@ async function taylorEmitir(){
     if(r.ok){ alert('✅ Emitida '+r.serie+'-'+r.numero+' · '+eur(r.total)+(r.creados&&r.creados.length?('\nArtículos creados: '+r.creados.map(c=>c.desc).join(', ')):'')); cerrarModal(); switchView('hist'); }
     else { alert('Error: '+(r.error||'')); if(btn){ btn.disabled=false; btn.textContent='Emitir factura'; } }
   }catch(e){ alert('Error: '+e.message); }
+}
+
+// ── 📄 Presupuesto (Excel) → Factura ──
+let PRESU=null, presuCli=null;
+$('#bPresu').onclick = ()=>{
+  presuCli=null; PRESU=null;
+  $('#mbox').innerHTML='<h3>📄 Presupuesto → Factura</h3>'
+    +'<div class="muted">Sube el presupuesto en Excel (.xlsx). Leeré las líneas; luego eliges el cliente de Ágora y marcas qué entra en la factura.</div>'
+    +'<input type="file" id="presuFile" accept=".xlsx,.xls" style="margin-top:12px">'
+    +'<div id="presuInfo" class="muted" style="margin-top:10px"></div>'
+    +cerrarBtn();
+  $('#mbg').style.display='flex';
+  $('#presuFile').onchange=presuLeer;
+};
+function presuNum(v){
+  if(typeof v==='number') return isFinite(v)?v:null;
+  if(typeof v==='string'){
+    let s=v.replace(/€/g,'').replace(/\/mes/ig,'').trim();
+    s=s.replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.').replace(/[^0-9.\-]/g,'');
+    const n=parseFloat(s); return isNaN(n)?null:n;
+  }
+  return null;
+}
+function presuParse(wb){
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  const SKIP=['suma','total','opcion','opción','con iva','datos cliente','direccion','dirección','poblacion','población','presupuesto','(*)','trabajos instal'];
+  let bloque='', ref='', hint='', lineas=[];
+  rows.forEach(r=>{
+    if(!r) return;
+    const A=r[0], B=r[1], D=r[3], E=r[4];
+    const bt=(B==null?'':String(B)).trim();
+    const at=(A==null?'':String(A)).trim();
+    const joined=(at+' '+bt).toLowerCase();
+    if(!ref){ const m=joined.match(/presupuesto\s*num[:\s]*([0-9]+)/i); if(m) ref=m[1]; }
+    if(!hint){ const mh=bt.match(/datos?\s*cliente[:\s]*(.+)/i); if(mh) hint=mh[1].trim(); }
+    if(at.toLowerCase()==='uds.'){ if(!/descrip/i.test(bt)) bloque=bt; else if(!bloque) bloque='Equipo'; return; }
+    if(/\((1|2|3)[ªa]?\s*opci/i.test(bt)){ bloque=bt.replace(/[()]/g,'').trim(); return; }
+    const qty=presuNum(A), precio=presuNum(D);
+    if(qty && qty>=1 && bt && precio!=null){
+      const low=bt.toLowerCase();
+      if(SKIP.some(w=>low.includes(w))) return;
+      const cuota = /\/mes/i.test(String(D||'')) || low.includes('agora starter') || /€\/mes/i.test(String(D||'')+String(E||''));
+      lineas.push({ bloque:bloque||'Líneas', desc:bt, cantidad:qty, precio:Math.round(precio*100)/100,
+                    con_iva:presuNum(E), nota:'', cuota:cuota, sel:!cuota });
+    }
+  });
+  return { ref:ref, hint:hint, lineas:lineas };
+}
+function presuLeer(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+  $('#presuInfo').textContent='Leyendo '+f.name+'…';
+  const rd=new FileReader();
+  rd.onload=e=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      const parsed=presuParse(wb);
+      if(!parsed.lineas.length){ $('#presuInfo').innerHTML='<span style="color:#b91c1c">No he encontrado líneas (Uds + Descripción + PRECIO). ¿Es el formato de presupuesto habitual?</span>'; return; }
+      PRESU=parsed;
+      presuBuscarCliente();
+    }catch(err){ $('#presuInfo').innerHTML='<span style="color:#b91c1c">Error leyendo el Excel: '+esc(err.message)+'</span>'; }
+  };
+  rd.readAsArrayBuffer(f);
+}
+async function presuBuscarCliente(){
+  await cargarClientes();
+  const n=PRESU.lineas.length;
+  $('#mbox').innerHTML='<h3>📄 Presupuesto'+(PRESU.ref?' NÚM: '+esc(PRESU.ref):'')+'</h3>'
+    +'<div class="muted">'+n+' líneas leídas. Elige el cliente de Ágora (obligatorio):</div>'
+    +'<input id="prCli" placeholder="Buscar cliente…" value="'+esc(PRESU.hint||'')+'" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;margin-top:8px">'
+    +'<div id="prList" style="max-height:40vh;overflow:auto;margin-top:8px"></div>'+cerrarBtn();
+  const inp=$('#prCli'); inp.oninput=()=>prFiltrar(inp.value); prFiltrar(inp.value); inp.focus(); inp.select();
+}
+function prFiltrar(q){
+  q=(q||'').toUpperCase().trim();
+  const res=!q?[]:(CLIENTES||[]).filter(c=>(c.nombre||'').toUpperCase().includes(q)||(c.cif||'').toUpperCase().includes(q)).slice(0,40);
+  $('#prList').innerHTML=q?(res.map(c=>'<div class="hcard" style="cursor:pointer;padding:8px 10px;margin-bottom:6px" onclick="presuCliente('+c.id+')"><b>'+esc(c.nombre)+'</b><div class="hsub">'+esc(c.cif||'')+(c.ciudad?' · '+esc(c.ciudad):'')+'</div></div>').join('')||'<div class="muted" style="padding:8px">Sin resultados.</div>'):'<div class="muted" style="padding:8px">Escribe para buscar…</div>';
+}
+function presuCliente(id){ presuCli=(CLIENTES||[]).find(x=>x.id===id); if(presuCli) presuForm(); }
+function presuForm(){
+  const inp='style="padding:6px 7px;border:1px solid var(--line);border-radius:8px;font-size:13px;width:100%;box-sizing:border-box"';
+  const bloques=[]; PRESU.lineas.forEach((l,i)=>{ l._i=i; let g=bloques.find(b=>b.nombre===l.bloque); if(!g){g={nombre:l.bloque,items:[]};bloques.push(g);} g.items.push(l); });
+  let html='';
+  bloques.forEach(g=>{
+    html+='<div style="margin:12px 0 4px;font-weight:700;font-size:12px;color:#7c3aed">'+esc(g.nombre)+'</div>';
+    g.items.forEach(l=>{
+      const i=l._i;
+      html+='<div class="ln" style="grid-template-columns:26px 1fr 46px 82px 78px;align-items:center">'
+        +'<input type="checkbox" '+(l.sel?'checked':'')+' onchange="PRESU.lineas['+i+'].sel=this.checked;presuTot()" style="width:18px;height:18px">'
+        +'<input '+inp+' value="'+esc(l.desc)+'" onchange="PRESU.lineas['+i+'].desc=this.value">'
+        +'<input class="num" type="number" '+inp+' value="'+l.cantidad+'" onchange="PRESU.lineas['+i+'].cantidad=+this.value;presuTot()">'
+        +'<input class="num" type="number" step="0.01" '+inp+' value="'+l.precio+'" onchange="PRESU.lineas['+i+'].precio=+this.value;presuTot()" title="Precio neto (sin IVA); Ágora añade el 21%">'
+        +'<div class="num" id="prp'+i+'" style="font-size:12px;line-height:30px;font-weight:600"></div></div>'
+        +(l.cuota?'<div class="ln2" style="font-size:11px;color:#92400e;margin:-2px 0 6px">⚠ cuota mensual — normalmente va por el proponedor de cuotas</div>':'');
+    });
+  });
+  $('#mbox').innerHTML='<h3>📄 Presup.'+(PRESU.ref?' '+esc(PRESU.ref):'')+' → '+esc(presuCli.nombre)+'</h3>'
+    +'<div class="hsub" style="margin:-2px 0 6px">'+esc(presuCli.cif||'')+'</div>'
+    +'<div class="crow" style="margin:6px 0"><span class="muted">Forma de pago:</span>'
+    +'<select id="prPago" style="padding:6px;border:1px solid var(--line);border-radius:8px"><option value="4">Transferencia</option><option value="8">Recibo (domiciliado)</option></select>'
+    +'<span class="muted" style="margin-left:auto;font-size:11px">Precios NETOS · Ágora añade 21%</span></div>'
+    +'<div class="ln" style="grid-template-columns:26px 1fr 46px 82px 78px;font-weight:700;font-size:11px;color:var(--mut)"><div>✓</div><div>Concepto</div><div class="num">Cant</div><div class="num">Neto</div><div class="num">c/IVA</div></div>'
+    +html
+    +'<div class="row" style="border:0;font-weight:700;margin-top:8px"><span>TOTAL (con IVA) · <span id="prN"></span> líneas</span><span id="prTot"></span></div>'
+    +'<div class="note">Emite una F REAL a '+esc(presuCli.nombre)+' con las líneas marcadas. Los artículos que no existan se crean en Ágora.</div>'
+    +'<div class="toolbar" style="margin-top:12px;justify-content:space-between"><button class="btn sec" onclick="presuBuscarCliente()">← Otro cliente</button><button class="btn pri" id="prGo">Emitir factura</button></div>';
+  presuTot(); $('#prGo').onclick=presuEmitir;
+}
+function presuTot(){
+  let tot=0, n=0;
+  PRESU.lineas.forEach((l,i)=>{ const p=(+l.precio||0), c=(+l.cantidad||0); const el=$('#prp'+i); if(el) el.textContent=(p*1.21).toFixed(2); if(l.sel){ tot+=p*c; n++; } });
+  const t=$('#prTot'); if(t) t.textContent=eur(tot*1.21);
+  const nn=$('#prN'); if(nn) nn.textContent=n;
+}
+async function presuEmitir(){
+  const sel=PRESU.lineas.filter(l=>l.sel);
+  if(!sel.length){ alert('Marca al menos una línea para facturar.'); return; }
+  const totIva=sel.reduce((s,l)=>s+(+l.precio||0)*(+l.cantidad||0),0)*1.21;
+  if(!confirm('Emitir factura REAL a '+presuCli.nombre+'\n\n'+sel.length+' líneas · total '+eur(totIva)+' · '+($('#prPago').value==='8'?'Recibo domiciliado':'Transferencia')+'\n\nEs una factura fiscal real. ¿Continuar?')) return;
+  const btn=$('#prGo'); if(btn){ btn.disabled=true; btn.textContent='Emitiendo…'; }
+  try{
+    const body={confirmar:true, customer_id:presuCli.id, cif:presuCli.cif, cliente:presuCli.nombre,
+      forma_pago_id:Number($('#prPago').value), pct:0, origen:'Presupuesto '+(PRESU.ref||''),
+      centro:'Presupuesto'+(PRESU.ref?' NUM: '+PRESU.ref:''),
+      lineas:sel.map(l=>({descripcion:l.desc, cantidad:l.cantidad, tarifa:l.precio, saleformat:null, nota:l.nota||''}))};
+    const r=await fetch(API+'/facturacion/replicar_emitir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(r.ok){ alert('✅ Emitida '+r.serie+'-'+r.numero+' · '+eur(r.total)+(r.creados&&r.creados.length?('\nArtículos creados en Ágora: '+r.creados.length):'')); cerrarModal(); switchView('hist'); }
+    else { alert('Error: '+(r.error||'')); if(btn){ btn.disabled=false; btn.textContent='Emitir factura'; } }
+  }catch(e){ alert('Error: '+e.message); if(btn){ btn.disabled=false; btn.textContent='Emitir factura'; } }
 }
 
 function selPayload(){

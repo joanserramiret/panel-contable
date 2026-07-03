@@ -4776,7 +4776,19 @@ const TAB_INTROS = {
 function _pintarTabIntro(tab){
   var el = document.getElementById('tab-intro'); if(!el) return;
   var t = TAB_INTROS[tab];
-  if(t){ el.innerHTML = t; el.style.display = 'block'; } else { el.style.display = 'none'; }
+  if(!t){ el.style.display = 'none'; return; }
+  var html = t;
+  // 💡 FINA proactiva: las señales del día etiquetadas con ESTA pestaña (accion), justo donde puedes actuar.
+  try{
+    var sig = (window._finaSignals||[]).filter(function(s){ return s.accion===tab; });
+    if(sig.length){
+      html += '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #cdd8ee;color:#4b3fa0;font-size:12.5px">'+
+        '<b>💡 FINA:</b> ' + sig.slice(0,3).map(function(s){ return (s.ico||'')+' '+s.txt; }).join('  ·  ') +
+        (sig.length>3?' <span style="color:#888">(+'+(sig.length-3)+' más)</span>':'') +
+        ' <span onclick="finaToggleDespacho()" style="cursor:pointer;color:#534AB7;font-weight:700">· abrir despacho ›</span></div>';
+    }
+  }catch(e){}
+  el.innerHTML = html; el.style.display = 'block';
 }
 try{ document.addEventListener('DOMContentLoaded', function(){ _pintarTabIntro('dashboard'); }); }catch(e){}
 
@@ -4991,9 +5003,13 @@ async function finaFlotanteSenales(){
     if(sig.length){
       if(badge){ badge.textContent=sig.length; badge.style.display='flex'; }
       if(fab) fab.classList.add('llama');
-      var frases=['FINA te llama al despacho…','FINA quiere comentarte algo…','Pásate por el despacho de FINA…'];
-      if(bub){ bub.innerHTML='<b>📋 '+frases[Math.floor(Math.random()*frases.length)]+'</b><div style="font-size:11px;color:rgba(255,255,255,.75);margin-top:2px">'+sig.length+' cosa(s) del día · clic para entrar</div>'; bub.style.display='block'; setTimeout(function(){ if(bub) bub.style.display='none'; }, 9000); }
+      // 👋 SALUDO al entrar: buenos días + lo más importante del día. Salta solo si hay algo que decir.
+      var hr=new Date().getHours(); var saludo=hr<6?'Buenas noches':(hr<14?'Buenos días':(hr<21?'Buenas tardes':'Buenas noches'));
+      var top=sig[0];
+      if(bub){ bub.innerHTML='<b>👋 '+saludo+', Joan</b><div style="font-size:11.5px;color:rgba(255,255,255,.9);margin-top:4px">'+(top.ico||'')+' '+top.txt+'</div><div style="font-size:10.5px;color:rgba(255,255,255,.6);margin-top:4px">'+sig.length+' cosa(s) del día · clic para entrar al despacho</div>'; bub.style.display='block'; setTimeout(function(){ if(bub) bub.style.display='none'; }, 12000); }
     }
+    // 💡 repinta el consejo de FINA de la pestaña activa ahora que ya hay señales
+    try{ var act=document.querySelector('.nav-tab.active'); if(act) _pintarTabIntro(act.id.replace('ctab-','')); }catch(e){}
   }catch(e){}
 }
 function finaToggleDespacho(){

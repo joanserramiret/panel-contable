@@ -120,6 +120,7 @@
     <span class="pill" id="pillDest">Propuesta para —</span>
     <span class="pill" id="pillN">—</span>
     <span class="pill" id="pillTot">—</span>
+    <button id="btnSalir" onclick="cerrarSesionFact()" title="Cerrar sesión y volver al login" style="margin-left:auto;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:8px;padding:7px 13px;font-size:13px;font-weight:600;cursor:pointer">⬡ Salir</button>
   </div>
 </header>
 
@@ -1151,6 +1152,7 @@ async function doLogin(){
   }catch(e){ err.textContent='Error de conexión.'; }
 }
 function arrancar(){ $('#mes').value = mesActual(); cargar(); }
+function cerrarSesionFact(){ localStorage.removeItem('fact_user'); location.reload(); }
 ['lg-user','lg-pin'].forEach(id=>{ const el=$('#'+id); if(el) el.addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); }); });
 // puerta
 if(localStorage.getItem('fact_user')){ $('#login-ov').style.display='none'; arrancar(); }

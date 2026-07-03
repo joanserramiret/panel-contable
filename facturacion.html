@@ -578,14 +578,39 @@ function presuForm(){
     +'<span class="muted" style="margin-left:auto;font-size:11px">Precios NETOS · Ágora añade 21%</span></div>'
     +'<div class="ln" style="grid-template-columns:26px 1fr 46px 82px 78px;font-weight:700;font-size:11px;color:var(--mut)"><div>✓</div><div>Concepto</div><div class="num">Cant</div><div class="num">Neto</div><div class="num">c/IVA</div></div>'
     +html
-    +'<div style="margin:8px 0"><button class="btn sec" onclick="presuAddLn()">➕ Añadir línea</button></div>'
+    +'<div style="margin:8px 0;display:flex;gap:8px;flex-wrap:wrap">'
+    +  '<button class="btn sec" onclick="presuBuscarArtToggle()">🔍 Artículo de Ágora</button>'
+    +  '<button class="btn sec" onclick="presuAddLn()">➕ Línea libre</button>'
+    +'</div>'
+    +'<div id="prArtBox" style="display:none;margin:0 0 8px;padding:8px;border:1px dashed var(--line);border-radius:10px">'
+    +  '<input id="prArtQ" placeholder="Buscar artículo o cuota en Ágora…" oninput="presuBuscarArt(this.value)" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box">'
+    +  '<div id="prArtRes" style="max-height:34vh;overflow:auto;margin-top:6px"><div class="muted" style="padding:6px">Escribe para buscar…</div></div>'
+    +'</div>'
     +'<div class="row" style="border:0;font-weight:700;margin-top:8px"><span>TOTAL (con IVA) · <span id="prN"></span> líneas</span><span id="prTot"></span></div>'
     +'<div class="note">Emite una F REAL a '+esc(presuCli.nombre)+' con las líneas marcadas. Los artículos que no existan se crean en Ágora.</div>'
     +'<div class="toolbar" style="margin-top:12px;justify-content:space-between"><button class="btn sec" onclick="presuBuscarCliente()">← Otro cliente</button><button class="btn pri" id="prGo">Emitir factura</button></div>';
   presuTot(); $('#prGo').onclick=presuEmitir;
 }
-function presuAddLn(){ PRESU.lineas.push({ bloque:'Añadidas a mano', desc:'', cantidad:1, precio:0, con_iva:null, nota:'', cuota:false, sel:true }); presuForm(); }
+function presuAddLn(){ PRESU.lineas.push({ bloque:'Añadidas a mano', desc:'', cantidad:1, precio:0, con_iva:null, nota:'', cuota:false, sel:true, saleformat:null }); presuForm(); }
 function presuDelLn(i){ PRESU.lineas.splice(i,1); if(PRESU.lineas.length) presuForm(); else presuBuscarCliente(); }
+function presuBuscarArtToggle(){ const b=$('#prArtBox'); if(!b) return; b.style.display=(b.style.display==='none'?'block':'none'); if(b.style.display==='block'){ const q=$('#prArtQ'); if(q) q.focus(); } }
+let _prArts=[], _prArtT=null;
+function presuBuscarArt(q){
+  clearTimeout(_prArtT);
+  const box=$('#prArtRes'); if(!box) return;
+  q=(q||'').trim();
+  if(q.length<2){ box.innerHTML='<div class="muted" style="padding:6px">Escribe para buscar…</div>'; return; }
+  box.innerHTML='<div class="muted" style="padding:6px">Buscando en Ágora…</div>';
+  _prArtT=setTimeout(async ()=>{
+    try{
+      const j=await fetch(API+'/agora/articulos_buscar?q='+encodeURIComponent(q)).then(r=>r.json());
+      _prArts=j.articulos||[];
+      box.innerHTML=_prArts.length ? _prArts.map((a,i)=>'<div class="hcard" style="cursor:pointer;padding:7px 9px;margin-bottom:5px" onclick="presuAddArt('+i+')"><b>'+esc(a.nombre)+'</b><div class="hsub">neto '+eur(a.precio||0)+' · id '+a.saleformat+'</div></div>').join('')
+        : '<div class="muted" style="padding:6px">Sin resultados en Ágora.</div>';
+    }catch(e){ box.innerHTML='<div class="muted" style="padding:6px">Error buscando en Ágora.</div>'; }
+  }, 250);
+}
+function presuAddArt(i){ const a=_prArts[i]; if(!a) return; PRESU.lineas.push({ bloque:'Añadidas de Ágora', desc:a.nombre, cantidad:1, precio:Number(a.precio)||0, con_iva:null, nota:'', cuota:false, sel:true, saleformat:a.saleformat }); presuForm(); }
 function presuTot(){
   let tot=0, n=0;
   PRESU.lineas.forEach((l,i)=>{ const p=(+l.precio||0), c=(+l.cantidad||0); const el=$('#prp'+i); if(el) el.textContent=(p*1.21).toFixed(2); if(l.sel && (l.desc||'').trim()){ tot+=p*c; n++; } });
@@ -602,7 +627,7 @@ async function presuEmitir(){
     const body={confirmar:true, customer_id:presuCli.id, cif:presuCli.cif, cliente:presuCli.nombre,
       forma_pago_id:Number($('#prPago').value), pct:0, origen:'Presupuesto '+(PRESU.ref||''),
       centro:'Presupuesto'+(PRESU.ref?' NUM: '+PRESU.ref:''),
-      lineas:sel.map(l=>({descripcion:l.desc, cantidad:l.cantidad, tarifa:l.precio, saleformat:null, nota:l.nota||''}))};
+      lineas:sel.map(l=>({descripcion:l.desc, cantidad:l.cantidad, tarifa:l.precio, saleformat:l.saleformat||null, nota:l.nota||''}))};
     const r=await fetch(API+'/facturacion/replicar_emitir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
     if(r.ok){ alert('✅ Emitida '+r.serie+'-'+r.numero+' · '+eur(r.total)+(r.creados&&r.creados.length?('\nArtículos creados en Ágora: '+r.creados.length):'')); cerrarModal(); switchView('hist'); }
     else { alert('Error: '+(r.error||'')); if(btn){ btn.disabled=false; btn.textContent='Emitir factura'; } }

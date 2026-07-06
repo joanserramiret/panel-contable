@@ -20,7 +20,11 @@
   .chip{ padding:4px 10px; border-radius:20px; margin-left:6px; }
   .chip.v{ background:var(--verde); color:#146c43; border:1px solid var(--verde-bd); }
   .chip.r{ background:var(--rojo); color:#b91c1c; border:1px solid var(--rojo-bd); }
-  .row{ display:grid; grid-template-columns:1fr 130px 96px 34px; gap:8px; align-items:center; padding:11px 12px; border-radius:10px; margin-bottom:6px; border-left:6px solid transparent; }
+  .row{ display:grid; grid-template-columns:1fr 118px 84px 94px; gap:8px; align-items:center; padding:11px 12px; border-radius:10px; margin-bottom:6px; border-left:6px solid transparent; }
+  .acc{ display:flex; gap:3px; justify-content:flex-end; align-items:center; }
+  .act{ cursor:pointer; font-size:16px; padding:2px 5px; border-radius:6px; user-select:none; line-height:1; }
+  .act.ok{ background:#c9f2d5; } .act.ok:hover{ background:#a7e8bb; }
+  .act.no{ background:#fbd5d5; } .act.no:hover{ background:#f5b5b5; }
   .row.v{ background:var(--verde); border-left-color:var(--verde-bd); }
   .row.r{ background:var(--rojo); border-left-color:var(--rojo-bd); }
   .prov{ font-weight:700; }
@@ -30,7 +34,7 @@
   .ver{ text-align:center; cursor:pointer; font-size:18px; text-decoration:none; }
   .provgrp{ font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#64748b; margin:14px 0 4px; font-weight:700; }
   .muted{ color:#94a3b8; padding:20px; text-align:center; }
-  @media(max-width:560px){ .row{ grid-template-columns:1fr 74px 30px; } .fecha{ display:none; } }
+  @media(max-width:560px){ .row{ grid-template-columns:1fr 64px 94px; } .fecha{ display:none; } }
   /* login */
   #lg{ position:fixed; inset:0; background:linear-gradient(135deg,#0f1f5c,#1a2e6e); display:flex; align-items:center; justify-content:center; z-index:100; }
   #lg .card{ background:#fff; border-radius:18px; padding:36px; width:360px; max-width:92%; text-align:center; }
@@ -100,18 +104,42 @@ function render(){
   if(ORD==='prov') fs.sort((a,b)=>(a.proveedor||'').localeCompare(b.proveedor||'',{sensitivity:'base'}) || (a.fecha||'').localeCompare(b.fecha||''));
   else fs.sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||'') || (a.proveedor||'').localeCompare(b.proveedor||''));
   if(!fs.length){ $('#lista').innerHTML='<div class="muted">No hay facturas en este mes.</div>'; return; }
+  window._fsActual = fs;
   let html='', lastProv=null;
-  fs.forEach(x=>{
+  fs.forEach((x,i)=>{
     if(ORD==='prov'){ const p=(x.proveedor||'—').toUpperCase(); if(p!==lastProv){ html+='<div class="provgrp">'+esc(x.proveedor||'—')+'</div>'; lastProv=p; } }
     const rel = (x.ruta||'').split('/').slice(1).join('/');
+    const ver='<a class="ver" href="'+API+'/proveedores/abrir?anio='+encodeURIComponent(x.anio)+'&ruta='+encodeURIComponent(rel)+'" target="_blank" title="Ver factura">👁</a>';
+    const acc = x.contabilizada ? ver
+      : ver+'<span class="act ok" title="Marcar contabilizada (mover a la carpeta del proveedor)" onclick="marcarCont('+i+')">✓</span>'
+           +'<span class="act no" title="No es una factura (mover a PARA BORRAR)" onclick="noFactura('+i+')">🚫</span>';
     html+='<div class="row '+(x.contabilizada?'v':'r')+'">'
       +'<div><div class="prov">'+esc(x.proveedor||'—')+'</div><div class="fac">'+esc(x.nombre||'')+'</div></div>'
       +'<div class="fecha">'+esc(x.fecha||'')+'</div>'
       +'<div class="imp">'+eur(x.total)+'</div>'
-      +'<a class="ver" href="'+API+'/proveedores/abrir?anio='+encodeURIComponent(x.anio)+'&ruta='+encodeURIComponent(rel)+'" target="_blank" title="Ver factura">👁</a>'
+      +'<div class="acc">'+acc+'</div>'
       +'</div>';
   });
   $('#lista').innerHTML=html;
+}
+async function marcarCont(i){
+  const x=(window._fsActual||[])[i]; if(!x) return;
+  const prov=prompt('✓ Marcar como CONTABILIZADA y mover a la carpeta del proveedor.\n\nNombre del proveedor (revísalo/corrígelo):', x.proveedor||'');
+  if(prov===null) return;
+  if(!prov.trim()){ alert('Pon el nombre del proveedor.'); return; }
+  try{
+    const r=await fetch(API+'/contabilidad/marcar_contabilizada',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruta:x.ruta, proveedor:prov.trim(), total:x.total, fecha:x.fecha})}).then(r=>r.json());
+    if(r.ok){ cargar(); } else alert('Error: '+(r.error||''));
+  }catch(e){ alert('Error: '+e.message); }
+}
+async function noFactura(i){
+  const x=(window._fsActual||[])[i]; if(!x) return;
+  const mot=prompt('🚫 Esto NO es una factura → se mueve a PARA BORRAR y el panel lo recordará.\n\n¿Por qué no es factura? (motivo):','');
+  if(mot===null) return;
+  try{
+    const r=await fetch(API+'/contabilidad/no_es_factura',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruta:x.ruta, motivo:(mot||'').trim()})}).then(r=>r.json());
+    if(r.ok){ cargar(); } else alert('Error: '+(r.error||''));
+  }catch(e){ alert('Error: '+e.message); }
 }
 
 // ── Login (usuarios de Ágora, solo perfiles admin — igual que los otros paneles) ──

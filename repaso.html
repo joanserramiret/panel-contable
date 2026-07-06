@@ -200,33 +200,8 @@ function renderIVA(j){
     +'<td style="padding:10px 6px;color:'+acol+'">'+eur(A.resultado)+'</td><td></td></tr>';
   h+='</tbody></table>';
   h+='<div style="font-size:12px;color:#64748b;margin-top:8px"><b style="color:#b91c1c">Rojo = a pagar</b> · <b style="color:#146c43">verde = a compensar/devolver</b>.</div>';
-  const emi=j.emitidas||[];
-  const nCont=emi.filter(f=>f.contabilizada).length;
-  h+='<h3 style="margin:18px 0 6px;color:var(--azul)">Facturas emitidas ('+emi.length+') · <span style="color:#146c43">✅ '+nCont+' contabilizadas</span> · <span style="color:#b91c1c">'+(emi.length-nCont)+' pendientes</span></h3>';
-  h+='<div style="max-height:460px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">'
-    +'<thead><tr style="position:sticky;top:0;background:#f4f6fb;color:#64748b;text-align:right"><th style="width:34px"></th><th style="text-align:left;padding:5px 6px">Factura</th><th style="text-align:left">Fecha</th><th style="text-align:left">Cliente</th><th style="padding:5px 6px">Base</th><th style="padding:5px 6px">IVA</th><th style="padding:5px 6px">Total</th></tr></thead><tbody>';
-  emi.forEach(f=>{
-    const fk=(f.serie||'')+'-'+f.numero; const done=!!f.contabilizada;
-    h+='<tr id="emi-'+esc(fk)+'" style="border-bottom:1px solid #f3f3f3;'+(done?'background:#e7f7ec':'')+'">'
-      +'<td style="padding:5px 6px;text-align:center"><span onclick="marcarEmitida(\''+esc(fk)+'\','+(!done)+',this)" title="Marcar como contabilizada" style="cursor:pointer;font-size:16px;user-select:none">'+(done?'✅':'⬜')+'</span></td>'
-      +'<td style="padding:5px 6px"><b>'+esc(fk)+'</b></td>'
-      +'<td style="padding:5px 6px;color:#475569">'+esc(f.fecha)+'</td>'
-      +'<td style="padding:5px 6px">'+esc((f.cliente||'').slice(0,30))+'</td>'
-      +'<td style="padding:5px 6px;text-align:right">'+eur(f.base)+'</td>'
-      +'<td style="padding:5px 6px;text-align:right;color:#b45309">'+eur(f.cuota)+'</td>'
-      +'<td style="padding:5px 6px;text-align:right;font-weight:700">'+eur(f.total)+'</td></tr>';
-  });
-  h+='</tbody></table></div></div>';
+  h+='</div>';
   $('#vIva').innerHTML=h;
-}
-async function marcarEmitida(fk, contab, el){
-  try{
-    const r=await fetch(API+'/contabilidad/emitida_contab',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({factura:fk, contabilizada:contab})}).then(x=>x.json());
-    if(!r.ok){ alert('Error: '+(r.error||'')); return; }
-    const tr=el.closest('tr'); if(tr) tr.style.background = contab ? '#e7f7ec' : '';
-    el.textContent = contab ? '✅' : '⬜';
-    el.setAttribute('onclick', "marcarEmitida('"+fk+"',"+(!contab)+",this)");
-  }catch(e){ alert('Error: '+e.message); }
 }
 function render(){
   let fs = DATA.filter(x=>x.mes_carpeta===MES);

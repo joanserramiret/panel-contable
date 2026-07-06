@@ -61,6 +61,21 @@
   <div class="sub">🟢 verde = contabilizada en SisConta · 🔴 rojo = pendiente de contabilizar</div>
 </header>
 <div class="wrap">
+  <div class="tabs" style="display:flex;gap:8px;margin:12px 0 8px;flex-wrap:wrap">
+    <button id="tEmi" onclick="switchVista('emi')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:#fff;color:#334155">📤 Emitidas</button>
+    <button id="tRec" onclick="switchVista('rec')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:var(--azul);color:#fff">📥 Recibidas</button>
+    <button id="tIva" onclick="switchVista('iva')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:#fff;color:#334155">🧾 IVA · 303</button>
+  </div>
+  <div id="vEmitidas" style="display:none">
+    <div class="bar">
+      <label>Mes <select id="selMesE"></select></label>
+      <button class="btn on" id="ordCliE" onclick="setOrdenE('cliente')">Ordenar: Cliente</button>
+      <button class="btn" id="ordFechaE" onclick="setOrdenE('fecha')">Fecha</button>
+      <span class="cont"><span class="chip v" id="cVE">✅ 0</span><span class="chip r" id="cRE">⬜ 0</span></span>
+    </div>
+    <div id="listaE"><div class="muted">Cargando…</div></div>
+  </div>
+  <div id="vRepaso">
   <div class="bar">
     <label>Mes <select id="selMes"></select></label>
     <button class="btn on" id="ordProv" onclick="setOrden('prov')">Ordenar: Proveedor</button>
@@ -69,6 +84,8 @@
     <span class="cont"><span class="chip v" id="cV">🟢 0</span><span class="chip r" id="cR">🔴 0</span></span>
   </div>
   <div id="lista"><div class="muted">Cargando…</div></div>
+  </div>
+  <div id="vIva" style="display:none"><div class="muted">Cargando IVA…</div></div>
 </div>
 
 <script>
@@ -99,6 +116,118 @@ async function cargar(){
   }catch(e){ $('#lista').innerHTML='<div class="muted">Error cargando: '+esc(e.message)+'</div>'; }
 }
 function setOrden(o){ ORD=o; $('#ordProv').className='btn'+(o==='prov'?' on':''); $('#ordFecha').className='btn'+(o==='fecha'?' on':''); render(); }
+
+// ── Pestañas: Repaso ↔ IVA/303 ──
+let _ivaCargado=false, _emiCargado=false, _iva303=null;
+function _tabBtn(id,on){ const b=$(id); if(b){ b.style.background=on?'var(--azul)':'#fff'; b.style.color=on?'#fff':'#334155'; } }
+function switchVista(v){
+  $('#vEmitidas').style.display = v==='emi'?'':'none';
+  $('#vRepaso').style.display   = v==='rec'?'':'none';
+  $('#vIva').style.display      = v==='iva'?'':'none';
+  _tabBtn('#tEmi', v==='emi'); _tabBtn('#tRec', v==='rec'); _tabBtn('#tIva', v==='iva');
+  if(v==='emi' && !_emiCargado){ _emiCargado=true; cargarEmi(); }
+  if(v==='iva' && !_ivaCargado){ _ivaCargado=true; cargarIVA(); }
+}
+async function _getIva(force){ if(force||!_iva303){ _iva303=await fetch(API+'/contabilidad/iva_303?anio=2026&nc='+Date.now()).then(r=>r.json()); } return _iva303; }
+function mesLabel(m){ const n=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']; const p=(m||'').split('-'); return (n[+p[1]]||m)+' '+(p[0]||''); }
+
+// ── EMITIDAS (mismo estilo que Recibidas; marcar contabilizada ✅/⬜) ──
+let MESE='', ORDE='cliente', EMI=[];
+async function cargarEmi(){
+  try{
+    const j=await _getIva(); EMI=j.emitidas||[];
+    const sel=$('#selMesE');
+    const meses=[...new Set(EMI.map(f=>(f.fecha||'').slice(0,7)).filter(Boolean))].sort();
+    sel.innerHTML=meses.map(m=>'<option value="'+m+'">'+esc(mesLabel(m))+'</option>').join('');
+    const hoyM=new Date().toISOString().slice(0,7);
+    MESE=(MESE&&meses.includes(MESE))?MESE:(meses.includes(hoyM)?hoyM:(meses[meses.length-1]||''));
+    sel.value=MESE; sel.onchange=()=>{ MESE=sel.value; renderEmi(); };
+    renderEmi();
+  }catch(e){ $('#listaE').innerHTML='<div class="muted">Error: '+esc(e.message)+'</div>'; }
+}
+function setOrdenE(o){ ORDE=o; $('#ordCliE').className='btn'+(o==='cliente'?' on':''); $('#ordFechaE').className='btn'+(o==='fecha'?' on':''); renderEmi(); }
+function renderEmi(){
+  let fs=EMI.filter(f=>(f.fecha||'').slice(0,7)===MESE);
+  const nV=fs.filter(f=>f.contabilizada).length, nR=fs.length-nV;
+  $('#cVE').textContent='✅ '+nV; $('#cRE').textContent='⬜ '+nR;
+  if(ORDE==='cliente') fs.sort((a,b)=>(a.cliente||'').localeCompare(b.cliente||'',{sensitivity:'base'})||(a.fecha||'').localeCompare(b.fecha||''));
+  else fs.sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||''));
+  if(!fs.length){ $('#listaE').innerHTML='<div class="muted">No hay facturas emitidas en este mes.</div>'; return; }
+  let html='';
+  fs.forEach(f=>{
+    const fk=(f.serie||'')+'-'+f.numero, done=!!f.contabilizada;
+    html+='<div class="row '+(done?'v':'r')+'">'
+      +'<div><div class="prov">'+esc(f.cliente||'—')+'</div><div class="fac">'+esc(fk)+' · base '+eur(f.base)+' · IVA '+eur(f.cuota)+'</div></div>'
+      +'<div class="fecha">'+esc(f.fecha||'')+'</div>'
+      +'<div class="imp">'+eur(f.total)+'</div>'
+      +'<div class="acc"><span class="act '+(done?'ok':'no')+'" title="Marcar contabilizada" onclick="marcarEmitida(\''+esc(fk)+'\','+(!done)+')">'+(done?'✅':'⬜')+'</span></div>'
+      +'</div>';
+  });
+  $('#listaE').innerHTML=html;
+}
+async function marcarEmitida(fk, contab){
+  try{
+    const r=await fetch(API+'/contabilidad/emitida_contab',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({factura:fk, contabilizada:contab})}).then(x=>x.json());
+    if(!r.ok){ alert('Error: '+(r.error||'')); return; }
+    EMI.forEach(f=>{ if(((f.serie||'')+'-'+f.numero)===fk) f.contabilizada=contab; });
+    renderEmi();
+  }catch(e){ alert('Error: '+e.message); }
+}
+async function cargarIVA(){
+  try{ renderIVA(await _getIva()); }
+  catch(e){ $('#vIva').innerHTML='<div class="muted">Error: '+esc(e.message)+'</div>'; }
+}
+function renderIVA(j){
+  const T=j.trimestres||[], A=j.anual||{};
+  const nom=['','1T (ene-mar)','2T (abr-jun)','3T (jul-sep)','4T (oct-dic)'];
+  let h='<div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:6px">';
+  h+='<h2 style="margin:0 0 4px;color:var(--azul)">🧾 IVA '+esc(j.anio)+' · ayuda para el modelo 303</h2>';
+  h+='<div style="font-size:12px;color:#64748b;margin-bottom:12px">IVA repercutido (facturas emitidas F/FD) − IVA soportado (facturas de proveedor). La nómina NO lleva IVA. La inversión del sujeto pasivo y los no-deducibles los ajusta Raquel con su criterio.</div>';
+  h+='<table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr style="text-align:right;color:#64748b;border-bottom:2px solid var(--line)">'
+    +'<th style="text-align:left;padding:8px 6px">Trimestre</th><th style="padding:8px 6px">IVA repercutido</th><th style="padding:8px 6px">IVA soportado</th><th style="padding:8px 6px">Resultado</th><th style="padding:8px 6px">Fras</th></tr></thead><tbody>';
+  T.forEach(q=>{
+    const col=q.resultado>=0?'#b91c1c':'#146c43';
+    h+='<tr style="text-align:right;border-bottom:1px solid #eef2f7">'
+      +'<td style="text-align:left;padding:8px 6px;font-weight:700">'+nom[q.trimestre]+'</td>'
+      +'<td style="padding:8px 6px">'+eur(q.repercutido_cuota)+'</td>'
+      +'<td style="padding:8px 6px">'+eur(q.soportado_cuota)+'</td>'
+      +'<td style="padding:8px 6px;font-weight:800;color:'+col+'">'+eur(q.resultado)+'</td>'
+      +'<td style="padding:8px 6px;color:#94a3b8">'+q.n_emitidas+'e · '+q.n_recibidas+'r</td></tr>';
+  });
+  const acol=(A.resultado>=0)?'#b91c1c':'#146c43';
+  h+='<tr style="text-align:right;border-top:2px solid var(--line);font-weight:800"><td style="text-align:left;padding:10px 6px">AÑO</td>'
+    +'<td style="padding:10px 6px">'+eur(A.repercutido_cuota)+'</td><td style="padding:10px 6px">'+eur(A.soportado_cuota)+'</td>'
+    +'<td style="padding:10px 6px;color:'+acol+'">'+eur(A.resultado)+'</td><td></td></tr>';
+  h+='</tbody></table>';
+  h+='<div style="font-size:12px;color:#64748b;margin-top:8px"><b style="color:#b91c1c">Rojo = a pagar</b> · <b style="color:#146c43">verde = a compensar/devolver</b>.</div>';
+  const emi=j.emitidas||[];
+  const nCont=emi.filter(f=>f.contabilizada).length;
+  h+='<h3 style="margin:18px 0 6px;color:var(--azul)">Facturas emitidas ('+emi.length+') · <span style="color:#146c43">✅ '+nCont+' contabilizadas</span> · <span style="color:#b91c1c">'+(emi.length-nCont)+' pendientes</span></h3>';
+  h+='<div style="max-height:460px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+    +'<thead><tr style="position:sticky;top:0;background:#f4f6fb;color:#64748b;text-align:right"><th style="width:34px"></th><th style="text-align:left;padding:5px 6px">Factura</th><th style="text-align:left">Fecha</th><th style="text-align:left">Cliente</th><th style="padding:5px 6px">Base</th><th style="padding:5px 6px">IVA</th><th style="padding:5px 6px">Total</th></tr></thead><tbody>';
+  emi.forEach(f=>{
+    const fk=(f.serie||'')+'-'+f.numero; const done=!!f.contabilizada;
+    h+='<tr id="emi-'+esc(fk)+'" style="border-bottom:1px solid #f3f3f3;'+(done?'background:#e7f7ec':'')+'">'
+      +'<td style="padding:5px 6px;text-align:center"><span onclick="marcarEmitida(\''+esc(fk)+'\','+(!done)+',this)" title="Marcar como contabilizada" style="cursor:pointer;font-size:16px;user-select:none">'+(done?'✅':'⬜')+'</span></td>'
+      +'<td style="padding:5px 6px"><b>'+esc(fk)+'</b></td>'
+      +'<td style="padding:5px 6px;color:#475569">'+esc(f.fecha)+'</td>'
+      +'<td style="padding:5px 6px">'+esc((f.cliente||'').slice(0,30))+'</td>'
+      +'<td style="padding:5px 6px;text-align:right">'+eur(f.base)+'</td>'
+      +'<td style="padding:5px 6px;text-align:right;color:#b45309">'+eur(f.cuota)+'</td>'
+      +'<td style="padding:5px 6px;text-align:right;font-weight:700">'+eur(f.total)+'</td></tr>';
+  });
+  h+='</tbody></table></div></div>';
+  $('#vIva').innerHTML=h;
+}
+async function marcarEmitida(fk, contab, el){
+  try{
+    const r=await fetch(API+'/contabilidad/emitida_contab',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({factura:fk, contabilizada:contab})}).then(x=>x.json());
+    if(!r.ok){ alert('Error: '+(r.error||'')); return; }
+    const tr=el.closest('tr'); if(tr) tr.style.background = contab ? '#e7f7ec' : '';
+    el.textContent = contab ? '✅' : '⬜';
+    el.setAttribute('onclick', "marcarEmitida('"+fk+"',"+(!contab)+",this)");
+  }catch(e){ alert('Error: '+e.message); }
+}
 function render(){
   let fs = DATA.filter(x=>x.mes_carpeta===MES);
   const nV = fs.filter(x=>x.contabilizada).length, nR = fs.length-nV;

@@ -136,6 +136,7 @@
       <button class="btn pri" id="bNueva">➕ Añadir cuota</button>
       <button class="btn pri" id="bTaylor">🔁 Replicar (Andrew)</button>
       <button class="btn pri" id="bPresu" style="background:#7c3aed" title="Sube un presupuesto en Excel y conviértelo en factura: eliges el cliente de Ágora, marcas las líneas y emites.">📄 Presupuesto → Factura</button>
+      <button class="btn pri" id="bIbanCentro" style="background:#0e7490" title="Clientes con varios locales y una cuenta bancaria por local (Kior, Lomides): registra el IBAN de cada centro y la remesa girará cada local a su cuenta.">🏦 IBAN por centro</button>
       <button class="btn pri" id="bGuardar" style="background:#0F6E56" title="Guarda tus cambios (cuotas añadidas, precios, forma de pago…) para no rehacerlos al volver a abrir.">💾 Guardar cambios</button>
       <button class="btn gho" id="bAll">✓ Marcar todas</button>
       <button class="btn gho" id="bNone">▢ Desmarcar</button>
@@ -632,6 +633,63 @@ async function presuEmitir(){
     if(r.ok){ alert('✅ Emitida '+r.serie+'-'+r.numero+' · '+eur(r.total)+(r.creados&&r.creados.length?('\nArtículos creados en Ágora: '+r.creados.length):'')); cerrarModal(); switchView('hist'); }
     else { alert('Error: '+(r.error||'')); if(btn){ btn.disabled=false; btn.textContent='Emitir factura'; } }
   }catch(e){ alert('Error: '+e.message); if(btn){ btn.disabled=false; btn.textContent='Emitir factura'; } }
+}
+
+// ── 🏦 IBAN por centro (clientes con varios locales, una cuenta bancaria por local) ──
+$('#bIbanCentro').onclick = ()=>ibcAbrir();
+async function ibcAbrir(){
+  $('#mbox').innerHTML='<h3>🏦 IBAN por centro</h3><div class="loading">Cargando…</div>';
+  $('#mbg').style.display='flex';
+  let store={};
+  try{ const j=await fetch(API+'/remesa/iban_centro?nc='+Date.now()).then(r=>r.json()); store=j.clientes||{}; }catch(e){}
+  const cifs=Object.keys(store); let html;
+  if(cifs.length){
+    html=cifs.map(cif=>{
+      const c=store[cif], cents=c.centros||{};
+      const filas=Object.keys(cents).map(k=>'<div class="row" style="border:0;padding:3px 0"><span>📍 <b>'+esc(cents[k].display||k)+'</b> · <small>'+esc(cents[k].iban||'')+'</small></span>'
+        +'<button class="btn sec" style="padding:3px 8px;font-size:12px" onclick="ibcQuitar(&quot;'+esc(cif)+'&quot;,&quot;'+esc((cents[k].display||k)).replace(/"/g,'')+'&quot;)">🗑</button></div>').join('');
+      return '<div class="hcard" style="margin-bottom:8px;padding:8px 10px"><b>'+esc(c.cliente||cif)+'</b> <small>'+esc(cif)+'</small>'+filas+'</div>';
+    }).join('');
+  } else { html='<div class="muted">Aún no hay ningún cliente con IBAN por centro.</div>'; }
+  $('#mbox').innerHTML='<h3>🏦 IBAN por centro</h3>'
+    +'<div class="muted">Clientes con varios locales y una cuenta por local. La remesa gira cada local a su IBAN. ⚠️ El nombre del centro debe COINCIDIR con la nota de la cuota.</div>'
+    +'<div style="margin:10px 0;max-height:46vh;overflow:auto">'+html+'</div>'
+    +'<div class="toolbar" style="justify-content:space-between"><button class="btn pri" onclick="ibcAddCliente()">➕ Añadir local/IBAN</button><button class="btn sec" onclick="cerrarModal()">Cerrar</button></div>';
+}
+async function ibcAddCliente(){
+  await cargarClientes();
+  $('#mbox').innerHTML='<h3>🏦 Añadir IBAN por centro</h3><div class="muted">Elige el cliente de Ágora:</div>'
+    +'<input id="ibcCli" placeholder="Buscar cliente…" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;margin-top:8px">'
+    +'<div id="ibcList" style="max-height:40vh;overflow:auto;margin-top:8px"></div>'
+    +'<div class="toolbar" style="justify-content:flex-end;margin-top:10px"><button class="btn sec" onclick="ibcAbrir()">← Volver</button></div>';
+  const inp=$('#ibcCli'); inp.oninput=()=>ibcFiltrar(inp.value); inp.focus();
+}
+function ibcFiltrar(q){
+  q=(q||'').toUpperCase().trim();
+  const res=!q?[]:(CLIENTES||[]).filter(c=>(c.nombre||'').toUpperCase().includes(q)||(c.cif||'').toUpperCase().includes(q)).slice(0,40);
+  $('#ibcList').innerHTML=q?(res.map(c=>'<div class="hcard" style="cursor:pointer;padding:8px 10px;margin-bottom:6px" onclick="ibcClienteSel('+c.id+')"><b>'+esc(c.nombre)+'</b><div class="hsub">'+esc(c.cif||'')+'</div></div>').join('')||'<div class="muted" style="padding:8px">Sin resultados.</div>'):'<div class="muted" style="padding:8px">Escribe para buscar…</div>';
+}
+function ibcClienteSel(id){
+  const c=(CLIENTES||[]).find(x=>x.id===id); if(!c) return;
+  const inp='style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box"';
+  $('#mbox').innerHTML='<h3>🏦 '+esc(c.nombre)+'</h3><div class="hsub">'+esc(c.cif||'')+'</div>'
+    +'<div style="margin-top:10px"><label class="muted">Nombre del centro/local (IGUAL que la nota de la cuota)</label><input id="ibcCentro" '+inp+' placeholder="p.ej. LOCAL PORT, COCINA…"></div>'
+    +'<div style="margin-top:8px"><label class="muted">IBAN de ese local</label><input id="ibcIban" '+inp+' placeholder="ES.."></div>'
+    +'<div class="toolbar" style="justify-content:space-between;margin-top:12px"><button class="btn sec" onclick="ibcAddCliente()">← Otro cliente</button><button class="btn pri" onclick="ibcGuardar('+c.id+')">Guardar IBAN del centro</button></div>';
+  $('#ibcCentro').focus();
+}
+async function ibcGuardar(id){
+  const c=(CLIENTES||[]).find(x=>x.id===id); if(!c) return;
+  const centro=$('#ibcCentro').value.trim(), iban=$('#ibcIban').value.replace(/\s/g,'').toUpperCase();
+  if(!centro||!iban){ alert('Pon el nombre del centro y el IBAN.'); return; }
+  try{
+    const r=await fetch(API+'/remesa/iban_centro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cif:c.cif, cliente:c.nombre, customer_id:c.id, centro, iban})}).then(r=>r.json());
+    if(r.ok){ ibcAbrir(); } else alert('Error: '+(r.error||''));
+  }catch(e){ alert('Error: '+e.message); }
+}
+async function ibcQuitar(cif, centro){
+  if(!confirm('¿Quitar el IBAN de "'+centro+'"?')) return;
+  try{ await fetch(API+'/remesa/iban_centro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quitar:1, cif, centro})}); ibcAbrir(); }catch(e){ alert('Error: '+e.message); }
 }
 
 function selPayload(){

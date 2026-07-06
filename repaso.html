@@ -20,7 +20,7 @@
   .chip{ padding:4px 10px; border-radius:20px; margin-left:6px; }
   .chip.v{ background:var(--verde); color:#146c43; border:1px solid var(--verde-bd); }
   .chip.r{ background:var(--rojo); color:#b91c1c; border:1px solid var(--rojo-bd); }
-  .row{ display:grid; grid-template-columns:1fr 118px 84px 94px; gap:8px; align-items:center; padding:11px 12px; border-radius:10px; margin-bottom:6px; border-left:6px solid transparent; }
+  .row{ display:grid; grid-template-columns:1fr 118px 84px 124px; gap:8px; align-items:center; padding:11px 12px; border-radius:10px; margin-bottom:6px; border-left:6px solid transparent; }
   .acc{ display:flex; gap:3px; justify-content:flex-end; align-items:center; }
   .act{ cursor:pointer; font-size:16px; padding:2px 5px; border-radius:6px; user-select:none; line-height:1; }
   .act.ok{ background:#c9f2d5; } .act.ok:hover{ background:#a7e8bb; }
@@ -65,6 +65,7 @@
     <label>Mes <select id="selMes"></select></label>
     <button class="btn on" id="ordProv" onclick="setOrden('prov')">Ordenar: Proveedor</button>
     <button class="btn" id="ordFecha" onclick="setOrden('fecha')">Fecha</button>
+    <button class="btn" id="btnIA" onclick="leerProveedoresIA()" style="background:#ede9fe;border-color:#c4b5fd;color:#5b21b6;font-weight:700" title="Lee el nombre fiscal real de los proveedores que salen sucios (carpeta genérica, cabecera OCR, dirección) con IA. Amazon se agrupa. Se recuerda para no repetir.">🔍 Leer proveedores (IA)</button>
     <span class="cont"><span class="chip v" id="cV">🟢 0</span><span class="chip r" id="cR">🔴 0</span></span>
   </div>
   <div id="lista"><div class="muted">Cargando…</div></div>
@@ -111,7 +112,8 @@ function render(){
     const rel = (x.ruta||'').split('/').slice(1).join('/');
     const ver='<a class="ver" href="'+API+'/proveedores/abrir?anio='+encodeURIComponent(x.anio)+'&ruta='+encodeURIComponent(rel)+'" target="_blank" title="Ver factura">👁</a>';
     const acc = x.contabilizada ? ver
-      : ver+'<span class="act ok" title="Marcar contabilizada (mover a la carpeta del proveedor)" onclick="marcarCont('+i+')">✓</span>'
+      : ver+'<span class="act" style="background:#e0e7ff" title="Corregir el nombre del proveedor (se recuerda)" onclick="corregirNombre('+i+')">✏️</span>'
+           +'<span class="act ok" title="Marcar contabilizada (mover a la carpeta del proveedor)" onclick="marcarCont('+i+')">✓</span>'
            +'<span class="act no" title="No es una factura (mover a PARA BORRAR)" onclick="noFactura('+i+')">🚫</span>';
     html+='<div class="row '+(x.contabilizada?'v':'r')+'">'
       +'<div><div class="prov">'+esc(x.proveedor||'—')+'</div><div class="fac">'+esc(x.nombre||'')+'</div></div>'
@@ -140,6 +142,37 @@ async function noFactura(i){
     const r=await fetch(API+'/contabilidad/no_es_factura',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruta:x.ruta, motivo:(mot||'').trim()})}).then(r=>r.json());
     if(r.ok){ cargar(); } else alert('Error: '+(r.error||''));
   }catch(e){ alert('Error: '+e.message); }
+}
+async function corregirNombre(i){
+  const x=(window._fsActual||[])[i]; if(!x) return;
+  const nom=prompt('✏️ Nombre correcto del proveedor (se recordará para esta factura, sin volver a leerla):', x.proveedor||'');
+  if(nom===null || !nom.trim()) return;
+  try{
+    const r=await fetch(API+'/contabilidad/repaso_nombre',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruta:x.ruta, proveedor:nom.trim()})}).then(r=>r.json());
+    if(r.ok){ cargar(); } else alert('Error: '+(r.error||''));
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+// ── Leer el nombre fiscal real de los proveedores sucios con IA (en tandas hasta acabar) ──
+let _iaRun=false;
+async function leerProveedoresIA(){
+  if(_iaRun) return; _iaRun=true;
+  const b=$('#btnIA'); const t0=b.textContent;
+  try{
+    let vueltas=0, hechas=0;
+    while(vueltas<40){
+      vueltas++;
+      const r=await fetch(API+'/contabilidad/repaso_ocr_nombres',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({anio:'2026', max:8})}).then(r=>r.json());
+      if(!r.ok){ alert('Error: '+(r.error||'')); break; }
+      hechas+=(r.procesadas||0);
+      b.textContent='🔍 Leyendo… '+hechas+' hechas · quedan '+(r.quedan||0);
+      if((r.quedan||0)<=0 || (r.procesadas||0)===0) break;
+    }
+    b.textContent='✅ '+hechas+' leídas';
+    cargar();
+    setTimeout(()=>{ b.textContent=t0; }, 4000);
+  }catch(e){ alert('Error: '+e.message); b.textContent=t0; }
+  finally{ _iaRun=false; }
 }
 
 // ── Login (usuarios de Ágora, solo perfiles admin — igual que los otros paneles) ──

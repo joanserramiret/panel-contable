@@ -3048,12 +3048,20 @@ async function cargarCarteraDestinos() {
 
 // 📤 Facturas que ya están en un .txt de remesa (giradas, esperando ingreso) → set de claves para la columna "En proceso".
 async function cargarEnRemesa() {
+  const s = new Set();
+  // ⭐ FUENTE ÚNICA de "girado / en proceso": el detector unificado del bridge (Sabadell .txt + BANKINTER .xml
+  //    Remesa_Exportada + Buzón). Así una factura ya girada por CUALQUIER banco sale "en proceso" y NUNCA se ofrece
+  //    para girar → evita el doble cobro (caso ARTFARM/INMOVIA, MACARRANA/San Jorge). [2026-07-06]
+  try {
+    const g = await fetch(`${BRIDGE_URL_C}/remesa/en_proceso?nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
+    (g.facturas || []).forEach(n => s.add(bkNormClave('F-' + n)));
+  } catch(e) {}
+  // + compat: el en_remesa de clientes_pendientes (Sabadell conciliado)
   try {
     const j = await fetch(`${BRIDGE_URL_C}/contabilidad/clientes_pendientes?anio=2026&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
-    const s = new Set();
     (j.facturas || []).forEach(f => { if (f.en_remesa) s.add(bkNormClave((f.serie || 'F') + '-' + f.numero)); });
-    window._enRemesa = s;
-  } catch(e) { window._enRemesa = new Set(); }
+  } catch(e) {}
+  window._enRemesa = s;
 }
 
 async function carteraMover(claves, destino) {

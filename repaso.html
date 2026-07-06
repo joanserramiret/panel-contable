@@ -91,7 +91,8 @@ async function cargar(){
     const actual = reales.find(x=>x.mes_num===hoyNum);
     if(actual) def=actual.mes_carpeta;
     else if(reales.length){ const mx=Math.max(...reales.map(x=>x.mes_num)); def=(reales.find(x=>x.mes_num===mx)||{}).mes_carpeta; }
-    MES = def || (meses.length ? meses[meses.length-1] : '');
+    // ⭐ Mantener el MES que estaba revisando (al corregir un nombre / marcar, no saltar a julio) si sigue existiendo
+    MES = (MES && meses.includes(MES)) ? MES : (def || (meses.length ? meses[meses.length-1] : ''));
     sel.value = MES;
     sel.onchange = ()=>{ MES=sel.value; render(); };
     render();
@@ -149,7 +150,12 @@ async function corregirNombre(i){
   if(nom===null || !nom.trim()) return;
   try{
     const r=await fetch(API+'/contabilidad/repaso_nombre',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruta:x.ruta, proveedor:nom.trim()})}).then(r=>r.json());
-    if(r.ok){ cargar(); } else alert('Error: '+(r.error||''));
+    if(r.ok){
+      // actualiza EN MEMORIA y re-renderiza (NO recarga → no pierde el mes ni el foco)
+      const nn=(r.proveedor||nom.trim());
+      DATA.forEach(d=>{ if(d.ruta===x.ruta) d.proveedor=nn; });
+      render();
+    } else alert('Error: '+(r.error||''));
   }catch(e){ alert('Error: '+e.message); }
 }
 

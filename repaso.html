@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Repaso contable · Raquel</title>
+<style>
+  :root{ --verde:#e7f7ec; --verde-bd:#1f9d55; --rojo:#fdeaea; --rojo-bd:#dc2626; --line:#e2e8f0; --azul:#0f1f5c; }
+  *{ box-sizing:border-box; }
+  body{ font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; margin:0; background:#f4f6fb; color:#1e293b; }
+  header{ background:linear-gradient(135deg,#0f1f5c,#1e1b4b); color:#fff; padding:16px 18px; }
+  header h1{ margin:0; font-size:20px; }
+  header .sub{ font-size:13px; opacity:.85; margin-top:2px; }
+  .wrap{ max-width:1000px; margin:0 auto; padding:14px 16px 40px; }
+  .bar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:14px 0; position:sticky; top:0; background:#f4f6fb; padding:10px 0; z-index:5; }
+  select,button{ font-size:15px; padding:9px 12px; border:1px solid var(--line); border-radius:9px; background:#fff; cursor:pointer; }
+  select{ font-weight:600; }
+  .btn.on{ background:var(--azul); color:#fff; border-color:var(--azul); }
+  .cont{ margin-left:auto; font-size:14px; font-weight:600; }
+  .chip{ padding:4px 10px; border-radius:20px; margin-left:6px; }
+  .chip.v{ background:var(--verde); color:#146c43; border:1px solid var(--verde-bd); }
+  .chip.r{ background:var(--rojo); color:#b91c1c; border:1px solid var(--rojo-bd); }
+  .row{ display:grid; grid-template-columns:1fr 130px 96px 34px; gap:8px; align-items:center; padding:11px 12px; border-radius:10px; margin-bottom:6px; border-left:6px solid transparent; }
+  .row.v{ background:var(--verde); border-left-color:var(--verde-bd); }
+  .row.r{ background:var(--rojo); border-left-color:var(--rojo-bd); }
+  .prov{ font-weight:700; }
+  .fac{ font-size:12px; color:#475569; margin-top:1px; word-break:break-word; }
+  .fecha{ font-size:13px; color:#334155; }
+  .imp{ font-weight:700; text-align:right; }
+  .ver{ text-align:center; cursor:pointer; font-size:18px; text-decoration:none; }
+  .provgrp{ font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#64748b; margin:14px 0 4px; font-weight:700; }
+  .muted{ color:#94a3b8; padding:20px; text-align:center; }
+  @media(max-width:560px){ .row{ grid-template-columns:1fr 74px 30px; } .fecha{ display:none; } }
+  /* login */
+  #lg{ position:fixed; inset:0; background:linear-gradient(135deg,#0f1f5c,#1a2e6e); display:flex; align-items:center; justify-content:center; z-index:100; }
+  #lg .card{ background:#fff; border-radius:18px; padding:36px; width:360px; max-width:92%; text-align:center; }
+  #lg input{ width:100%; padding:13px; font-size:15px; border:2px solid #e2e8f0; border-radius:10px; margin-top:8px; text-align:center; }
+  #lg button{ width:100%; padding:14px; background:#0f1f5c; color:#fff; border:none; border-radius:10px; font-weight:700; margin-top:16px; font-size:15px; }
+  #lg .err{ color:#dc2626; font-size:13px; min-height:18px; margin-top:8px; }
+</style>
+</head>
+<body>
+<div id="lg">
+  <div class="card">
+    <div style="font-size:40px">🧮</div>
+    <h2 style="color:#0f1f5c;margin:6px 0">Repaso contable</h2>
+    <div style="color:#64748b;font-size:13px">JS Technology Menorca SL</div>
+    <input id="lgu" placeholder="Usuario" autocomplete="off" onkeydown="if(event.key==='Enter')doLogin()">
+    <input id="lgp" type="password" placeholder="PIN o contraseña (vacío si no)" autocomplete="off" onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="err" id="lge"></div>
+    <button onclick="doLogin()">Entrar →</button>
+  </div>
+</div>
+
+<header>
+  <h1>🧮 Repaso contable</h1>
+  <div class="sub">🟢 verde = contabilizada en SisConta · 🔴 rojo = pendiente de contabilizar</div>
+</header>
+<div class="wrap">
+  <div class="bar">
+    <label>Mes <select id="selMes"></select></label>
+    <button class="btn on" id="ordProv" onclick="setOrden('prov')">Ordenar: Proveedor</button>
+    <button class="btn" id="ordFecha" onclick="setOrden('fecha')">Fecha</button>
+    <span class="cont"><span class="chip v" id="cV">🟢 0</span><span class="chip r" id="cR">🔴 0</span></span>
+  </div>
+  <div id="lista"><div class="muted">Cargando…</div></div>
+</div>
+
+<script>
+const API = 'https://panel.js-tech.es';
+const $ = s=>document.querySelector(s);
+let DATA=[], MES='', ORD='prov';
+function esc(s){ return (s==null?'':''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function eur(n){ return (Number(n)||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
+
+async function cargar(){
+  try{
+    const j = await fetch(API+'/contabilidad/repaso_contable?anio=2026&nc='+Date.now()).then(r=>r.json());
+    DATA = j.facturas||[];
+    const sel=$('#selMes'); const meses=j.meses||[];
+    sel.innerHTML = meses.map(m=>'<option value="'+esc(m)+'">'+esc(m)+'</option>').join('');
+    // mes por defecto = el mes ACTUAL si existe; si no, el último mes real (no "AMAZON TARJETA" ni sueltos)
+    const hoyNum = new Date().getMonth()+1;
+    const reales = DATA.filter(x=>x.mes_num<99);
+    let def='';
+    const actual = reales.find(x=>x.mes_num===hoyNum);
+    if(actual) def=actual.mes_carpeta;
+    else if(reales.length){ const mx=Math.max(...reales.map(x=>x.mes_num)); def=(reales.find(x=>x.mes_num===mx)||{}).mes_carpeta; }
+    MES = def || (meses.length ? meses[meses.length-1] : '');
+    sel.value = MES;
+    sel.onchange = ()=>{ MES=sel.value; render(); };
+    render();
+  }catch(e){ $('#lista').innerHTML='<div class="muted">Error cargando: '+esc(e.message)+'</div>'; }
+}
+function setOrden(o){ ORD=o; $('#ordProv').className='btn'+(o==='prov'?' on':''); $('#ordFecha').className='btn'+(o==='fecha'?' on':''); render(); }
+function render(){
+  let fs = DATA.filter(x=>x.mes_carpeta===MES);
+  const nV = fs.filter(x=>x.contabilizada).length, nR = fs.length-nV;
+  $('#cV').textContent='🟢 '+nV; $('#cR').textContent='🔴 '+nR;
+  if(ORD==='prov') fs.sort((a,b)=>(a.proveedor||'').localeCompare(b.proveedor||'',{sensitivity:'base'}) || (a.fecha||'').localeCompare(b.fecha||''));
+  else fs.sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||'') || (a.proveedor||'').localeCompare(b.proveedor||''));
+  if(!fs.length){ $('#lista').innerHTML='<div class="muted">No hay facturas en este mes.</div>'; return; }
+  let html='', lastProv=null;
+  fs.forEach(x=>{
+    if(ORD==='prov'){ const p=(x.proveedor||'—').toUpperCase(); if(p!==lastProv){ html+='<div class="provgrp">'+esc(x.proveedor||'—')+'</div>'; lastProv=p; } }
+    const rel = (x.ruta||'').split('/').slice(1).join('/');
+    html+='<div class="row '+(x.contabilizada?'v':'r')+'">'
+      +'<div><div class="prov">'+esc(x.proveedor||'—')+'</div><div class="fac">'+esc(x.nombre||'')+'</div></div>'
+      +'<div class="fecha">'+esc(x.fecha||'')+'</div>'
+      +'<div class="imp">'+eur(x.total)+'</div>'
+      +'<a class="ver" href="'+API+'/proveedores/abrir?anio='+encodeURIComponent(x.anio)+'&ruta='+encodeURIComponent(rel)+'" target="_blank" title="Ver factura">👁</a>'
+      +'</div>';
+  });
+  $('#lista').innerHTML=html;
+}
+
+// ── Login (usuarios de Ágora, solo perfiles admin — igual que los otros paneles) ──
+async function doLogin(){
+  const u=$('#lgu').value.trim(), p=$('#lgp').value.trim(), err=$('#lge'); err.textContent='';
+  if(!u){ err.textContent='Introduce tu usuario.'; return; }
+  try{
+    const d=await fetch(API+'/api/export-master/?filter=Users').then(r=>r.json());
+    const us=(d.Users||[]).find(x=>!x.DeletionDate && (x.Name||'').toLowerCase()===u.toLowerCase()
+      && ((!x.Password && !x.SmartphonePassword) || String(x.Password||'')===p || String(x.SmartphonePassword||'')===p));
+    if(!us){ err.textContent='Usuario o PIN incorrecto.'; return; }
+    if((((us.Profile||'')+'').toLowerCase()).indexOf('admin')===-1){ err.textContent='Tu perfil no tiene acceso.'; return; }
+    localStorage.setItem('repaso_user', JSON.stringify({nombre:us.Name}));
+    $('#lg').style.display='none'; cargar();
+  }catch(e){ err.textContent='Error de conexión.'; }
+}
+if(localStorage.getItem('repaso_user')){ $('#lg').style.display='none'; cargar(); }
+else { $('#lgu').focus(); }
+</script>
+</body>
+</html>

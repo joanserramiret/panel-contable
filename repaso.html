@@ -56,9 +56,15 @@
   </div>
 </div>
 
-<header>
-  <h1>🧮 Repaso contable</h1>
-  <div class="sub">🟢 verde = contabilizada en SisConta · 🔴 rojo = pendiente de contabilizar</div>
+<header style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+  <div>
+    <h1>🧮 Repaso contable</h1>
+    <div class="sub">🟢 verde = contabilizada en SisConta · 🔴 rojo = pendiente de contabilizar</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+    <span id="hUser" style="font-size:13px;opacity:.9"></span>
+    <button onclick="cerrarSesion()" title="Cerrar sesión" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;font-size:13px">⬡ Salir</button>
+  </div>
 </header>
 <div class="wrap">
   <div class="tabs" style="display:flex;gap:8px;margin:12px 0 8px;flex-wrap:wrap">
@@ -69,8 +75,8 @@
   <div id="vEmitidas" style="display:none">
     <div class="bar">
       <label>Mes <select id="selMesE"></select></label>
-      <button class="btn on" id="ordCliE" onclick="setOrdenE('cliente')">Ordenar: Cliente</button>
-      <button class="btn" id="ordFechaE" onclick="setOrdenE('fecha')">Fecha</button>
+      <button class="btn" id="ordCliE" onclick="setOrdenE('cliente')">Cliente</button>
+      <button class="btn on" id="ordFechaE" onclick="setOrdenE('fecha')">Ordenar: Fecha</button>
       <span class="cont"><span class="chip v" id="cVE">✅ 0</span><span class="chip r" id="cRE">⬜ 0</span></span>
     </div>
     <div id="listaE"><div class="muted">Cargando…</div></div>
@@ -132,7 +138,7 @@ async function _getIva(force){ if(force||!_iva303){ _iva303=await fetch(API+'/co
 function mesLabel(m){ const n=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']; const p=(m||'').split('-'); return (n[+p[1]]||m)+' '+(p[0]||''); }
 
 // ── EMITIDAS (mismo estilo que Recibidas; marcar contabilizada ✅/⬜) ──
-let MESE='', ORDE='cliente', EMI=[];
+let MESE='', ORDE='fecha', EMI=[];
 async function cargarEmi(){
   try{
     const j=await _getIva(); EMI=j.emitidas||[];
@@ -296,10 +302,12 @@ async function doLogin(){
     if(!us){ err.textContent='Usuario o PIN incorrecto.'; return; }
     if((((us.Profile||'')+'').toLowerCase()).indexOf('admin')===-1){ err.textContent='Tu perfil no tiene acceso.'; return; }
     localStorage.setItem('repaso_user', JSON.stringify({nombre:us.Name}));
-    $('#lg').style.display='none'; cargar();
+    $('#lg').style.display='none'; _mostrarUser(); cargar();
   }catch(e){ err.textContent='Error de conexión.'; }
 }
-if(localStorage.getItem('repaso_user')){ $('#lg').style.display='none'; cargar(); }
+function cerrarSesion(){ localStorage.removeItem('repaso_user'); location.reload(); }
+function _mostrarUser(){ try{ const u=JSON.parse(localStorage.getItem('repaso_user')||'{}'); const el=$('#hUser'); if(el && u && u.nombre) el.textContent='👤 '+u.nombre; }catch(e){} }
+if(localStorage.getItem('repaso_user')){ $('#lg').style.display='none'; _mostrarUser(); cargar(); }
 else { $('#lgu').focus(); }
 </script>
 </body>

@@ -5404,7 +5404,7 @@ function buzonAbrir(){
   var ex=document.getElementById('buzon-ov'); if(ex) ex.remove();
   var ov=document.createElement('div'); ov.id='buzon-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:10070;background:rgba(15,31,92,.55);display:flex;align-items:center;justify-content:center;padding:16px';
-  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px;max-width:560px;width:100%;box-shadow:0 12px 44px rgba(0,0,0,.32)">'+
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px;max-width:560px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 12px 44px rgba(0,0,0,.32)">'+
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📥 Buzón — suelta cualquier archivo</div>'+
     '<div style="font-size:12.5px;color:#666;margin-bottom:14px">Detecto qué es (N43, remesa SEPA, factura…) y lo coloco donde toca. Te enseño qué voy a hacer antes de tocar nada.</div>'+
     '<div id="buzon-drop" style="border:2px dashed #c4b5fd;border-radius:12px;padding:28px;text-align:center;background:#faf9ff;cursor:pointer;color:#6d28d9;font-size:14px">Arrastra aquí el archivo<br><span style="font-size:12px;color:#999">o haz clic para elegirlo</span></div>'+
@@ -7267,7 +7267,7 @@ async function bkRemesasRealizadas() {
       '<span style="color:#666">· ' + (r.fecha || '¿?') + ' · ' + (r.banco || '') + ' · ' + (r.n_recibos || 0) + ' recibos</span>' +
       '<span style="color:#999;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + (r.facturas || []).map(f => 'F-' + String(f).replace(/\D/g, '')).join(' ') + '">' +
         (r.facturas || []).slice(0, 8).map(f => 'F-' + String(f).replace(/\D/g, '')).join(' ') + ((r.facturas || []).length > 8 ? ' …' : '') + '</span>' +
-      '<span style="color:#bb9;font-size:11px" title="Fichero(s) de remesa">' + (r.ficheros || []).join(', ') + '</span>' +
+      '<span style="font-size:11px" title="Ver el fichero de la remesa">' + (r.ficheros || []).map(f => '<a onclick="event.preventDefault();window.open(BRIDGE_URL_C+\'/remesa/ver_fichero?f=\'+encodeURIComponent(\'' + f + '\'))" style="cursor:pointer;color:#1a2e6e;text-decoration:underline;font-weight:600">👁 ' + f + '</a>').join(' · ') + '</span>' +
     '</div>').join('');
   el.innerHTML =
     '<div style="background:#fffbeb;border:1.5px solid #fcd34d;border-radius:12px;padding:10px 14px;margin-bottom:14px">' +

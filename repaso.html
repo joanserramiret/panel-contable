@@ -71,7 +71,9 @@
     <button id="tEmi" onclick="switchVista('emi')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:#fff;color:#334155">📤 Emitidas</button>
     <button id="tRec" onclick="switchVista('rec')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:var(--azul);color:#fff">📥 Recibidas</button>
     <button id="tIva" onclick="switchVista('iva')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:#fff;color:#334155">🧾 IVA · 303</button>
+    <button id="tCon" onclick="switchVista('con')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:#fff;color:#334155">🔗 Conector SisConta</button>
   </div>
+  <div id="vConector" style="display:none"><div class="muted">Cargando asientos…</div></div>
   <div id="vEmitidas" style="display:none">
     <div class="bar">
       <label>Mes <select id="selMesE"></select></label>
@@ -126,13 +128,62 @@ function setOrden(o){ ORD=o; $('#ordProv').className='btn'+(o==='prov'?' on':'')
 // ── Pestañas: Repaso ↔ IVA/303 ──
 let _ivaCargado=false, _emiCargado=false, _iva303=null;
 function _tabBtn(id,on){ const b=$(id); if(b){ b.style.background=on?'var(--azul)':'#fff'; b.style.color=on?'#fff':'#334155'; } }
+let _conCargado=false;
 function switchVista(v){
   $('#vEmitidas').style.display = v==='emi'?'':'none';
   $('#vRepaso').style.display   = v==='rec'?'':'none';
   $('#vIva').style.display      = v==='iva'?'':'none';
-  _tabBtn('#tEmi', v==='emi'); _tabBtn('#tRec', v==='rec'); _tabBtn('#tIva', v==='iva');
+  $('#vConector').style.display = v==='con'?'':'none';
+  _tabBtn('#tEmi', v==='emi'); _tabBtn('#tRec', v==='rec'); _tabBtn('#tIva', v==='iva'); _tabBtn('#tCon', v==='con');
   if(v==='emi' && !_emiCargado){ _emiCargado=true; cargarEmi(); }
   if(v==='iva' && !_ivaCargado){ _ivaCargado=true; cargarIVA(); }
+  if(v==='con' && !_conCargado){ _conCargado=true; cargarConector(); }
+}
+// ── CONECTOR SISCONTA ──
+let CON=[], MESC='';
+async function cargarConector(){
+  try{
+    const j=await fetch(API+'/contabilidad/conector?anio=2026&nc='+Date.now()).then(r=>r.json());
+    CON=j.asientos||[];
+    const sel=document.createElement('select');
+    renderConector(j);
+  }catch(e){ $('#vConector').innerHTML='<div class="muted">Error: '+esc(e.message)+'</div>'; }
+}
+function copiaAsiento(i){
+  const a=(window._conFilt||CON)[i]; if(!a) return;
+  const li=a.lineas.map(l=>[l.subcuenta, a.fecha, a.concepto, (l.debe?eur(l.debe):''), (l.haber?eur(l.haber):'')].join('\t')).join('\n');
+  navigator.clipboard.writeText(li).then(()=>{ const b=document.getElementById('cp-'+i); if(b){b.textContent='✓ copiado'; setTimeout(()=>b.textContent='📋 copiar',1500);} });
+}
+function renderConector(j){
+  const meses=[...new Set(CON.map(a=>(a.fecha||'').slice(0,7)).filter(Boolean))].sort();
+  if(!MESC||!meses.includes(MESC)){ const hoy=new Date().toISOString().slice(0,7); MESC=meses.includes(hoy)?hoy:(meses[meses.length-1]||''); }
+  let fs=CON.filter(a=>(a.fecha||'').slice(0,7)===MESC); window._conFilt=fs;
+  const sinCta=fs.filter(a=>!a.cuenta_tercero).length;
+  let h='<div class="card" style="margin-top:6px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">'
+   +'<h2 style="margin:0;color:var(--azul)">🔗 Conector SisConta · asientos propuestos</h2>'
+   +'<label>Mes <select id="selMesC">'+meses.map(m=>'<option value="'+m+'"'+(m===MESC?' selected':'')+'>'+esc(m)+'</option>').join('')+'</select></label></div>'
+   +'<div style="font-size:12.5px;color:#64748b;margin:6px 0 4px">Cada factura con su asiento montado y las cuentas REALES de SisConta (tercero emparejado por NIF/nombre). '
+   +'<b>Fase 1</b>: para teclear/supervisar en SisConta — no escribe nada. '+(sinCta?('<b style="color:#b91c1c">'+sinCta+' sin cuenta de tercero</b> (revisar el NIF).'):'')+'</div></div>';
+  fs.forEach((a,i)=>{
+    const okc=!!a.cuenta_tercero;
+    h+='<div style="border:1px solid var(--line);border-left:5px solid '+(a.tipo==='emitida'?'#1a7a3f':'#b45309')+';border-radius:10px;margin:10px 0;padding:10px 12px">'
+      +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">'
+      +'<b style="color:var(--azul)">'+(a.tipo==='emitida'?'📤':'📥')+' '+esc(a.concepto)+'</b>'
+      +'<span style="color:#64748b;font-size:12px">'+esc(a.fecha)+' · '+eur(a.total)+'</span>'
+      +'<button id="cp-'+i+'" onclick="copiaAsiento('+i+')" style="padding:4px 10px;background:#ede9fe;border:1px solid #c4b5fd;color:#5b21b6;border-radius:7px;font-weight:700;cursor:pointer;font-size:12px">📋 copiar</button></div>';
+    if(!okc) h+='<div style="font-size:12px;color:#b91c1c;margin-top:3px">⚠️ Sin cuenta de tercero — el NIF no está en SisConta o el nombre no casa. Cuenta a completar a mano.</div>';
+    h+='<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:6px"><thead><tr style="color:#94a3b8;text-align:right"><th style="text-align:left;padding:3px 6px">Subcuenta</th><th style="text-align:left">Concepto</th><th style="padding:3px 6px">Debe</th><th style="padding:3px 6px">Haber</th></tr></thead><tbody>';
+    a.lineas.forEach(l=>{
+      h+='<tr style="border-top:1px solid #f3f3f3"><td style="padding:3px 6px;font-family:monospace;font-weight:700;color:var(--azul)">'+esc(l.subcuenta)+'</td>'
+        +'<td style="padding:3px 6px">'+esc(l.nombre)+'</td>'
+        +'<td style="padding:3px 6px;text-align:right">'+(l.debe?eur(l.debe):'')+'</td>'
+        +'<td style="padding:3px 6px;text-align:right">'+(l.haber?eur(l.haber):'')+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  });
+  if(!fs.length) h+='<div class="muted">No hay facturas en este mes.</div>';
+  $('#vConector').innerHTML=h;
+  const s=document.getElementById('selMesC'); if(s) s.onchange=()=>{ MESC=s.value; renderConector(j); };
 }
 async function _getIva(force){ if(force||!_iva303){ _iva303=await fetch(API+'/contabilidad/iva_303?anio=2026&nc='+Date.now()).then(r=>r.json()); } return _iva303; }
 function mesLabel(m){ const n=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']; const p=(m||'').split('-'); return (n[+p[1]]||m)+' '+(p[0]||''); }

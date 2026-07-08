@@ -582,6 +582,7 @@
         <div id="pagos-resumen" style="font-size:12.5px;color:var(--texto-suave);margin-top:6px"></div>
         <div style="font-size:11px;color:var(--texto-suave);margin-top:4px">⚡ auto = domiciliado (te lo cargan solo) · ✋ manual = lo pagas tú · <b>~</b> = vencimiento estimado, revísalo con ✎</div>
       </div>
+      <div class="card" style="margin-bottom:14px"><div id="pagos-manuales"></div></div>
       <div class="card" style="margin-bottom:14px"><div id="pagos-calendario"></div></div>
       <div class="card"><div id="pagos-lista"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div></div>
     </div>
@@ -4597,11 +4598,92 @@ function renderCalVenc(contId, pagosArr, debenTotal) {
   cont.innerHTML = h;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 💳 PAGOS MANUALES — proveedores a los que DEBEMOS y hay que pagar a mano (transferencia).
+// Andrew Taylor es el caso que lo originó: no nos gira, le pagamos nosotros [Joan 2026-07-08].
+// Agrupa las facturas PENDIENTES no domiciliadas por proveedor canónico. Ficha desplegable por proveedor.
+// ⚠️ Esto NO toca el cálculo de "deuda real vs cajón por clasificar": es una vista de acción, no de deuda.
+// ─────────────────────────────────────────────────────────────────────────────
+function pmVerPDF(ruta) {
+  if (!ruta) return;
+  const anio = ruta.split('/')[0];
+  window.open(BRIDGE_URL_C + '/proveedores/abrir?anio=' + encodeURIComponent(anio) +
+              '&ruta=' + encodeURIComponent(ruta.slice(anio.length + 1)) + '&ngrok-skip-browser-warning=true', '_blank');
+}
+function pmToggle(i) {
+  const d = document.getElementById('pm-det-' + i);
+  const c = document.getElementById('pm-car-' + i);
+  if (!d) return;
+  const abierto = d.style.display !== 'none';
+  d.style.display = abierto ? 'none' : 'block';
+  if (c) c.textContent = abierto ? '▸' : '▾';
+}
+function renderPagosManuales(todas) {
+  const cont = document.getElementById('pagos-manuales');
+  if (!cont) return;
+  const man = (todas || []).filter(p => p.estado !== 'pagada' && p.estado !== 'externo' &&
+                                        !p.domiciliado && (+p.pendiente || 0) > 0.5);
+  const g = {};
+  man.forEach(p => {
+    const k = (p.proveedor_nombre || p.proveedor || '—').trim();
+    if (!g[k]) g[k] = { prov: k, total: 0, facs: [] };
+    g[k].total += (+p.pendiente || 0);
+    g[k].facs.push(p);
+  });
+  const grupos = Object.values(g).sort((a, b) => b.total - a.total);
+  const total = man.reduce((s, p) => s + (+p.pendiente || 0), 0);
+  if (!grupos.length) {
+    cont.innerHTML = '<div style="font-weight:700;font-size:14px;margin-bottom:4px">💳 Pagos manuales</div>' +
+      '<div style="color:var(--texto-suave);font-size:13px">No debes nada por transferencia. Todo lo pendiente es domiciliado.</div>';
+    return;
+  }
+  let h = '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">' +
+    '<div><div style="font-weight:700;font-size:14px">💳 Pagos manuales · proveedores a los que debemos</div>' +
+    '<div style="font-size:11.5px;color:var(--texto-suave);margin-top:2px">No domiciliados: los pagas tú por transferencia. Clic en un proveedor para ver sus facturas.</div></div>' +
+    '<div style="font-weight:800;font-size:19px;color:#b91c1c">' + bkFmt(total) + '</div></div>';
+  h += '<div style="margin-top:10px">';
+  grupos.forEach((gr, i) => {
+    const nSinCont = gr.facs.filter(f => f.clasificar).length;
+    h += '<div style="border:1px solid var(--borde);border-radius:9px;margin-bottom:7px;overflow:hidden">';
+    h += '<div onclick="pmToggle(' + i + ')" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 11px;cursor:pointer;background:var(--fondo-suave)">' +
+      '<div style="display:flex;align-items:center;gap:8px;min-width:0">' +
+      '<span id="pm-car-' + i + '" style="color:var(--texto-suave);font-size:11px">▸</span>' +
+      '<b style="font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(gr.prov) + '</b>' +
+      '<span style="font-size:11px;color:var(--texto-suave)">' + gr.facs.length + ' factura' + (gr.facs.length > 1 ? 's' : '') + '</span>' +
+      (nSinCont ? '<span title="Aún en PDTE CONTABILITZAR: Raquel no las ha puenteado. No afecta a que las debas." style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:8px">⏳ sin contabilizar</span>' : '') +
+      '</div>' +
+      '<b style="font-size:14.5px;color:#b91c1c;white-space:nowrap">' + bkFmt(gr.total) + '</b></div>';
+    h += '<div id="pm-det-' + i + '" style="display:none;padding:4px 11px 10px">';
+    h += '<table style="width:100%;font-size:12.5px;border-collapse:collapse">';
+    gr.facs.sort((a, b) => (a.fecha || '') < (b.fecha || '') ? -1 : 1).forEach(f => {
+      const sinVenc = !!f.sin_vencimiento || f.fuente_venc === 'sin_plazo';
+      const est = (f.fuente_venc === 'estimado');
+      const fic = (f.ruta || '').split('/').pop();
+      let cVenc;
+      if (sinVenc) cVenc = '<span title="Sin plazo pactado: le pagas cuando quieres" style="color:var(--texto-suave)">sin vencimiento</span>';
+      else cVenc = '<span title="' + (est ? 'Vencimiento ESTIMADO (fecha+30), no leído del pie' : 'Vencimiento del pie de la factura') +
+                   '">venc. ' + (f.vencimiento || '—') + (est ? ' <b>~</b>' : '') + '</span>';
+      h += '<tr style="border-top:1px solid var(--borde)">' +
+        '<td style="padding:5px 6px 5px 0">' + esc(fic) + '</td>' +
+        '<td style="padding:5px 6px;color:var(--texto-suave);white-space:nowrap">' + (f.fecha || '') + '</td>' +
+        '<td style="padding:5px 6px;white-space:nowrap">' + cVenc + '</td>' +
+        '<td style="padding:5px 0 5px 6px;text-align:right;font-weight:700;white-space:nowrap">' + bkFmt(f.pendiente || 0) + '</td>' +
+        '<td style="padding:5px 0 5px 8px;text-align:right"><a href="javascript:void(0)" onclick="pmVerPDF(\'' + (f.ruta || '').replace(/'/g, "\\'") + '\')" style="font-size:11.5px">👁</a></td>' +
+        '</tr>';
+    });
+    h += '</table></div></div>';
+  });
+  h += '</div>';
+  h += '<div style="font-size:11px;color:var(--texto-suave);margin-top:2px"><b>~</b> = vencimiento estimado (fecha + 30 días), no leído del pie de la factura. No te fíes de esa fecha para pagar.</div>';
+  cont.innerHTML = h;
+}
+
 function renderPagos() {
   const cont = document.getElementById('pagos-lista');
   const res = document.getElementById('pagos-resumen');
   const todas = pagosDatos.pagos || [];
   const c = pagosDatos.cuenta || { pendiente: 0, parcial: 0, pagada: 0 };
+  try { renderPagosManuales(todas); } catch (e) { console.warn('[pagos manuales]', e); }
   try { renderCalVenc('pagos-calendario', todas, window._debenTotal); } catch (e) {}
   // Cajón "por clasificar" (NO es deuda a proveedor): el backend ya respeta la reclasificación (tabla-puente),
   // así que confiamos en su flag (una factura reclasificada a su proveedor real ya NO es cubo).

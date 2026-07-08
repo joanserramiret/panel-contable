@@ -3790,12 +3790,15 @@ function cuadrarRenderCli() {
 function cuadrarRenderProv() {
   const q = (document.getElementById('cuad-prov-buscar') ? document.getElementById('cuad-prov-buscar').value : '').trim().toLowerCase();
   let f = _provPend;
-  if (q) f = f.filter(x => ((x.proveedor || '') + ' ' + (x.nombre || '') + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha || '')).toLowerCase().includes(q));
+  if (q) f = f.filter(x => ((x.proveedor || '') + ' ' + (x.proveedor_nombre || '') + ' ' + (x.nombre || '') + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha || '')).toLowerCase().includes(q));
   f = _cuadProvSort.col ? _ordenarPorColumna(f, _GET_PROV[_cuadProvSort.col], _cuadProvSort.dir) : _ordenEstado(f, _provEstado, x => x.ruta || '');
   let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' + _thSort('Proveedor', 'proveedor', _cuadProvSort, 'cuadSortProv') + _thSort('Factura', 'factura', _cuadProvSort, 'cuadSortProv') + _thSort('Fecha', 'fecha', _cuadProvSort, 'cuadSortProv') + _thSort('Importe', 'importe', _cuadProvSort, 'cuadSortProv', 'right') + '<th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
   f.forEach(x => {
+    // ⚠️ `args` sigue llevando x.proveedor (la carpeta): es lo que se guarda como `cliente` al conciliar y de ahí
+    //    cuelga la imputación de pagos por proveedor. Solo se cambia lo que se PINTA. [2026-07-08]
     const args = (Number(x.importe) || 0) + ",'" + encodeURIComponent(x.proveedor || '') + "','" + encodeURIComponent(x.nombre || '') + "','" + encodeURIComponent(x.ruta || '') + "'";
-    html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px">' + (x.proveedor || '') + _estadoBadge(_provEstado[x.ruta || '']) + '</td><td style="padding:7px">' + (x.nombre || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="provVerDoc(\'' + encodeURIComponent(x.ruta || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="provConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
+    const _pn = x.proveedor_nombre || x.proveedor || '—';
+    html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px"><b>' + esc(_pn) + '</b>' + _estadoBadge(_provEstado[x.ruta || '']) + '</td><td style="padding:7px">' + (x.nombre || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="provVerDoc(\'' + encodeURIComponent(x.ruta || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="provConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
   });
   html += '</tbody></table>';
   if (!f.length) html = '<div style="color:#1b7a3d;font-size:13px;padding:6px">✓ Nada pendiente de pago.</div>';
@@ -3929,16 +3932,17 @@ async function provPendientes() {
 function provPendRender() {
   const q = (document.getElementById('prov-pend-buscar') ? document.getElementById('prov-pend-buscar').value : '').trim().toLowerCase();
   let f = _provPend;
-  if (q) f = f.filter(x => ((x.proveedor||'') + ' ' + (x.nombre||'') + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha||'')).toLowerCase().includes(q));
+  if (q) f = f.filter(x => ((x.proveedor||'') + ' ' + (x.proveedor_nombre||'') + ' ' + (x.nombre||'') + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha||'')).toLowerCase().includes(q));
   f = _ordenEstado(f, _provEstado, x => x.ruta||'');
   let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
     '<th style="padding:7px;text-align:left">Proveedor</th><th style="padding:7px;text-align:left">Factura</th>' +
     '<th style="padding:7px;text-align:left">Fecha</th><th style="padding:7px;text-align:right">Importe</th>' +
     '<th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
   f.forEach(x => {
+    // ⚠️ args con x.proveedor (carpeta): es el `cliente` de la conciliación. Solo cambia lo que se pinta.
     const args = (Number(x.importe)||0) + ",'" + encodeURIComponent(x.proveedor||'') + "','" + encodeURIComponent(x.nombre||'') + "','" + encodeURIComponent(x.ruta||'') + "'";
     html += '<tr style="border-bottom:1px solid #eee">' +
-      '<td style="padding:7px">' + (x.proveedor||'') + _estadoBadge(_provEstado[x.ruta||'']) + '</td>' +
+      '<td style="padding:7px"><b>' + esc(x.proveedor_nombre || x.proveedor || '—') + '</b>' + _estadoBadge(_provEstado[x.ruta||'']) + '</td>' +
       '<td style="padding:7px">' + (x.nombre||'') + '</td>' +
       '<td style="padding:7px">' + (x.fecha||'') + '</td>' +
       '<td style="padding:7px;text-align:right">€' + (Number(x.importe)||0).toFixed(2) + '</td>' +
@@ -8827,7 +8831,7 @@ function pvRender() {
       // Buscador a fondo: archivo, proveedor, fecha e IMPORTE (con punto o coma)...
       const dat = pvDatos[anio + '/' + a.rel] || {};
       const blob = ((a.rel || '') + ' ' + (a.proveedor || '') + ' ' + (dat.emisor || '') + ' ' +
-        (dat.proveedor || '') + ' ' + (dat.fecha || '') + ' ' +
+        (dat.proveedor_nombre || '') + ' ' + (dat.proveedor || '') + ' ' + (dat.fecha || '') + ' ' +
         (dat.total != null ? dat.total.toFixed(2) + ' ' + dat.total.toFixed(2).replace('.', ',') : '')).toLowerCase();
       if (blob.includes(q)) return true;
       // ...y DENTRO del documento (texto del PDF u OCR, desgranado por el bridge)
@@ -8884,9 +8888,11 @@ function pvRender() {
           : est ? '<span style="color:#c96a10;font-size:11px">¿?</span>' : '';
       return '<tr style="border-bottom:1px solid #f3f3f3">' +
         '<td style="padding:5px;text-align:center"><input type="checkbox" class="pv-chk" data-ruta="' + ruta.replace(/"/g, '&quot;') + '" onchange="pvSelChange()" style="width:auto;cursor:pointer"' + (pvSel.has(ruta) ? ' checked' : '') + '/></td>' +
+        // 🪪 Quién cobra = proveedor_nombre (CIF del pie). El emisor crudo del OCR puede ser basura ("Illes Balears",
+        //    "PRECIO T."). La carpeta va como pista secundaria: dice dónde está el fichero, no quién factura.
         '<td style="padding:5px;white-space:nowrap;max-width:230px;overflow:hidden;text-overflow:ellipsis;color:#1a2e6e;font-weight:700" title="' + ((dat.emisor || '') + (a.proveedor ? ' · carpeta: ' + a.proveedor : '')).replace(/"/g, '&quot;') + '">' +
-          (dat.emisor || dat.proveedor || a.proveedor || '—') +
-          (dat.emisor && a.proveedor && dat.emisor.toLowerCase().indexOf(a.proveedor.toLowerCase().slice(0, 6)) === -1 ? ' <span style="color:#888;font-weight:400;font-size:10.5px">(' + a.proveedor + ')</span>' : '') + '</td>' +
+          (dat.proveedor_nombre || dat.emisor || dat.proveedor || a.proveedor || '—') +
+          (a.proveedor && (dat.proveedor_nombre || '').toLowerCase().indexOf(a.proveedor.toLowerCase().slice(0, 6)) === -1 ? ' <span style="color:#888;font-weight:400;font-size:10.5px">(' + a.proveedor + ')</span>' : '') + '</td>' +
         '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#888" title="' + a.nombre.replace(/"/g, '&quot;') + '">' + a.nombre + '</td>' +
         '<td style="white-space:nowrap;color:#888">' + (dat.fecha || (a.modificado || '').slice(0, 10)) + '</td>' +
         '<td style="white-space:nowrap;text-align:right" onclick="pvCorregir(\'' + ruta.replace(/'/g, "\\'") + '\')" title="Clic para corregir el importe">' + (chip || '<span style="color:#bbb;font-size:11px">sin escanear</span>') + '</td>' +

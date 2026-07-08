@@ -4165,7 +4165,7 @@ async function ivaDudosas(tri, anio, todas) {
       const re = encodeURIComponent(f.ruta);
       const fij = f.fijada;
       return '<tr id="ivd-' + i + '" style="border-bottom:1px solid #eee' + (fij ? ';background:#f3fbf5' : '') + '">' +
-        '<td style="padding:6px">' + (fij ? '<span title="ya puesta" style="color:#16a34a;font-weight:700">✓ </span>' : '') + (f.proveedor || '') + '<div style="font-size:10px;color:#999">' + ((f.nombre || '').split('/').slice(-1)[0]) + '</div></td>' +
+        '<td style="padding:6px">' + (fij ? '<span title="ya puesta" style="color:#16a34a;font-weight:700">✓ </span>' : '') + esc(f.proveedor_nombre || f.proveedor || '—') + '<div style="font-size:10px;color:#999">' + esc((f.nombre || '').split('/').slice(-1)[0]) + '</div></td>' +
         '<td style="padding:6px">' + (f.fecha || '') + '</td>' +
         '<td style="padding:6px;text-align:right">' + fmt(f.total) + ' €</td>' +
         '<td style="padding:6px;text-align:right"><input id="ivc-' + i + '" type="number" step="0.01" value="' + f.cuota_actual + '" style="width:82px;padding:3px 5px;border:1.5px solid ' + (fij ? '#16a34a' : '#e8b27a') + ';border-radius:5px;text-align:right;font-size:12px" title="' + (fij ? 'Cuota ya puesta — puedes editarla' : 'Estimado al 21% — corrígelo a mano') + '"/></td>' +
@@ -4402,7 +4402,7 @@ async function tarjBuscar(mov, idx, importe) {
       lista.forEach(f => {
         const r = encodeURIComponent(f.ruta);
         html += '<div style="border-bottom:1px solid #eee;padding:7px 0;display:flex;justify-content:space-between;align-items:center;gap:10px">' +
-          '<div><b>' + (f.proveedor||'') + '</b> · ' + (f.nombre||'') + '<br><span style="color:#999;font-size:11px">' + (f.fecha||'') + ' · €' + Number(f.total||0).toFixed(2) + '</span></div>' +
+          '<div><b>' + esc(f.proveedor_nombre || f.proveedor||'') + '</b> · ' + esc(f.nombre||'') + '<br><span style="color:#999;font-size:11px">' + (f.fecha||'') + ' · €' + Number(f.total||0).toFixed(2) + '</span></div>' +
           '<button onclick="tarjLink(' + mov + ',' + idx + ',\'' + r + '\')" style="padding:5px 11px;background:#0a7d34;color:#fff;border:none;border-radius:6px;cursor:pointer;white-space:nowrap">Enlazar 🟢</button></div>';
       });
     }
@@ -4769,7 +4769,7 @@ function _extHtml(todas) {
   return '<div style="margin-top:14px;border-top:2px solid #cdeef0;padding-top:8px">' +
     '<div style="font-size:12.5px;font-weight:700;color:#0e7490;margin-bottom:6px">💳 Pagado fuera del banco — ' + bkFmt(exts.reduce((s, p) => s + (p.a_pagar || p.total || 0), 0)) + ' · ' + exts.length + ' fra. <span style="font-weight:400;color:var(--texto-suave)">(no es deuda; efectivo / tarjeta personal / aplazada)</span></div>' +
     exts.map(p => { const re = encodeURIComponent(p.ruta || ''); return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f3f3f3;font-size:12px;opacity:.85">' +
-      '<span style="flex:1"><b>' + (p.proveedor || '—') + '</b> <span style="color:var(--texto-suave)">' + (p.nombre || '') + '</span> <span style="color:#0e7490;font-size:10.5px">· ' + (p.externo || 'fuera') + '</span></span>' +
+      '<span style="flex:1"><b>' + esc(p.proveedor_nombre || p.proveedor || '—') + '</b> <span style="color:var(--texto-suave)">' + esc(p.nombre || '') + '</span> <span style="color:#0e7490;font-size:10.5px">· ' + (p.externo || 'fuera') + '</span></span>' +
       '<b>' + bkFmt(p.a_pagar || p.total || 0) + '</b>' +
       '<button onclick="pagosExterno(\'' + re + '\', true)" title="Quitar la marca (vuelve a deuda normal)" style="padding:1px 6px;background:#eee;color:#333;border:none;border-radius:5px;font-size:10.5px;cursor:pointer">↺</button></div>'; }).join('') +
     '</div>';
@@ -5082,7 +5082,7 @@ async function finaGatherDatos(){
   var deudores=Object.values(porCli).sort(function(a,b){return b.importe-a.importe;}).slice(0,6).map(function(d){return {cliente:d.cliente,importe:Math.round(d.importe),dias:dias(d.fecha)};});
   var nosDeben=Object.values(porCli).reduce(function(a,d){return a+d.importe;},0);
   var lim=new Date(); lim.setDate(lim.getDate()+14); var venc=[];
-  (pag.facturas||[]).forEach(function(f){ if(f.estado_pago==='pagada'||f.pagada||f.externo)return; var v=f.vencimiento||f.venc; if(!v)return; var t=new Date(v); if(isNaN(t)||t>lim)return; venc.push({proveedor:f.proveedor||f.entidad||'?',fecha:v,importe:Math.round(+f.importe||0),domiciliado:!!(f.domiciliado||f.cal==='programada')}); });
+  (pag.facturas||[]).forEach(function(f){ if(f.estado_pago==='pagada'||f.pagada||f.externo)return; var v=f.vencimiento||f.venc; if(!v)return; var t=new Date(v); if(isNaN(t)||t>lim)return; venc.push({proveedor:f.proveedor_nombre||f.proveedor||f.entidad||'?',fecha:v,importe:Math.round(+f.importe||0),domiciliado:!!(f.domiciliado||f.cal==='programada')}); });
   venc.sort(function(a,b){return (a.fecha||'').localeCompare(b.fecha||'');});
   var pct=null, m25=0, m26=0;
   if(tot.meses||tot.series){ try{ var s25=(tot.series&&tot.series['2025'])||[], s26=(tot.series&&tot.series['2026'])||[]; m25=s25.reduce(function(a,b){return a+(+b||0);},0); m26=s26.reduce(function(a,b){return a+(+b||0);},0); if(m25>0)pct=Math.round((m26-m25)/m25*1000)/10; }catch(e){} }

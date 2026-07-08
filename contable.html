@@ -5266,10 +5266,16 @@ async function cargarCuentaSocio(){
     const g=j.gastos_pagados_por_ti||{total:0,detalle:[]};
     const fila=(et,v,col)=>'<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f2f2f2;font-size:13px"><span>'+et+'</span><b style="color:'+(col||'#1a2e6e')+'">'+v+'</b></div>';
     const adel=j.saldo<0;
+    // ⭐ [Joan 2026-07-08] Info PERSONAL → CONTRAÍDA por defecto (es violento que se vea al abrir el panel, sobre todo
+    //    con Raquel delante). Solo el título; los números aparecen al pulsar. localStorage recuerda si Joan lo deja abierto.
+    let _abierto=false; try{ _abierto=localStorage.getItem('cuentaSocioOpen')==='1'; }catch(e){}
     cont.innerHTML=
-      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">'+
-        '<div class="card-title" style="margin:0">🧾 Tu cuenta con la empresa</div>'+
-        '<span style="font-size:11px;color:var(--texto-suave)">Joan Serra Miret · nómina '+eur(j.config&&j.config.nomina_mensual)+'/mes</span></div>'+
+      '<details id="cs-det"'+(_abierto?' open':'')+' style="border:0">'+
+      '<summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:8px;outline:none">'+
+        '<span class="card-title" style="margin:0">🧾 Tu cuenta con la empresa</span>'+
+        '<span style="font-size:11px;color:var(--texto-suave);font-weight:400">🔒 privado · pulsa para ver</span></summary>'+
+      '<div style="margin-top:10px">'+
+        '<div style="text-align:right;font-size:11px;color:var(--texto-suave);margin-bottom:6px">Joan Serra Miret · nómina '+eur(j.config&&j.config.nomina_mensual)+'/mes</div>'+
       fila('Nómina devengada ('+(j.meses_devengados||0)+' meses)','+ '+eur(j.devengado),'#1b7a3d')+
       fila('Aportaciones tuyas (a devolver)','+ '+eur(j.aportaciones&&j.aportaciones.total),'#1b7a3d')+
       fila('Gastos que pagaste tú (tarjeta personal/efectivo)'+(g.detalle&&g.detalle.length?' · '+g.detalle.length:''),'+ '+eur(g.total),'#1b7a3d')+
@@ -5278,7 +5284,10 @@ async function cargarCuentaSocio(){
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;background:'+(adel?'#fff3e0':'#e8f7ef')+';border:1px solid '+(adel?'#e8b27a':'#a7d7b8')+';border-radius:9px;padding:10px 13px">'+
         '<b style="font-size:13px;color:'+(adel?'#b45309':'#1b7a3d')+'">'+(adel?'⚠️ Te has adelantado':'✅ La empresa te debe')+'</b>'+
         '<b style="font-size:18px;color:'+(adel?'#b45309':'#1b7a3d')+'">'+eur(Math.abs(j.saldo))+'</b></div>'+
-      '<div style="font-size:11px;color:var(--texto-suave);margin-top:6px">Se calcula solo del banco: las facturas que marques 💳 «tarjeta personal»/«efectivo» suman a tu favor. '+(g.detalle&&g.detalle.length?'Gastos detectados: '+g.detalle.map(x=>(x.nombre||'').replace(/\.pdf$/i,'')+' '+eur(x.importe)).join(' · '):'')+'</div>';
+      '<div style="font-size:11px;color:var(--texto-suave);margin-top:6px">Se calcula solo del banco: las facturas que marques 💳 «tarjeta personal»/«efectivo» suman a tu favor. '+(g.detalle&&g.detalle.length?'Gastos detectados: '+g.detalle.map(x=>(x.nombre||'').replace(/\.pdf$/i,'')+' '+eur(x.importe)).join(' · '):'')+'</div>'+
+      '</div></details>';
+    const _det=document.getElementById('cs-det');
+    if(_det) _det.addEventListener('toggle',function(){ try{ localStorage.setItem('cuentaSocioOpen',_det.open?'1':'0'); }catch(e){} });
   }catch(e){ cont.innerHTML='<div style="color:#c0392b;font-size:13px">Error: '+e.message+'</div>'; }
 }
 

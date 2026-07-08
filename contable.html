@@ -1802,7 +1802,8 @@ async function cargarDebemosDash() {
     const j = await fetch(BRIDGE_URL_C + '/contabilidad/pagos?anio=2026&_=' + Date.now(), { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
     const deb = (j.tot_deuda_real != null ? j.tot_deuda_real : (j.total || 0));
     el.textContent = (deb || 0).toFixed(2) + '€';
-    const n = document.getElementById('kpi-debemos-n'); if (n) n.textContent = 'deuda real 2026' + (j.tot_clasificar ? ' · +' + (j.tot_clasificar).toFixed(0) + '€ por clasificar' : '');
+    // `tot_clasificar` ya NO se suma aparte: va DENTRO de tot_deuda_real (la deuda sin contabilizar es deuda).
+    const n = document.getElementById('kpi-debemos-n'); if (n) n.textContent = 'deuda 2026' + (j.tot_clasificar ? ' · ' + (j.tot_clasificar).toFixed(0) + '€ aún sin contabilizar' : '');
   } catch (e) { el.textContent = '—'; }
   _debemosDashEnCurso = false;
 }
@@ -4690,15 +4691,18 @@ function renderPagos() {
   const c = pagosDatos.cuenta || { pendiente: 0, parcial: 0, pagada: 0 };
   try { renderPagosManuales(todas); } catch (e) { console.warn('[pagos manuales]', e); }
   try { renderCalVenc('pagos-calendario', todas, window._debenTotal); } catch (e) {}
-  // Cajón "por clasificar" (NO es deuda a proveedor): el backend ya respeta la reclasificación (tabla-puente),
-  // así que confiamos en su flag (una factura reclasificada a su proveedor real ya NO es cubo).
+  // ⭐⭐ REGLA DE JOAN [2026-07-08]: «la deuda sin contabilizar NO es menos deuda».
+  // `clasificar` = la factura sigue en PDTE CONTABILITZAR → Raquel aún no la ha puenteado a SisConta.
+  // Es un BADGE SUYO, no una categoría de deuda: se debe igual. Antes se restaba del total y escondía
+  // 12.160,60 € (las facturas nuevas de IGT/DEPAU no salían ni en la deuda ni en el calendario).
   const _esClasif = p => !!p.clasificar;
   let _tReal = 0, _nReal = 0, _tClas = 0, _nClas = 0, _tDom = 0, _tExt = 0, _nExt = 0;
   todas.forEach(p => {
     if (p.estado === 'pagada') return;
     if (p.estado === 'externo') { _tExt += (p.a_pagar || p.total || 0); _nExt++; return; }   // pagado fuera del banco: NO es deuda
-    if (_esClasif(p)) { _tClas += p.pendiente || 0; _nClas++; }
-    else { _tReal += p.pendiente || 0; _nReal++; if (p.domiciliado) _tDom += p.pendiente || 0; }
+    _tReal += p.pendiente || 0; _nReal++;
+    if (p.domiciliado) _tDom += p.pendiente || 0;
+    if (_esClasif(p)) { _tClas += p.pendiente || 0; _nClas++; }   // solo para el badge de Raquel
   });
   // CALENDARIO (modelo Joan): la alarma de verdad = lo ACCIONABLE (manual + revisar). Lo PROGRAMADO (domiciliado
   // por girar) no es alarma, se gira solo. Usa los totales del backend; si no vienen (bridge viejo), cae a la deuda real.
@@ -4709,14 +4713,14 @@ function renderPagos() {
     '<b>🔴 A pagar (acción tuya): <span style="color:#c0392b">' + bkFmt(_acc) + '</span></b>' +
     ' · <span style="color:#0e7490">🔵 Programado <b>' + bkFmt(_prog) + '</b></span> <span style="color:var(--texto-suave);font-size:11px">(domiciliado, se gira solo en su fecha)</span>' +
     (_rev ? ' · <span style="color:#b45309">⚠️ Revisar <b>' + bkFmt(_rev) + '</b></span> <span style="color:var(--texto-suave);font-size:11px">(giro vencido sin cubrir)</span>' : '') +
-    '<br><span style="color:var(--texto-suave);font-size:12px">💼 Deuda real total ' + bkFmt(_tReal) + ' en ' + _nReal + ' fac · 📂 Por clasificar (Raquel/SisConta, <b>no es deuda</b>): ' + bkFmt(_tClas) + ' en ' + _nClas +
+    '<br><span style="color:var(--texto-suave);font-size:12px">💼 Deuda total a proveedor ' + bkFmt(_tReal) + ' en ' + _nReal + ' fac · de ellas ⏳ <b>' + _nClas + '</b> sin contabilizar (' + bkFmt(_tClas) + ') — Raquel aún no las ha puenteado a SisConta, <b>pero se deben igual</b>' +
     (_nExt ? ' · 💳 Pagado fuera del banco: ' + bkFmt(_tExt) + ' en ' + _nExt : '') + '</span>';
   const chip = (k, lbl, col, bg, n) => { const on = _pagFiltro[k]; return '<button onclick="pagToggle(\'' + k + '\')" style="padding:4px 10px;border-radius:7px;border:1px solid ' + (on ? col : '#dde') + ';background:' + (on ? bg : '#fff') + ';color:' + (on ? col : '#999') + ';cursor:pointer;font-size:11.5px;font-weight:' + (on ? '700' : '500') + '">' + lbl + ' ' + n + '</button>'; };
   const barra = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">' +
     chip('pendiente', '🔴 Pendiente', '#a32d2d', '#fcebeb', c.pendiente || 0) +
     chip('parcial', '🟡 Parcial', '#854f0b', '#faeeda', c.parcial || 0) +
     chip('pagada', '🟢 Pagadas', '#1b7a3d', '#e8f7ef', c.pagada || 0) +
-    '<button onclick="pagToggleClasif()" title="El cajón por clasificar (carpetas genéricas, Raquel/SisConta) NO es deuda a proveedor. Apágalo para ver solo deuda real." style="padding:4px 10px;border-radius:7px;border:1px solid ' + (_pagVerClasif ? '#6b7280' : '#dde') + ';background:' + (_pagVerClasif ? '#eef0f3' : '#fff') + ';color:' + (_pagVerClasif ? '#374151' : '#999') + ';cursor:pointer;font-size:11.5px;font-weight:' + (_pagVerClasif ? '700' : '500') + '">📂 Por clasificar ' + _nClas + '</button>' +
+    '<button onclick="pagToggleClasif()" title="Facturas que Raquel aún no ha puenteado a SisConta (siguen en PDTE CONTABILITZAR). SE DEBEN IGUAL: cuentan en la deuda. Este botón solo las oculta de la lista." style="padding:4px 10px;border-radius:7px;border:1px solid ' + (_pagVerClasif ? '#6b7280' : '#dde') + ';background:' + (_pagVerClasif ? '#eef0f3' : '#fff') + ';color:' + (_pagVerClasif ? '#374151' : '#999') + ';cursor:pointer;font-size:11.5px;font-weight:' + (_pagVerClasif ? '700' : '500') + '">⏳ Sin contabilizar ' + _nClas + '</button>' +
     '<span style="flex:1"></span>' +
     '<button onclick="pagPreset(\'pendiente\')" title="Ocultar verdes, ver solo lo que falta" style="padding:4px 10px;border-radius:7px;border:1px solid #c0cbea;background:#eef2fb;color:#1a2e6e;cursor:pointer;font-size:11.5px;font-weight:600">Solo pendiente</button>' +
     '<button onclick="pagPreset(\'todas\')" title="Mostrar todos los colores, incluidas las pagadas" style="padding:4px 10px;border-radius:7px;border:1px solid #dde;background:#fff;color:#1a2e6e;cursor:pointer;font-size:11.5px">Ver todas</button>' +

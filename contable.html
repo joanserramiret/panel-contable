@@ -4741,7 +4741,9 @@ function renderPagos() {
       return '<tr style="border-top:1px solid var(--borde)' + (vencido ? ';background:#fdeeee' : '') + (p.estado === 'pagada' ? ';opacity:.55' : '') + '">' +
         '<td style="padding:5px 4px">' + pip + '</td>' +
         '<td style="padding:5px 4px;white-space:nowrap' + (vencido ? ';color:#c0392b;font-weight:700' : '') + '">' + venc + (vencido ? ' ⚠' : '') + '</td>' +
-        '<td>' + (p.proveedor || '—') + ' ' + metodo + (_esClasif(p) ? ' <span title="Carpeta genérica: pendiente de CLASIFICAR (Raquel/SisConta), no es deuda a un proveedor concreto" style="color:#374151;font-weight:700;font-size:10.5px;background:#eef0f3;padding:1px 5px;border-radius:4px">📂 clasificar</span>' : '') + (p.descuento ? ' <span title="Importe a pagar NETO tras descuentos/bonificación: ' + bkFmt(p.a_pagar) + ' (factura ' + bkFmt(p.total) + '). Ajústalo con ✎ si hace falta." style="color:#0e7490;font-weight:700;font-size:10.5px">💡 neto ' + bkFmt(p.a_pagar) + '</span>' : '') + '</td>' +
+        // 🪪 QUIÉN COBRA (proveedor_nombre: CIF del pie / nombre fiscal), no la carpeta. La carpeta solo dice si Raquel
+        //    lo ha puenteado a SisConta → sigue mostrándose como badge 📂 clasificar. Son dos ejes distintos.
+        '<td><b>' + esc(p.proveedor_nombre || p.proveedor || '—') + '</b> ' + metodo + (_esClasif(p) ? ' <span title="Sigue en carpeta genérica: Raquel aún no lo ha puenteado a SisConta. No es deuda a un proveedor concreto." style="color:#374151;font-weight:700;font-size:10.5px;background:#eef0f3;padding:1px 5px;border-radius:4px">📂 clasificar</span>' : '') + (p.descuento ? ' <span title="Importe a pagar NETO tras descuentos/bonificación: ' + bkFmt(p.a_pagar) + ' (factura ' + bkFmt(p.total) + '). Ajústalo con ✎ si hace falta." style="color:#0e7490;font-weight:700;font-size:10.5px">💡 neto ' + bkFmt(p.a_pagar) + '</span>' : '') + '</td>' +
         '<td style="color:var(--texto-suave)">' + (p.nombre || '') + '</td>' +
         '<td style="text-align:right;font-weight:700">' + impTxt + '</td>' +
         '<td style="white-space:nowrap">' +

@@ -576,6 +576,7 @@
           <div class="card-title" style="margin:0">📅 Calendario de pagos a proveedores</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button onclick="pagosAutocasar()" title="Busca el pago de cada factura pendiente entre los cargos del banco (incluidos los ya conciliados sin enlazar), por proveedor + importe, desempatando por vencimiento. Enlaza las que cuadran exactas → pasan a pagadas y bajan del rojo." style="padding:6px 12px;background:#6d28d9;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">⚖️ Casar automático</button>
+            <button onclick="auditarFacturas()" title="Guardarraíl de solo lectura: busca facturas duplicadas, totales inflados para cuadrar, dobles pagos y recibos con fecha imposible. No toca nada: cada aviso significa «abre el PDF»." style="padding:6px 12px;background:#0f766e;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🛡️ Auditar facturas</button>
             <button onclick="cargarPagos()" style="padding:6px 12px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12px">⟳ Actualizar</button>
           </div>
         </div>
@@ -4835,6 +4836,87 @@ async function pagosAutocasar() {
     }
     alert(txt + '\n\nEl rojo del calendario baja en consecuencia.');
     cargarPagos();
+  } catch (e) { alert('✗ ' + e.message); }
+}
+
+// 🛡️ GUARDARRAÍL DE FACTURAS [2026-07-08]. SOLO LECTURA: no toca nada, no aplica nada.
+// Nace del caso PISTA CERO MA124779: cuando un enlace no cuadra, el que está mal es el ENLACE, nunca el
+// importe de la factura. Cada aviso significa «abre el PDF», NO «esto es un fraude».
+function afCerrar() { const o = document.getElementById('af-ov'); if (o) o.remove(); }
+function afVerPDF(ruta) {
+  const anio = String(ruta).slice(0, 4);
+  const rel = String(ruta).slice(5);
+  window.open(BRIDGE_URL_C + '/proveedores/abrir?anio=' + anio + '&ruta=' + encodeURIComponent(rel), '_blank');
+}
+function afFila(txt, ruta) {
+  const ver = ruta ? ' <a href="#" onclick="afVerPDF(' + JSON.stringify(ruta).replace(/"/g, '&quot;') + ');return false" style="color:#0f766e;font-weight:700;text-decoration:none">👁 ver PDF</a>' : '';
+  return '<li style="margin:3px 0;line-height:1.45">' + txt + ver + '</li>';
+}
+function afBloque(titulo, color, explica, items) {
+  if (!items.length) return '';
+  return '<div style="margin:14px 0 0"><div style="font-weight:800;color:' + color + ';font-size:13.5px">' + titulo +
+    ' <span style="background:' + color + ';color:#fff;border-radius:10px;padding:1px 7px;font-size:11px">' + items.length + '</span></div>' +
+    '<div style="font-size:11.5px;color:var(--texto-suave);margin:2px 0 5px">' + explica + '</div>' +
+    '<ul style="margin:0;padding-left:18px;font-size:12.5px">' + items.join('') + '</ul></div>';
+}
+async function auditarFacturas() {
+  const anio = new Date().getFullYear();
+  try {
+    const d = await (await fetch(BRIDGE_URL_C + '/proveedores/auditar_facturas?anio=' + anio + '&nc=' + Date.now(),
+      { headers: { 'ngrok-skip-browser-warning': 'true' } })).json();
+    if (!d.ok) throw new Error(d.error || 'error');
+
+    const dup = (d.duplicados || []).map(g => afFila(
+      '<b>' + esc(g.proveedor) + '</b> · ' + fdC(g.fecha) + ' · ' + bkFmt(g.total) + ' — <b>' + g.n_copias + ' copias</b> (infla ' +
+      bkFmt(g.inflado) + ')<br><span style="color:var(--texto-suave);font-size:11.5px">' +
+      g.copias.map(c => esc(c.fichero) + (c.pagos.length ? ' <b style="color:#166534">←pago ' + c.pagos.join(',') + '</b>' : '')).join(' &nbsp;|&nbsp; ') +
+      '</span>'));
+
+    const inf = (d.total_inflado || []).map(x => afFila(
+      '<b>' + esc(x.proveedor) + '</b> · ' + esc(x.fichero) + ' — total <b>' + bkFmt(x.total_actual) + '</b>, pero tiene ' +
+      x.n_pagos + ' recibos de ' + bkFmt(x.total_probable) + ' (movs ' + x.movs.join(',') + ')', x.ruta));
+
+    const dob = (d.doble_pago || []).map(x => afFila(
+      '<b>' + esc(x.proveedor) + '</b> · ' + esc(x.fichero) + ' — ' + bkFmt(x.total) + ' con <b>' + x.n_pagos +
+      ' pagos enteros</b> (movs ' + x.movs.join(',') + ') · exceso ' + bkFmt(x.exceso), x.ruta));
+
+    const imp = (d.pago_imposible || []).map(x => afFila(
+      '<b>' + esc(x.proveedor) + '</b> · ' + esc(x.fichero) + ' — emitida ' + fdC(x.emitida) + ', pero el mov ' + x.mov +
+      ' es del ' + fdC(x.pago_fecha) + ' (<b>' + x.dias_antes + ' días antes</b>)', x.ruta));
+
+    const plz = (d.plazos || []).map(x => afFila(
+      esc(x.proveedor) + ' · ' + esc(x.fichero) + ' — ' + x.n_pagos + ' plazos de ' + bkFmt(x.importe_cada_pago) + ' · normal'));
+
+    const limpio = '<div style="padding:22px;text-align:center;color:#166534;font-weight:700">✅ Sin avisos. ' +
+      d.n_facturas + ' facturas de ' + anio + ' revisadas.</div>';
+
+    const cuerpo = (d.n_avisos === 0 ? limpio : '') +
+      afBloque('📄 Duplicados', '#b45309',
+        'El mismo PDF descargado 2-3 veces. Conserva SIEMPRE la copia que tiene el recibo enlazado.', dup) +
+      afBloque('⛔ Total inflado', '#b91c1c',
+        'El total es N× el de cada recibo, y los recibos no son plazos creíbles. Alguien dobló el importe para que cuadraran enlaces mal puestos.', inf) +
+      afBloque('💸 Doble pago', '#b91c1c',
+        'Dos o más recibos que cubren el total ENTERO cada uno. Un pago partido suma el total y no sale aquí.', dob) +
+      afBloque('📅 Pago imposible', '#b91c1c',
+        'Un recibo con fecha anterior a la factura que dice pagar. Un recibo de enero no paga una factura de junio.', imp) +
+      afBloque('🟢 Pagos a plazos', '#166534',
+        'Informativo: tienen la misma forma que un total inflado, pero van después de la factura y en meses seguidos. Son legítimos, NO los toques.', plz);
+
+    const ov = document.createElement('div');
+    ov.id = 'af-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(6,12,30,.62);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+    ov.onclick = e => { if (e.target === ov) afCerrar(); };
+    ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:900px;width:100%;max-height:88vh;overflow:auto;padding:20px 22px;box-shadow:0 18px 50px rgba(0,0,0,.35)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">' +
+      '<div><div style="font-size:17px;font-weight:800">🛡️ Auditoría de facturas · ' + anio + '</div>' +
+      '<div style="font-size:12px;color:var(--texto-suave);margin-top:3px">' + d.n_facturas + ' facturas · <b>' + d.n_avisos +
+      ' avisos</b>' + (d.inflado_por_duplicados ? ' · duplicados inflan ' + bkFmt(d.inflado_por_duplicados) : '') + '</div></div>' +
+      '<button onclick="afCerrar()" style="background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;padding:6px 12px;cursor:pointer">Cerrar</button></div>' +
+      '<div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:9px;padding:9px 12px;margin-top:12px;font-size:12px;color:#115e59">' +
+      '<b>Esto no toca nada.</b> Ningún aviso es un veredicto: todos significan «abre el PDF». El documento manda sobre el enlace, ' +
+      'y el banco manda sobre el documento cuando se trata de si el dinero se movió.</div>' +
+      cuerpo + '</div>';
+    document.body.appendChild(ov);
   } catch (e) { alert('✗ ' + e.message); }
 }
 

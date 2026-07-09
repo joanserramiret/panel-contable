@@ -72,8 +72,10 @@
     <button id="tRec" onclick="switchVista('rec')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:var(--azul);color:#fff">📥 Recibidas</button>
     <button id="tIva" onclick="switchVista('iva')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:#fff;color:#334155">🧾 IVA · 303</button>
     <button id="tCon" onclick="switchVista('con')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:#fff;color:#334155">🔗 Conector SisConta</button>
+    <button id="tTar" onclick="switchVista('tar')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:#fff;color:#334155">💳 Extracto tarjeta</button>
   </div>
   <div id="vConector" style="display:none"><div class="muted">Cargando asientos…</div></div>
+  <div id="vTarjeta" style="display:none"><div class="muted">Cargando extracto…</div></div>
   <div id="vEmitidas" style="display:none">
     <div class="bar">
       <label>Mes <select id="selMesE"></select></label>
@@ -129,15 +131,53 @@ function setOrden(o){ ORD=o; $('#ordProv').className='btn'+(o==='prov'?' on':'')
 let _ivaCargado=false, _emiCargado=false, _iva303=null;
 function _tabBtn(id,on){ const b=$(id); if(b){ b.style.background=on?'var(--azul)':'#fff'; b.style.color=on?'#fff':'#334155'; } }
 let _conCargado=false;
+let _tarCargado=false;
 function switchVista(v){
   $('#vEmitidas').style.display = v==='emi'?'':'none';
   $('#vRepaso').style.display   = v==='rec'?'':'none';
   $('#vIva').style.display      = v==='iva'?'':'none';
   $('#vConector').style.display = v==='con'?'':'none';
-  _tabBtn('#tEmi', v==='emi'); _tabBtn('#tRec', v==='rec'); _tabBtn('#tIva', v==='iva'); _tabBtn('#tCon', v==='con');
+  $('#vTarjeta').style.display  = v==='tar'?'':'none';
+  _tabBtn('#tEmi', v==='emi'); _tabBtn('#tRec', v==='rec'); _tabBtn('#tIva', v==='iva'); _tabBtn('#tCon', v==='con'); _tabBtn('#tTar', v==='tar');
   if(v==='emi' && !_emiCargado){ _emiCargado=true; cargarEmi(); }
   if(v==='iva' && !_ivaCargado){ _ivaCargado=true; cargarIVA(); }
   if(v==='con' && !_conCargado){ _conCargado=true; cargarConector(); }
+  if(v==='tar' && !_tarCargado){ _tarCargado=true; cargarTarjeta(); }
+}
+// ── EXTRACTO TARJETA DE EMPRESA (MC Sabadell) ──
+async function cargarTarjeta(){
+  try{
+    const j=await fetch(API+'/banco/tarjeta_extractos?nc='+Date.now()).then(r=>r.json());
+    const exs=(j.extractos||[]), det=(j.detalle||{});
+    if(!exs.length){ $('#vTarjeta').innerHTML='<div class="muted">Todavía no hay ningún extracto de tarjeta cargado. Joan los sube por el <b>Buzón</b> del panel (el .xls de la MC Empresa).</div>'; return; }
+    let h='<div style="font-size:13px;color:#64748b;margin:2px 0 12px">Extracto de la tarjeta de crédito de <b>empresa</b> (MC Sabadell). Aquí ves los cargos de cada corte para saber qué se pagó con ella.</div>';
+    h+='<div class="bar"><label>Extracto <select id="selTar" onchange="renderTarjeta()">';
+    exs.forEach((e,i)=>{ h+='<option value="'+esc(e.clave)+'">'+esc(e.fecha_corte||e.clave)+' · '+esc(e.tarjeta||'')+' · '+eur(e.total_operaciones||0)+'</option>'; });
+    h+='</select></label></div><div id="tarDet"></div>';
+    $('#vTarjeta').innerHTML=h;
+    window._tarDet=det;
+    renderTarjeta();
+  }catch(e){ $('#vTarjeta').innerHTML='<div class="muted">No se pudo cargar el extracto: '+esc(e.message)+'</div>'; }
+}
+function renderTarjeta(){
+  const det=window._tarDet||{}; const k=$('#selTar')?$('#selTar').value:Object.keys(det)[0];
+  const e=det[k]; if(!e){ $('#tarDet').innerHTML=''; return; }
+  const ms=(e.movimientos||[]);
+  let h='<div class="card" style="border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:8px 0;background:#fff">'
+    +'<div style="display:flex;gap:20px;flex-wrap:wrap;font-size:14px">'
+    +'<div><b>Tarjeta:</b> '+esc(e.tarjeta||'—')+'</div>'
+    +'<div><b>Titular:</b> '+esc(e.titular||'—')+'</div>'
+    +'<div><b>Corte:</b> '+esc(e.fecha_corte||'—')+'</div>'
+    +'<div><b>A liquidar:</b> <span style="font-weight:800;color:#b91c1c">'+eur(e.importe_liquidar||0)+'</span></div>'
+    +'</div></div>';
+  h+='<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:6px"><thead><tr style="text-align:right;color:#64748b;border-bottom:2px solid var(--line)">'
+    +'<th style="text-align:left;padding:6px 8px">Fecha</th><th style="text-align:left">Concepto</th><th style="text-align:left">Localidad</th><th style="padding:6px 8px">Importe</th></tr></thead><tbody>';
+  ms.forEach(m=>{ h+='<tr style="border-bottom:1px solid #eef2f7"><td style="padding:6px 8px">'+esc(m.fecha||'')+'</td>'
+    +'<td style="padding:6px 8px">'+esc(m.concepto||'')+'</td><td style="padding:6px 8px;color:#64748b">'+esc(m.localidad||'')+'</td>'
+    +'<td style="padding:6px 8px;text-align:right;font-weight:700">'+eur(m.importe||0)+'</td></tr>'; });
+  if(!ms.length) h+='<tr><td colspan="4" style="padding:10px 8px;color:#94a3b8">Este extracto no trae cargos detallados.</td></tr>';
+  h+='</tbody></table>';
+  $('#tarDet').innerHTML=h;
 }
 // ── CONECTOR SISCONTA ──
 let CON=[], MESC='';
@@ -260,6 +300,15 @@ function renderIVA(j){
   h+='</div>';
   $('#vIva').innerHTML=h;
 }
+// 💳 Badge del método de pago bajo cada factura (lo calcula el backend cruzando banco + pago_externo)
+const _MET_COL={ giro:['#e0f2fe','#075985'], transferencia:['#ede9fe','#5b21b6'], efectivo:['#dcfce7','#166534'],
+  tarjeta_empresa:['#fef3c7','#92400e'], tarjeta_personal:['#fee2e2','#991b1b'], banco:['#f1f5f9','#475569'], sin_pago:['#f8fafc','#94a3b8'] };
+function metBadge(x){
+  const m=x.metodo_pago||'sin_pago'; const et=x.metodo_etiqueta||'⏳ Sin pago localizado';
+  const c=_MET_COL[m]||_MET_COL.sin_pago;
+  const tip=(x.metodo_detalle?(' — '+x.metodo_detalle):'');
+  return '<span class="metbadge" title="'+esc(et+tip)+'" style="display:inline-block;margin-top:4px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:'+c[0]+';color:'+c[1]+'">'+esc(et)+'</span>';
+}
 function render(){
   let fs = DATA.filter(x=>x.mes_carpeta===MES);
   const nV = fs.filter(x=>x.contabilizada).length, nR = fs.length-nV;
@@ -278,7 +327,7 @@ function render(){
            +'<span class="act ok" title="Marcar contabilizada (mover a la carpeta del proveedor)" onclick="marcarCont('+i+')">✓</span>'
            +'<span class="act no" title="No es una factura (mover a PARA BORRAR)" onclick="noFactura('+i+')">🚫</span>';
     html+='<div class="row '+(x.contabilizada?'v':'r')+'">'
-      +'<div><div class="prov">'+esc(x.proveedor||'—')+'</div><div class="fac">'+esc(x.nombre||'')+'</div></div>'
+      +'<div><div class="prov">'+esc(x.proveedor||'—')+'</div><div class="fac">'+esc(x.nombre||'')+'</div>'+metBadge(x)+'</div>'
       +'<div class="fecha">'+esc(x.fecha||'')+'</div>'
       +'<div class="imp">'+eur(x.total)+'</div>'
       +'<div class="acc">'+acc+'</div>'

@@ -328,8 +328,9 @@ function render(){
     if(ORD==='prov'){ const p=(x.proveedor||'—').toUpperCase(); if(p!==lastProv){ html+='<div class="provgrp">'+esc(x.proveedor||'—')+'</div>'; lastProv=p; } }
     const rel = (x.ruta||'').split('/').slice(1).join('/');
     const ver='<a class="ver" href="'+API+'/proveedores/abrir?anio='+encodeURIComponent(x.anio)+'&ruta='+encodeURIComponent(rel)+'" target="_blank" title="Ver factura">👁</a>';
-    const acc = x.contabilizada ? ver
-      : ver+'<span class="act" style="background:#e0e7ff" title="Corregir el nombre del proveedor (se recuerda)" onclick="corregirNombre('+i+')">✏️</span>'
+    const edImp='<span class="act" style="background:#fef3c7" title="Corregir el importe (si el OCR lo cogió mal). Recalcula base e IVA solo." onclick="corregirImporte('+i+')">💶</span>';
+    const acc = x.contabilizada ? ver+edImp
+      : ver+edImp+'<span class="act" style="background:#e0e7ff" title="Corregir el nombre del proveedor (se recuerda)" onclick="corregirNombre('+i+')">✏️</span>'
            +'<span class="act ok" title="Marcar contabilizada (mover a la carpeta del proveedor)" onclick="marcarCont('+i+')">✓</span>'
            +'<span class="act no" title="No es una factura (mover a PARA BORRAR)" onclick="noFactura('+i+')">🚫</span>';
     html+='<div class="row '+(x.contabilizada?'v':'r')+'">'
@@ -340,6 +341,24 @@ function render(){
       +'</div>';
   });
   $('#lista').innerHTML=html;
+}
+async function corregirImporte(i){
+  const x=(window._fsActual||[])[i]; if(!x) return;
+  const actual=(Number(x.total)||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const s=prompt('💶 Importe TOTAL correcto de la factura (con IVA), por si el OCR lo cogió mal.\n\nProveedor: '+(x.proveedor||'')+'\nFichero: '+(x.nombre||'')+'\n\nEl panel recalcula la base y el IVA solo. Importe actual: '+actual+' €', actual);
+  if(s===null) return;
+  const t=parseFloat(String(s).replace(/\s/g,'').replace(/\./g,'').replace(',','.'));
+  if(!isFinite(t)||t<=0){ alert('Pon un importe válido, por ejemplo 115,63'); return; }
+  try{
+    let r=await fetch(API+'/proveedores/corregir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruta:x.ruta, total:t})}).then(r=>r.json());
+    if(r&&r.bloqueado){
+      if(confirm('⚠️ '+(r.mensaje||'El panel ha bloqueado el cambio (parece que el importe = suma de varios recibos).')+'\n\n¿Forzar el cambio igualmente?')){
+        r=await fetch(API+'/proveedores/corregir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruta:x.ruta, total:t, forzar:true})}).then(r=>r.json());
+      } else return;
+    }
+    if(r&&r.ok){ x.total=t; render(); }
+    else alert('Error: '+((r&&r.error)||'no se pudo corregir'));
+  }catch(e){ alert('Error: '+e.message); }
 }
 async function marcarCont(i){
   const x=(window._fsActual||[])[i]; if(!x) return;

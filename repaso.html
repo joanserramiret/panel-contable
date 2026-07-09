@@ -20,9 +20,9 @@
   .chip{ padding:4px 10px; border-radius:20px; margin-left:6px; }
   .chip.v{ background:var(--verde); color:#146c43; border:1px solid var(--verde-bd); }
   .chip.r{ background:var(--rojo); color:#b91c1c; border:1px solid var(--rojo-bd); }
-  .row{ display:grid; grid-template-columns:1fr 118px 84px 124px; gap:8px; align-items:center; padding:11px 12px; border-radius:10px; margin-bottom:6px; border-left:6px solid transparent; }
-  .acc{ display:flex; gap:3px; justify-content:flex-end; align-items:center; }
-  .act{ cursor:pointer; font-size:16px; padding:2px 5px; border-radius:6px; user-select:none; line-height:1; }
+  .row{ display:grid; grid-template-columns:1fr 96px 92px 172px; gap:8px; align-items:center; padding:11px 12px; border-radius:10px; margin-bottom:6px; border-left:6px solid transparent; }
+  .acc{ display:flex; gap:2px; justify-content:flex-end; align-items:center; flex-wrap:nowrap; white-space:nowrap; }
+  .act{ cursor:pointer; font-size:15px; padding:2px 4px; border-radius:6px; user-select:none; line-height:1; }
   .act.ok{ background:#c9f2d5; } .act.ok:hover{ background:#a7e8bb; }
   .act.no{ background:#fbd5d5; } .act.no:hover{ background:#f5b5b5; }
   .row.v{ background:var(--verde); border-left-color:var(--verde-bd); }
@@ -34,7 +34,7 @@
   .ver{ text-align:center; cursor:pointer; font-size:18px; text-decoration:none; }
   .provgrp{ font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#64748b; margin:14px 0 4px; font-weight:700; }
   .muted{ color:#94a3b8; padding:20px; text-align:center; }
-  @media(max-width:560px){ .row{ grid-template-columns:1fr 64px 94px; } .fecha{ display:none; } }
+  @media(max-width:620px){ .row{ grid-template-columns:1fr 84px 168px; } .fecha{ display:none; } .act{ padding:2px 3px; } }
   /* login */
   #lg{ position:fixed; inset:0; background:linear-gradient(135deg,#0f1f5c,#1a2e6e); display:flex; align-items:center; justify-content:center; z-index:100; }
   #lg .card{ background:#fff; border-radius:18px; padding:36px; width:360px; max-width:92%; text-align:center; }

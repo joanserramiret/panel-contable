@@ -4870,6 +4870,10 @@ async function auditarFacturas() {
       { headers: { 'ngrok-skip-browser-warning': 'true' } })).json();
     if (!d.ok) throw new Error(d.error || 'error');
 
+    const pos = (d.posibles_duplicados || []).map(g => afFila(
+      '<b>' + esc(g.proveedor) + '</b> · ' + bkFmt(g.total) + ' — <b>' + g.n_copias + ' con el mismo importe</b><br><span style="color:var(--texto-suave);font-size:11.5px">' +
+      g.copias.map(c => esc(c.fichero) + ' <span style="color:#999">(' + esc(c.fecha || 'sin fecha') + ')</span>').join(' &nbsp;|&nbsp; ') +
+      '</span>'));
     const dup = (d.duplicados || []).map(g => afFila(
       '<b>' + esc(g.proveedor) + '</b> · ' + fdC(g.fecha) + ' · ' + bkFmt(g.total) + ' — <b>' + g.n_copias + ' copias</b> (infla ' +
       bkFmt(g.inflado) + ')<br><span style="color:var(--texto-suave);font-size:11.5px">' +
@@ -4896,7 +4900,9 @@ async function auditarFacturas() {
 
     const cuerpo = (d.n_avisos === 0 ? limpio : '') +
       afBloque('📄 Duplicados', '#b45309',
-        'El mismo PDF descargado 2-3 veces. Conserva SIEMPRE la copia que tiene el recibo enlazado.', dup) +
+        'Mismo proveedor + mismo importe + MISMA fecha = la misma factura entrada dos veces. Conserva la copia que tiene el recibo enlazado.', dup) +
+      afBloque('🔎 Posibles duplicados · REVISAR', '#7c3aed',
+        'Mismo proveedor y mismo importe, pero a alguna le falta la fecha. ⚠️ El importe NO basta (un proveedor puede facturar lo mismo cada mes). Abre los dos PDF y compara el NÚMERO de factura impreso: mismo número = duplicado (quita una); distinto número = son dos facturas (déjalas).', pos) +
       afBloque('⛔ Total inflado', '#b91c1c',
         'El total es N× el de cada recibo, y los recibos no son plazos creíbles. Alguien dobló el importe para que cuadraran enlaces mal puestos.', inf) +
       afBloque('💸 Doble pago', '#b91c1c',

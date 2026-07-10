@@ -253,11 +253,12 @@ function renderEmi(){
   let html='';
   fs.forEach(f=>{
     const fk=(f.serie||'')+'-'+f.numero, done=!!f.contabilizada;
+    const ver='<a class="ver" href="'+API+'/contabilidad/emitida_ver?serie='+encodeURIComponent(f.serie||'')+'&numero='+encodeURIComponent(f.numero)+'" target="_blank" title="Ver factura">👁</a>';
     html+='<div class="row '+(done?'v':'r')+'">'
       +'<div><div class="prov">'+esc(f.cliente||'—')+'</div><div class="fac">'+esc(fk)+' · base '+eur(f.base)+' · IVA '+eur(f.cuota)+'</div></div>'
       +'<div class="fecha">'+esc(f.fecha||'')+'</div>'
       +'<div class="imp">'+eur(f.total)+'</div>'
-      +'<div class="acc"><span class="act '+(done?'ok':'no')+'" title="Marcar contabilizada" onclick="marcarEmitida(\''+esc(fk)+'\','+(!done)+')">'+(done?'✅':'⬜')+'</span></div>'
+      +'<div class="acc">'+ver+'<span class="act '+(done?'ok':'no')+'" title="Marcar contabilizada" onclick="marcarEmitida(\''+esc(fk)+'\','+(!done)+')">'+(done?'✅':'⬜')+'</span></div>'
       +'</div>';
   });
   $('#listaE').innerHTML=html;

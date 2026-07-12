@@ -4483,9 +4483,9 @@ function _calVencHoyISO() { const t = new Date(); return t.getFullYear() + '-' +
 function _calVencItems(pagosArr) {
   const hoy = _calVencHoyISO();
   return (pagosArr || []).filter(p => p.estado !== 'pagada' && p.estado !== 'externo' && p.vencimiento)
-    // Atrasado + domiciliado = ya cobrado por el banco (los domiciliados SE PAGAN) → no ensucia el calendario.
-    // Lo atrasado NO domiciliado (acción manual pendiente) SÍ se mantiene.
-    .filter(p => !(((p.vencimiento || '').slice(0, 10) < hoy) && p.domiciliado))
+    // ⭐ Los días YA VENCIDOS no salen en el calendario [Joan 2026-07-12]: el calendario es "lo que viene".
+    //   (Lo atrasado sin pagar sigue en la pestaña Pagos como deuda; aquí solo se muestra de hoy en adelante.)
+    .filter(p => (p.vencimiento || '').slice(0, 10) >= hoy)
     .map(p => ({ venc: (p.vencimiento || '').slice(0, 10), prov: (p.proveedor_nombre || p.proveedor || '—'),
                  imp: (p.pendiente != null ? p.pendiente : (p.a_pagar || p.total || 0)),
                  dom: !!p.domiciliado, est: (p.like || p.cal) }));

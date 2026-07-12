@@ -2328,7 +2328,7 @@ function renderTablaFacturas() {
       '<td><div style="display:flex;gap:6px">' +
         (!esPagada && !anuladaT && t > 0 ? '<button onclick="conciliarDesdeFactura(' + i + ')" title="Buscar en el banco el cobro de esta factura y conciliarla" style="padding:5px 10px;background:#e87e1a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700">🔗</button>' : '') +
         '<button onclick="previsualizarFacturaC(' + i + ')" style="padding:5px 10px;background:var(--fondo);border:1.5px solid var(--borde);border-radius:5px;cursor:pointer;font-size:12px">🖨 Ver</button>' +
-        (t > 0 ? '<button onclick="enviarFacturaC(' + i + ')" title="Enviar la factura por email al cliente (PDF adjunto)" style="padding:5px 10px;background:#0F6E56;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:12px">✉️</button>' : '') +
+        (t > 0 ? '<button onclick="enviarEmitidaIdx(' + i + ')" title="Enviar la factura por email o WhatsApp (PDF adjunto)" style="padding:5px 10px;background:#0F6E56;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:12px">✉️</button>' : '') +
         '<button onclick="descargarFactura(' + i + ')" style="padding:5px 10px;background:var(--azul);color:white;border:none;border-radius:5px;cursor:pointer;font-size:12px">⬇</button>' +
       '</div></td>' +
     '</tr>';
@@ -6292,7 +6292,7 @@ async function plCompose(cli, asunto, cuerpo, cif, titulo){
     '<input id="pl-comp-asunto" value="'+asunto.replace(/"/g,'&quot;')+'" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;margin:3px 0 8px;font-size:13px">'+
     '<label style="font-size:12px;color:#666">Mensaje (editable):</label>'+
     '<textarea id="pl-comp-cuerpo" style="width:100%;height:210px;padding:8px;border:1px solid #ddd;border-radius:8px;margin:3px 0 6px;font-size:12.5px;font-family:inherit"></textarea>'+
-    '<label style="font-size:12.5px;display:flex;align-items:center;gap:6px;margin:2px 0 8px;cursor:pointer"><input type="checkbox" id="pl-comp-adj" checked> 📎 Adjuntar las '+((window._plComposeFacs||[]).length)+' factura(s) en PDF</label>'+
+    '<label style="font-size:12.5px;display:flex;align-items:center;gap:6px;margin:2px 0 8px;cursor:pointer"><input type="checkbox" id="pl-comp-adj" checked> 📎 Adjuntar las '+((window._plComposeFacs||[]).length+(window._plComposeBlobs||[]).length)+' factura(s) en PDF</label>'+
     '<div id="pl-comp-res" style="font-size:12.5px;margin-bottom:8px"></div>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">'+
     '<button onclick="plWhatsapp(\''+tel.replace(/[^0-9+]/g,'')+'\')" title="Abre WhatsApp con el mensaje listo'+(tel?' · tel '+tel:' (te pedirá el número)')+'" style="margin-right:auto;padding:7px 16px;border:none;border-radius:8px;background:#25D366;color:#fff;cursor:pointer;font-weight:700;font-size:13px">📱 WhatsApp</button>'+
@@ -6323,6 +6323,8 @@ async function plWhatsapp(tel){
       }
       if(res) res.innerHTML='';
     }
+    // 📎 PDFs ya cargados (recibidas): se adjuntan tal cual
+    (window._plComposeBlobs||[]).forEach(function(bb){ try{ files.push(new File([bb.blob], bb.nombre, {type:'application/pdf'})); }catch(e){} });
   }catch(e){ if(res) res.innerHTML=''; }
   // MÓVIL: compartir nativo → WhatsApp con el PDF adjunto
   if(files.length && navigator.canShare && navigator.canShare({files:files})){
@@ -6356,6 +6358,9 @@ async function plEnviar(cli){
         if(!d) continue;
         try{ var bl=await generarPDFBlobC(d); var b64=await blobABase64C(bl); adjuntos.push({nombre:d.Serie+'-'+d.Number+'.pdf', base64:b64}); }catch(e){}
       }
+      // 📎 PDFs ya cargados (facturas RECIBIDAS: el PDF del proveedor bajado del Dropbox)
+      var _bl=window._plComposeBlobs||[];
+      for(var bi=0; bi<_bl.length; bi++){ try{ adjuntos.push({nombre:_bl[bi].nombre, base64: await blobABase64C(_bl[bi].blob)}); }catch(e){} }
     }
     btn.textContent='Enviando…';
     var j=await fetch(BRIDGE_URL_C+'/correo/enviar',{method:'POST',headers:HP,body:JSON.stringify({de:'info@js-tech.es',para:para,asunto:asunto,cuerpo:cuerpo,adjuntos:adjuntos})}).then(function(r){return r.json();});
@@ -6364,6 +6369,31 @@ async function plEnviar(cli){
       setTimeout(function(){ var ov=document.getElementById('pl-comp-ov'); if(ov) ov.remove(); },1300);
     } else { res.innerHTML='<span style="color:#dc2626">Error: '+(j.error||'?')+'</span>'; btn.disabled=false; btn.textContent='📨 Enviar'; }
   }catch(e){ res.innerHTML='<span style="color:#dc2626">'+e.message+'</span>'; btn.disabled=false; btn.textContent='📨 Enviar'; }
+}
+
+// ✉️/📱 ENVIAR UNA FACTURA (emitida o recibida) por email o WhatsApp — reusa el compose del reclamador.
+// Emitida: se genera el PDF desde Ágora. Recibida: se baja el PDF del Dropbox y se adjunta igual.
+function enviarEmitidaIdx(i){
+  var f=(typeof facturasFiltC!=='undefined' && facturasFiltC ? facturasFiltC : todasFacturasC)[i]; if(!f) return;
+  var cliente=f.Customer?(f.Customer.BusinessName||f.Customer.FiscalName||''):'';
+  var cif=f.Customer?(f.Customer.Cif||''):'';
+  enviarEmitida(f.Serie, f.Number, cliente, cif);
+}
+function enviarEmitida(serie, numero, cliente, cif){
+  window._plComposeFacs=[{serie:serie, numero:numero}];
+  window._plComposeBlobs=[];
+  var ref=serie+'-'+numero;
+  var cuerpo='Hola,\n\nTe adjuntamos la factura '+ref+'.\n\nUn saludo,\nJS Technology Menorca SL';
+  plCompose(cliente||'', 'Factura '+ref+' · JS Technology Menorca', cuerpo, cif||'', '✉️ Enviar factura '+ref+' a ');
+}
+async function enviarRecibida(url, nombre, proveedor){
+  window._plComposeFacs=[]; window._plComposeBlobs=[];
+  try{
+    var blob=await fetch(url,{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.blob();});
+    window._plComposeBlobs=[{nombre:(nombre||'factura.pdf'), blob:blob}];
+  }catch(e){ alert('No pude cargar el PDF de la factura.'); return; }
+  var cuerpo='Hola,\n\nTe adjuntamos la factura de '+(proveedor||'proveedor')+' ('+(nombre||'')+').\n\nUn saludo,\nJS Technology Menorca SL';
+  plCompose(proveedor||'', 'Factura '+(proveedor||'')+' · '+(nombre||''), cuerpo, '', '✉️ Enviar factura de '+(proveedor||'')+' a ');
 }
 
 // Init date inputs on load
@@ -9073,6 +9103,7 @@ function pvRender() {
         '<td style="text-align:right;white-space:nowrap">' +
           '<button onclick="pvCambiarTipo(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + (dat.tipo || 'factura') + '\')" title="Corregir el tipo (factura/albarán/aviso/otro) — tu corrección manda sobre el clasificador" style="padding:3px 8px;background:#fff3e0;border:1px solid #e8b27a;border-radius:6px;font-size:11px;cursor:pointer;margin-right:4px">' + (dat.tipo === 'albaran' ? '📋' : dat.tipo === 'aviso' ? '🔔' : dat.tipo === 'otro' ? '📦' : (!dat.tipo || dat.tipo === 'factura') ? '🧾' : '🏷') + (dat.tipo_manual ? '✓' : '') + '</button>' +
           '<a href="' + url + '" target="_blank" style="padding:3px 10px;background:#1a2e6e;color:#fff;border-radius:6px;font-size:11px;font-weight:700;text-decoration:none">👁 Ver</a>' +
+          '<button onclick="enviarRecibida(\'' + url.replace(/'/g, "\\'") + '\',\'' + (a.nombre || '').replace(/'/g, "\\'") + '\',\'' + (dat.proveedor_nombre || a.proveedor || '').replace(/'/g, "\\'") + '\')" title="Enviar por email o WhatsApp" style="padding:3px 9px;background:#e8f7ef;border:1px solid #a7d7b8;color:#0F6E56;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">✉️</button>' +
           '<button onclick="pvSustituir(\'' + ruta.replace(/'/g, "\\'") + '\')" title="Sustituir por la versión rectificada: el original va a PARA BORRAR y la nueva ocupa su lugar" style="padding:3px 8px;background:#fff3e0;border:1px solid #e8b27a;color:#b45309;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">🔄</button>' +
           '<button onclick="pvBorrar(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + a.nombre.replace(/'/g, "\\'") + '\')" title="Mover a PARA BORRAR (se cuela y no debería estar)" style="padding:3px 8px;background:#fde8e8;border:1px solid #e0b0b0;color:#c0392b;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">🗑</button>' +
           '<button onclick="marcarNoFactura(\'' + encodeURIComponent(ruta) + '\',\'pvCargar\')" title="No es una factura (contrato, ticket, de otro titular…) → sale del cómputo. Te pregunto el motivo para entrenar el filtro." style="padding:3px 8px;background:#f3e8ff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">🚫</button></td></tr>';

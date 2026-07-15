@@ -7662,7 +7662,8 @@ async function bkRemesas() {
           (esPropuesta ? '<button onclick="remesaEditarCuadre(' + m.id + ')" title="Editar el cuadre manual: añadir o quitar facturas" style="padding:4px 10px;background:#fff3e0;border:1px solid #e8b27a;color:#b45309;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">✏ Editar cuadre</button>' : '') +
           '<button onclick="remesaDeshacer(' + m.id + ')" title="Deshacer este desglose: el movimiento vuelve a pendientes y las facturas quedan libres" style="padding:4px 10px;background:#fde8e8;border:1px solid #e0b0b0;color:#c0392b;border-radius:6px;font-size:11px;cursor:pointer">✕ Deshacer desglose</button></div>'
         : '<div style="font-size:12px;color:var(--texto-suave);margin-top:6px">Sin desglosar — súbeme el documento del banco con 📎 (PDF/TXT de Bankinter o Sabadell, o una foto/imagen del justificante: la leo con OCR). ' +
-          '<button onclick="remesaProponerCuadre(' + m.id + ')" style="margin-left:8px;padding:4px 10px;background:#fff3e0;border:1.5px solid #e8b27a;color:#b45309;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🧮 Proponer cuadre</button>' +
+          '<button onclick="remesaCuadrarTxt(' + m.id + ')" title="Lee el fichero .txt REAL de la remesa y le asigna SUS facturas exactas (cruzando con el abono del N43, y marca devuelta la que botó). NO adivina por importe." style="margin-left:8px;padding:4px 10px;background:#1a2e6e;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer">🧾 Cuadrar por fichero (.txt)</button>' +
+          '<button onclick="remesaProponerCuadre(' + m.id + ')" title="⚠ Adivina por importe (suma de subconjuntos): puede colar facturas equivocadas cuando se repiten importes. Usa mejor «Cuadrar por fichero»." style="margin-left:6px;padding:4px 10px;background:#fff3e0;border:1.5px solid #e8b27a;color:#b45309;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🧮 Proponer cuadre (a ojo)</button>' +
           '<button onclick="remesaAsignarManual(' + m.id + ',-1)" title="Añadir factura(s) a mano del listado, empezando el desglose" style="margin-left:6px;padding:4px 10px;background:#1a7a3f;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">➕ Añadir facturas</button>' +
           '<button onclick="remesaCerrarSinDesglose(' + m.id + ',' + m.importe + ')" style="margin-left:6px;padding:4px 10px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:6px;font-size:11px;cursor:pointer">✓ Cerrar sin desglose</button>' +
           ' <span style="font-size:11px">(🧮 = facturas cobradas por Recibo Bancario en Ágora, fechas cercanas y suma exacta — tú confirmas viendo los nombres)</span></div>';
@@ -7958,6 +7959,38 @@ async function remesasImportarPDF(files) {
 
 // Propone un cuadre PLAUSIBLE de la remesa: facturas con pago "Recibo Bancario" en Ágora,
 // fecha en los 60 días previos al abono y suma exacta. Tú lo revisas y confirmas — nada automático.
+// ⭐ CRUCE POR FICHERO — lee el .txt REAL de la remesa y le asigna SUS facturas exactas (cruzando con el
+// abono del N43 y marcando devuelta la que botó). NO adivina por importe (a diferencia de remesaProponerCuadre).
+async function remesaCuadrarTxt(id) {
+  const m = (bkRemesasDatos.remesas || []).find(x => x.id === id);
+  if (!m) { alert('No encuentro la remesa — recarga con ⟳.'); return; }
+  let r;
+  try {
+    r = await fetch(BRIDGE_URL_C + '/remesa/cuadrar_txt?mov=' + id, { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(x => x.json());
+  } catch (e) { alert('Error: ' + e.message); return; }
+  if (!r.ok && !r.facturas) { alert('No pude cuadrar por fichero:\n\n' + (r.error || 'error') + '\n\n(¿Has subido el .txt de esta remesa por el Buzón?)'); return; }
+  const dev = r.devueltas || [];
+  let txt = '🧾 CUADRE POR FICHERO — ' + (r.fichero || '') + '\n' +
+    'Banco: ' + (r.banco || '') + '   Abono: ' + bkFmt(r.abono_importe) + '   Bruto del .txt: ' + bkFmt(r.bruto_txt) + '\n' +
+    (r.cuadra ? '✓ cuadra al céntimo\n' : '⚠ NO cuadra (' + bkFmt(r.suma_desglose) + ' vs abono ' + bkFmt(r.abono_importe) + ')\n') +
+    '\n' + r.n_facturas + ' facturas del fichero:\n' +
+    (r.facturas || []).map(f => (f.estado === 'devuelta' ? '  ↩ DEVUELTA  ' : '  ✓ cobrada  ') + f.factura + '  ' + (f.cliente || '') + '  ' + bkFmt(f.importe)).join('\n') +
+    (dev.length ? '\n\nBotaron (' + dev.length + '): ' + dev.map(d => d.factura + ' ' + bkFmt(d.importe)).join(', ') : '') +
+    ((r.faltan_en_agora && r.faltan_en_agora.length) ? '\n\n⚠ No encontré en Ágora: F-' + r.faltan_en_agora.join(', F-') : '') +
+    '\n\n¿Aplico este cuadre? (cobradas + las devueltas, EXACTO del fichero — nada a ojo)';
+  if (!r.cuadra) { alert(txt.replace(/\n\n¿Aplico.*$/, '') + '\n\n⛔ No cuadra con el abono: revísalo, no aplico nada.'); return; }
+  if (!confirm(txt)) return;
+  let r2;
+  try {
+    r2 = await fetch(BRIDGE_URL_C + '/remesa/cuadrar_txt?mov=' + id + '&confirmar=1',
+      { method: 'POST', headers: { 'ngrok-skip-browser-warning': 'true', 'Content-Type': 'application/json' }, body: JSON.stringify({ mov: id, confirmar: 1 }) }).then(x => x.json());
+  } catch (e) { alert('Error al aplicar: ' + e.message); return; }
+  if (r2.ok && r2.aplicado) {
+    alert('✅ Remesa cuadrada por fichero: ' + r2.n_facturas + ' facturas asignadas' + ((r2.devueltas || []).length ? ' (' + r2.devueltas.length + ' devuelta/s)' : '') + '.');
+    bkRemesas();
+  } else { alert('No se aplicó: ' + (r2.error || 'error')); }
+}
+
 async function remesaProponerCuadre(id) {
   const m = (bkRemesasDatos.remesas || []).find(x => x.id === id);
   if (!m) { alert('No encuentro la remesa — recarga con ⟳.'); return; }

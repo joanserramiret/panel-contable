@@ -1610,6 +1610,17 @@ async function refrescarEstadosCobro() {
   try { actualizarCobros(); } catch(e) {}
 }
 
+// ⭐ REFRESCO AUTOMÁTICO TRAS UN CUADRE [2026-07-15, Joan: "el Ctrl+Shift+R después de cuadrar debería ser automático"].
+// Reúne todo lo que cambia cuando cuadras cobros con una remesa (o registras una remesa concluida): invalida los sets
+// cacheados y re-pide el banco (abrirCobros), repinta la pestaña Remesas y refresca el Pulso. Sin recargar la página
+// (así NO se pierden las facturas F/FD ya cargadas). Se llama al terminar cada cuadre/registro de remesa.
+async function refrescarTrasCuadre() {
+  try { if (typeof abrirCobros === 'function') await abrirCobros(); } catch (e) {}
+  try { if (typeof bkRemesas === 'function') await bkRemesas(); } catch (e) {}
+  try { if (typeof cargarPulso === 'function') cargarPulso(); } catch (e) {}
+  try { if (typeof actualizarDashboard === 'function') actualizarDashboard(); } catch (e) {}
+}
+
 // COBROS es lo MÁS sensible: cada vez que se abre la vista (pestaña Cobrar o desde Pulso) se recarga TODO de RAÍZ,
 // nunca se fía del estado cacheado del navegador. Invalida los sets cacheados (en_remesa, aplazados, guardarraíl,
 // cartera, banco) → refrescarEstadosCobro re-pide el banco y los lazy-loads se vuelven a pedir solos. [Joan 2026-07-02]
@@ -5660,8 +5671,8 @@ async function buzonConciliarRemesas(){
     '<div id="buzon-conc-done" style="margin-top:6px"></div></div>';
   document.getElementById('buzon-conc-aplicar').onclick=async function(){ var b=this; b.disabled=true; b.textContent='Marcando…';
     var ap=await fetch(BRIDGE_URL_C+'/banco/conciliar_remesas?anio=2026&confirmar=1&_='+Date.now(),{method:'POST',headers:H,body:'{}'}).then(function(r){return r.json();}).catch(function(){return null;});
-    document.getElementById('buzon-conc-done').innerHTML = (ap&&ap.ok)? '<div style="color:#0F6E56;font-weight:700;font-size:12.5px">✅ '+(ap.n_marcadas||0)+' marcadas. Salen de «en proceso».</div>' : '<div style="color:#dc2626;font-size:12.5px">Error al marcar.</div>';
-    try{ window._enRemesa=undefined; await refrescarEstadosCobro(); await cargarEnRemesa(); actualizarCobros(); }catch(e){}
+    document.getElementById('buzon-conc-done').innerHTML = (ap&&ap.ok)? '<div style="color:#0F6E56;font-weight:700;font-size:12.5px">✅ '+(ap.n_marcadas||0)+' marcadas. Salen de «en proceso». Panel actualizado.</div>' : '<div style="color:#dc2626;font-size:12.5px">Error al marcar.</div>';
+    try{ await refrescarTrasCuadre(); }catch(e){}
     b.textContent='✅ Hecho'; };
 }
 
@@ -5896,8 +5907,9 @@ async function buzonDetectado(file, tipo, txt){
         tj.innerHTML=h2;
         document.getElementById('buzon-rc-reg').onclick=async function(){ var b=this; b.disabled=true; b.textContent='Procesando…';
           try{ var jr=await fetch(BRIDGE_URL_C+'/remesa/guardar',{method:'POST',headers:HP,body:JSON.stringify({nombre:file.name, banco:'Bankinter', concluida:true, abonadas:dr.abonadas, devueltas:dr.devueltas, fecha:dr.fecha})}).then(function(r){return r.json();});
-            document.getElementById('buzon-rc-done').innerHTML = jr.ok? ('<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Procesada: '+(jr.n_abonadas||dr.abonadas.length)+' cobradas · '+(jr.n_devueltas||dr.devueltas.length)+' devueltas a pendiente. Recarga Cobros (Ctrl+Shift+R).</div>') : '<div style="color:#dc2626;font-size:13px">'+(jr.error||'Error')+'</div>';
+            document.getElementById('buzon-rc-done').innerHTML = jr.ok? ('<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Procesada: '+(jr.n_abonadas||dr.abonadas.length)+' cobradas · '+(jr.n_devueltas||dr.devueltas.length)+' devueltas a pendiente. Actualizando el panel…</div>') : '<div style="color:#dc2626;font-size:13px">'+(jr.error||'Error')+'</div>';
             b.textContent='✅ Procesada';
+            if(jr.ok){ try{ await refrescarTrasCuadre(); }catch(e){} document.getElementById('buzon-rc-done').innerHTML='<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Procesada y panel actualizado: '+(jr.n_abonadas||dr.abonadas.length)+' cobradas · '+(jr.n_devueltas||dr.devueltas.length)+' devueltas a pendiente.</div>'; }
           }catch(e){ document.getElementById('buzon-rc-done').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Procesar remesa concluida'; } };
         return;
       }
@@ -8004,7 +8016,7 @@ async function remesaCuadrarTxt(id) {
   } catch (e) { alert('Error al aplicar: ' + e.message); return; }
   if (r2.ok && r2.aplicado) {
     alert('✅ Remesa cuadrada por fichero: ' + r2.n_facturas + ' facturas asignadas' + ((r2.devueltas || []).length ? ' (' + r2.devueltas.length + ' devuelta/s)' : '') + '.');
-    bkRemesas();
+    try { await refrescarTrasCuadre(); } catch (e) { bkRemesas(); }
   } else { alert('No se aplicó: ' + (r2.error || 'error')); }
 }
 

@@ -5343,7 +5343,7 @@ async function cargarAgentes(){
   const cont=document.getElementById('pulso-agentes'); if(!cont) return;
   try{
     const j=await fetch(BRIDGE_URL_C+'/agentes?_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(r=>r.json());
-    const ags=(j&&j.agentes)||[];
+    const ags=((j&&j.agentes)||[]).filter(a=>!a.servicio);   // el Pulso muestra los agentes; los servicios (OCR) viven en la pestaña 🤖 Agentes
     let h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title" style="margin:0">🤖 Centro de agentes</div>'+
       '<span style="font-size:11px;color:var(--texto-suave)">Auditores que razonan con FINA · avisan por ntfy al móvil</span></div>';
     h+=ags.map(function(a){
@@ -5378,12 +5378,17 @@ async function cargarCatalogoAgentes(){
   try{
     const j=await fetch(BRIDGE_URL_C+'/agentes?_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(r=>r.json());
     const ags=(j&&j.agentes)||[], hue=(j&&j.huerfanos)||[];
-    const nAct=ags.filter(a=>a.enabled!==false).length, nAle=ags.filter(a=>a.ultimo_alerta).length,
-          nInc=ags.filter(a=>(a.incidencias||[]).length).length;
+    const nAct=ags.filter(a=>a.enabled!==false&&!a.servicio).length, nAle=ags.filter(a=>a.ultimo_alerta).length,
+          nInc=ags.filter(a=>(a.incidencias||[]).length).length,
+          nAg=ags.filter(a=>!a.servicio).length;
+    const eurTot=(j.consumo_total&&j.consumo_total.eur)||0;
+    const fmtEur=v=>(v<0.01&&v>0)?'<0,01 €':((v||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €');
     const cronTxt=c=>({diario:'cada día',semanal:'cada lunes',mensual:'el día 1'}[c]||(c&&c.replace('dia_','el día '))||c);
     let h='<div class="card" style="margin-bottom:14px"><div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'+
       '<div class="card-title" style="margin:0">🤖 Catálogo de agentes</div>'+
-      '<span style="font-size:12px;background:#e8f7ef;color:#1b7a3d;border-radius:8px;padding:3px 10px;font-weight:700">'+nAct+'/'+ags.length+' activos</span>'+
+      '<span style="font-size:12px;background:#e8f7ef;color:#1b7a3d;border-radius:8px;padding:3px 10px;font-weight:700">'+nAct+'/'+nAg+' activos</span>'+
+      '<span title="Gasto de API estimado (precios de lista por Mtok). Se cierra por mes natural, como factura Anthropic. Taxímetro local desde el 17/07/2026." style="font-size:12px;background:#eef4ff;color:#1a2e6e;border-radius:8px;padding:3px 10px;font-weight:700">💶 '+fmtEur(eurTot)+' · ciclo '+esc(j.consumo_ciclo||'')+'</span>'+
+      ((j.ciclos_cerrados||[]).length?'<span title="Ciclos de facturación ya cerrados" style="font-size:11px;color:var(--texto-suave)">cerrados: '+(j.ciclos_cerrados||[]).map(c=>esc(c.ciclo)+' '+fmtEur(c.eur||0)).join(' · ')+'</span>':'')+
       (nAle?'<span style="font-size:12px;background:#fff7ed;color:#b45309;border-radius:8px;padding:3px 10px;font-weight:700">⚠️ '+nAle+' con alerta</span>':'')+
       (nInc?'<span style="font-size:12px;background:#fdeaea;color:#b3261e;border-radius:8px;padding:3px 10px;font-weight:700">🩹 '+nInc+' con incidencias</span>':'')+
       '<span style="flex:1"></span>'+
@@ -5394,18 +5399,21 @@ async function cargarCatalogoAgentes(){
     h+=ags.map(function(a){
       const on=a.enabled!==false, inc=a.incidencias||[];
       const tipoTxt=a.tipo==='auditor'?'🔍 auditor (solo avisa si hay algo)':'🔔 recordatorio (avisa siempre)';
+      const consEur=(a.consumo&&a.consumo.eur)||0, consN=(a.consumo&&a.consumo.llamadas)||0;
       return '<div class="card" style="'+(on?'':'opacity:.55')+'">'+
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
           '<span style="font-size:19px">'+a.icono+'</span>'+
           '<b style="font-size:14px">'+esc(a.nombre)+'</b>'+
           (a.ultimo_alerta?'<span style="font-size:10.5px;background:#fff7ed;color:#b45309;border-radius:7px;padding:2px 7px;font-weight:700">⚠️ alerta</span>':'')+
           '<span style="flex:1"></span>'+
+          (a.servicio?'<span style="font-size:10.5px;background:#eef4ff;color:#1a2e6e;border-radius:7px;padding:2px 8px;font-weight:700">⚙️ servicio</span>':
           '<button onclick="agenteEjecutarCat(\''+a.id+'\')" style="padding:3px 9px;border:1px solid #c0cbea;border-radius:7px;background:#f0f4fb;color:#1a2e6e;cursor:pointer;font-size:11px;font-weight:700">▶ Ejecutar</button>'+
-          '<button onclick="agenteToggle(\''+a.id+'\','+(!on)+')" style="padding:3px 9px;border:1px solid '+(on?'#a7d7b8':'#ddd')+';border-radius:7px;background:'+(on?'#e8f7ef':'#f5f5f5')+';color:'+(on?'#1b7a3d':'#999')+';cursor:pointer;font-size:11px;font-weight:700">'+(on?'ON':'OFF')+'</button>'+
+          '<button onclick="agenteToggle(\''+a.id+'\','+(!on)+')" style="padding:3px 9px;border:1px solid '+(on?'#a7d7b8':'#ddd')+';border-radius:7px;background:'+(on?'#e8f7ef':'#f5f5f5')+';color:'+(on?'#1b7a3d':'#999')+';cursor:pointer;font-size:11px;font-weight:700">'+(on?'ON':'OFF')+'</button>')+
         '</div>'+
         '<div style="font-size:12px;color:#33456b;margin-top:6px;line-height:1.45">'+esc(a.desc)+'</div>'+
-        '<div style="font-size:11px;color:var(--texto-suave);margin-top:6px">'+tipoTxt+' · corre '+cronTxt(a.cron)+'</div>'+
+        '<div style="font-size:11px;color:var(--texto-suave);margin-top:6px">'+(a.servicio?'⚙️ servicio de lectura (no razona con FINA) · bajo demanda':tipoTxt+' · corre '+cronTxt(a.cron))+'</div>'+
         '<div style="font-size:11px;color:var(--texto-suave);margin-top:2px">📡 Datos: '+esc(a.fuente||'')+'</div>'+
+        '<div style="font-size:11px;color:var(--texto-suave);margin-top:2px">💶 Consumo API: '+(consN?fmtEur(consEur)+' en '+consN+' llamada'+(consN===1?'':'s'):'aún sin llamadas contadas')+'</div>'+
         (inc.length?'<div style="font-size:11.5px;background:#fdeaea;color:#b3261e;border-radius:8px;padding:6px 9px;margin-top:7px;line-height:1.4">🩹 '+inc.map(esc).join('<br>🩹 ')+'</div>':'')+
         '<div id="agc-out-'+a.id+'">'+
         (a.ultimo?'<div style="font-size:11.5px;color:'+(a.ultimo_alerta?'#b45309':'#1b7a3d')+';margin-top:7px;line-height:1.45;background:'+(a.ultimo_alerta?'#fff7ed':'#f0faf4')+';border-radius:8px;padding:7px 9px;max-height:130px;overflow:auto">'+

@@ -503,6 +503,7 @@
     <div class="nav-tab tab-clasico" onclick="switchTabC('ctacli')" id="ctab-ctacli">📗 Cuenta clientes</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('semaforo')" id="ctab-semaforo">🎯 Estado proveedores</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('tarjeta')" id="ctab-tarjeta">💳 Compras tarjeta</div>
+    <div class="nav-tab tab-simple" onclick="switchTabC('agentes')" id="ctab-agentes">🤖 Agentes</div>
     <div class="nav-toggle" onclick="toggleModoClasico()" id="cnav-toggle" title="Abre el DETALLE: bancos en tiempo real, remesas, proveedores… (lo que usa Raquel). Es solo de visualización: no borra nada.">🔧 Detalle · Raquel</div>
     <!-- Podadas a petición de Joan (2026-06): Calendario e Impuestos·IVA — SisConta es la fuente oficial del IVA.
          Para recuperarlas, restaurar estas dos líneas:
@@ -1144,6 +1145,12 @@
         <div style="font-size:13px;color:var(--texto-suave);margin-bottom:10px">Compras pagadas con la tarjeta de crédito (se concilian con el cargo mensual). 🟢 con factura · 🟡 falta factura · 🚫 gasto no deducible.</div>
         <div id="tarjeta-cont"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div>
       </div>
+    </div>
+
+    <!-- 🤖 CATÁLOGO DE AGENTES [2026-07-17, Joan]: todos los agentes, su función, si están activos,
+         sus alertas y sus incidencias. La ficha completa; el Pulso mantiene su resumen compacto. -->
+    <div class="tab-content" id="ctc-agentes">
+      <div id="agentes-catalogo"><div style="color:var(--texto-suave);font-size:13px;padding:16px">Cargando catálogo de agentes…</div></div>
     </div>
 
     <div class="tab-content" id="ctc-iva">
@@ -5003,7 +5010,8 @@ const TAB_INTROS = {
   semaforo: '🎯 <b>Estado de proveedores</b> — Estado de un vistazo con colores: qué está al día (verde) y qué necesita atención (rojo).',
   tarjeta: '💳 <b>Compras con tarjeta</b> — Los extractos de la tarjeta de crédito de empresa: compras y liquidación mensual.',
   iva: '📊 <b>IVA</b> — Resumen del IVA repercutido y soportado del período.',
-  calendario: '📅 <b>Calendario</b> — Vencimientos y cobros previstos del mes.'
+  calendario: '📅 <b>Calendario</b> — Vencimientos y cobros previstos del mes.',
+  agentes: '🤖 <b>Catálogo de agentes</b> — Todos los agentes que vigilan el negocio: qué hace cada uno, con qué datos trabaja, cuándo corre, si está activo, su última pasada y sus incidencias. Desde aquí los activas, desactivas o los pones a currar.'
 };
 function _pintarTabIntro(tab){
   var el = document.getElementById('tab-intro'); if(!el) return;
@@ -5045,6 +5053,7 @@ function switchTabC(tab) {
   if (tab === 'buscar') { const bq = document.getElementById('busc-q'); if (bq) bq.focus(); }
   if (tab === 'pulso') cargarPulso();
   if (tab === 'pendcont') cargarPendCont();
+  if (tab === 'agentes') cargarCatalogoAgentes();
 }
 
 // ===== PENDIENTE DE CONTABILIZAR (zona Raquel) =====
@@ -5360,6 +5369,67 @@ async function cargarAgentes(){
 async function agenteToggle(id,enabled){
   try{ await fetch(BRIDGE_URL_C+'/agentes/toggle',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({id:id,enabled:enabled})}); }catch(e){}
   cargarAgentes();
+  if(document.getElementById('ctc-agentes').classList.contains('active')) cargarCatalogoAgentes();
+}
+
+// ===== 🤖 CATÁLOGO DE AGENTES [2026-07-17, Joan] — la ficha completa de cada agente =====
+async function cargarCatalogoAgentes(){
+  const cont=document.getElementById('agentes-catalogo'); if(!cont) return;
+  try{
+    const j=await fetch(BRIDGE_URL_C+'/agentes?_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(r=>r.json());
+    const ags=(j&&j.agentes)||[], hue=(j&&j.huerfanos)||[];
+    const nAct=ags.filter(a=>a.enabled!==false).length, nAle=ags.filter(a=>a.ultimo_alerta).length,
+          nInc=ags.filter(a=>(a.incidencias||[]).length).length;
+    const cronTxt=c=>({diario:'cada día',semanal:'cada lunes',mensual:'el día 1'}[c]||(c&&c.replace('dia_','el día '))||c);
+    let h='<div class="card" style="margin-bottom:14px"><div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'+
+      '<div class="card-title" style="margin:0">🤖 Catálogo de agentes</div>'+
+      '<span style="font-size:12px;background:#e8f7ef;color:#1b7a3d;border-radius:8px;padding:3px 10px;font-weight:700">'+nAct+'/'+ags.length+' activos</span>'+
+      (nAle?'<span style="font-size:12px;background:#fff7ed;color:#b45309;border-radius:8px;padding:3px 10px;font-weight:700">⚠️ '+nAle+' con alerta</span>':'')+
+      (nInc?'<span style="font-size:12px;background:#fdeaea;color:#b3261e;border-radius:8px;padding:3px 10px;font-weight:700">🩹 '+nInc+' con incidencias</span>':'')+
+      '<span style="flex:1"></span>'+
+      '<button onclick="agentesACurrar()" style="padding:5px 12px;border:1px solid #c4b5fd;border-radius:8px;background:#ede9fe;color:#6d28d9;cursor:pointer;font-size:12px;font-weight:700">🛠️ ¡A currar todos!</button>'+
+      '</div>'+
+      '<div style="font-size:11.5px;color:var(--texto-suave);margin-top:6px">'+esc(j.programacion||'')+'</div></div>';
+    h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px">';
+    h+=ags.map(function(a){
+      const on=a.enabled!==false, inc=a.incidencias||[];
+      const tipoTxt=a.tipo==='auditor'?'🔍 auditor (solo avisa si hay algo)':'🔔 recordatorio (avisa siempre)';
+      return '<div class="card" style="'+(on?'':'opacity:.55')+'">'+
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+          '<span style="font-size:19px">'+a.icono+'</span>'+
+          '<b style="font-size:14px">'+esc(a.nombre)+'</b>'+
+          (a.ultimo_alerta?'<span style="font-size:10.5px;background:#fff7ed;color:#b45309;border-radius:7px;padding:2px 7px;font-weight:700">⚠️ alerta</span>':'')+
+          '<span style="flex:1"></span>'+
+          '<button onclick="agenteEjecutarCat(\''+a.id+'\')" style="padding:3px 9px;border:1px solid #c0cbea;border-radius:7px;background:#f0f4fb;color:#1a2e6e;cursor:pointer;font-size:11px;font-weight:700">▶ Ejecutar</button>'+
+          '<button onclick="agenteToggle(\''+a.id+'\','+(!on)+')" style="padding:3px 9px;border:1px solid '+(on?'#a7d7b8':'#ddd')+';border-radius:7px;background:'+(on?'#e8f7ef':'#f5f5f5')+';color:'+(on?'#1b7a3d':'#999')+';cursor:pointer;font-size:11px;font-weight:700">'+(on?'ON':'OFF')+'</button>'+
+        '</div>'+
+        '<div style="font-size:12px;color:#33456b;margin-top:6px;line-height:1.45">'+esc(a.desc)+'</div>'+
+        '<div style="font-size:11px;color:var(--texto-suave);margin-top:6px">'+tipoTxt+' · corre '+cronTxt(a.cron)+'</div>'+
+        '<div style="font-size:11px;color:var(--texto-suave);margin-top:2px">📡 Datos: '+esc(a.fuente||'')+'</div>'+
+        (inc.length?'<div style="font-size:11.5px;background:#fdeaea;color:#b3261e;border-radius:8px;padding:6px 9px;margin-top:7px;line-height:1.4">🩹 '+inc.map(esc).join('<br>🩹 ')+'</div>':'')+
+        '<div id="agc-out-'+a.id+'">'+
+        (a.ultimo?'<div style="font-size:11.5px;color:'+(a.ultimo_alerta?'#b45309':'#1b7a3d')+';margin-top:7px;line-height:1.45;background:'+(a.ultimo_alerta?'#fff7ed':'#f0faf4')+';border-radius:8px;padding:7px 9px;max-height:130px;overflow:auto">'+
+          (a.ultimo_alerta?'⚠️ ':'✓ ')+esc(a.ultimo).replace(/\n/g,'<br>')+
+          (a.ultimo_cuando?'<div style="color:var(--texto-suave);margin-top:4px">Última pasada: '+esc((a.ultimo_cuando||'').replace('T',' '))+'</div>':'')+'</div>':
+          '<div style="font-size:11.5px;color:var(--texto-suave);margin-top:7px">Aún sin pasadas.</div>')+
+        '</div>'+
+      '</div>';
+    }).join('');
+    h+='</div>';
+    if(hue.length){
+      h+='<div class="card" style="margin-top:14px;border-left:4px solid #b45309"><div class="card-title" style="margin:0 0 6px">👻 Estados huérfanos (agentes que ya no existen)</div>'+
+        hue.map(x=>'<div style="font-size:12px;color:#33456b;margin-top:4px"><b>'+esc(x.id)+'</b> · última pasada '+esc((x.cuando||'?').replace('T',' '))+' — su estado sigue guardado en agentes_estado.json; si no se va a recuperar, se puede borrar esa entrada.</div>').join('')+'</div>';
+    }
+    cont.innerHTML=h;
+  }catch(e){ cont.innerHTML='<div style="color:#c0392b;font-size:13px;padding:16px">No se pudo cargar el catálogo: '+esc(e.message)+'</div>'; }
+}
+async function agenteEjecutarCat(id){
+  const o=document.getElementById('agc-out-'+id); if(o) o.innerHTML='<div style="color:var(--texto-suave);font-size:12px;margin-top:6px"><span class="spinner"></span> FINA está analizando…</div>';
+  try{
+    const j=await fetch(BRIDGE_URL_C+'/agentes/ejecutar?id='+id+'&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(r=>r.json());
+    const r=(j.resultados||[])[0];
+    if(o) o.innerHTML=r? '<div style="font-size:12px;color:'+(r.alerta?'#b45309':'#1b7a3d')+';margin-top:6px;line-height:1.45;background:'+(r.alerta?'#fff7ed':'#f0faf4')+';border-radius:8px;padding:7px 9px">'+(r.alerta?'⚠️ ':'✓ ')+esc(r.parte).replace(/\n/g,'<br>')+'</div>' : '<div style="color:#c0392b;font-size:12px">Sin respuesta.</div>';
+  }catch(e){ if(o) o.innerHTML='<div style="color:#c0392b;font-size:12px">Error: '+e.message+'</div>'; }
 }
 async function agenteEjecutar(id){
   const o=document.getElementById('ag-out-'+id); if(o) o.innerHTML='<div style="color:var(--texto-suave);font-size:12px;margin-top:4px"><span class="spinner"></span> FINA está analizando…</div>';

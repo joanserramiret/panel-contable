@@ -5499,6 +5499,18 @@ async function cargarPulso(){
             '<button onclick="ivaDudosas('+jiva.trimestre+','+jiva.anio+')" style="margin-top:7px;padding:6px 12px;border:1.5px solid #e8b27a;border-radius:7px;background:#fff7ed;color:#b45309;cursor:pointer;font-size:11.5px;font-weight:700">✏️ Revisar '+jiva.n_estimadas+' cuotas a mano</button>';
           else ivh+='<div style="margin-top:5px;font-size:10.5px;color:var(--texto-suave)">'+jiva.n_ventas+' ventas · '+jiva.n_compras+' compras · todas con cuota real. Guía, no el 303 oficial.</div>';
           _pi.innerHTML=ivh;
+          // 🏛️ IVA OFICIAL — libro de IVA de SisConta (SisConta manda; la estimación de arriba es solo radar)
+          fetch(BRIDGE_URL_C+'/contabilidad/iva_declarado?_='+Date.now(),H).then(r=>r.json()).then(jd=>{
+            if(!jd||!jd.ok||!jd.trimestres) return;
+            const ks=Object.keys(jd.trimestres).sort(); if(!ks.length) return;
+            let dh='<div style="margin-top:10px;padding-top:8px;border-top:2px solid #534AB7"><div style="font-size:11px;font-weight:800;color:#534AB7;margin-bottom:4px">🏛️ IVA oficial (SisConta)</div>';
+            ks.forEach(k=>{const t=jd.trimestres[k]||{}; const res=t.resultado||0; const pend=(t.estado||'')!=='declarado';
+              dh+='<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:12px"><span>'+k.replace('-',' T').replace('TT','T')+(pend?' <span style="font-size:9.5px;color:#b45309;font-weight:800">POR PRESENTAR</span>':'')+'</span><b style="color:'+(res>=0?'#dc2626':'#16a34a')+'">'+(res>=0?'a pagar ':'a favor ')+eur2(Math.abs(res))+'</b></div>';
+              dh+='<div style="font-size:10px;color:var(--texto-suave);margin-bottom:3px">rep. '+eur2(t.repercutido||0)+' − sop. '+eur2(t.soportado||0)+(t.nota?' · '+t.nota:'')+'</div>';
+            });
+            dh+='<div style="font-size:9.5px;color:var(--texto-suave);margin-top:3px">'+(jd.fuente||'')+' · esto es lo que manda; la estimación de arriba es el radar del trimestre en curso.</div></div>';
+            _pi.innerHTML+=dh;
+          }).catch(()=>{});
         }
       }
     }catch(e){}

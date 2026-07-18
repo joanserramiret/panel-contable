@@ -504,6 +504,7 @@
     <div class="nav-tab tab-clasico" onclick="switchTabC('semaforo')" id="ctab-semaforo">🎯 Estado proveedores</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('tarjeta')" id="ctab-tarjeta">💳 Compras tarjeta</div>
     <div class="nav-tab tab-simple" onclick="switchTabC('agentes')" id="ctab-agentes">🤖 Agentes</div>
+    <div class="nav-tab tab-simple" onclick="switchTabC('raquel')" id="ctab-raquel">📚 Contable oficial</div>
     <div class="nav-toggle" onclick="toggleModoClasico()" id="cnav-toggle" title="Abre el DETALLE: bancos en tiempo real, remesas, proveedores… (lo que usa Raquel). Es solo de visualización: no borra nada.">🔧 Detalle · Raquel</div>
     <!-- Podadas a petición de Joan (2026-06): Calendario e Impuestos·IVA — SisConta es la fuente oficial del IVA.
          Para recuperarlas, restaurar estas dos líneas:
@@ -1151,6 +1152,25 @@
          sus alertas y sus incidencias. La ficha completa; el Pulso mantiene su resumen compacto. -->
     <div class="tab-content" id="ctc-agentes">
       <div id="agentes-catalogo"><div style="color:var(--texto-suave);font-size:13px;padding:16px">Cargando catálogo de agentes…</div></div>
+    </div>
+
+    <!-- 📚 CONTABILIDAD OFICIAL (sección de Raquel) [2026-07-18, Joan]: los informes que SisConta no sabe
+         sacar bonitos, bebiendo de la copia de seguridad (sisconta.db). SOLO LECTURA: no toca SisConta ni
+         afecta al resto del panel. Exportables a CSV (Excel) e imprimibles a PDF. -->
+    <div class="tab-content" id="ctc-raquel">
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+          <div style="font-weight:800;font-size:15px">📚 Contabilidad oficial · SisConta</div>
+          <div id="raq-fuente" style="font-size:12px;color:var(--texto-suave)">Cargando…</div>
+          <button onclick="raqCargarCopia()" id="raq-btn-cargar" style="margin-left:auto;padding:6px 12px;border:1.5px solid #534AB7;border-radius:7px;background:#eef2ff;color:#3730a3;cursor:pointer;font-size:12px;font-weight:700">🔄 Releer copia</button>
+        </div>
+        <div style="font-size:11.5px;color:var(--texto-suave);margin-top:6px">Para actualizar: dejad el .zip de la copia de seguridad de SisConta en <code>C:\agora-bridge\sisconta_backups</code> y pulsad «Releer copia». Todo es de <b>solo lectura</b>: no toca SisConta ni el resto del panel.</div>
+      </div>
+      <div id="raq-chips" style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px"></div>
+      <div class="card">
+        <div id="raq-filtros" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px"></div>
+        <div id="raq-out"><div style="color:var(--texto-suave);font-size:13px">Elige un informe arriba.</div></div>
+      </div>
     </div>
 
     <div class="tab-content" id="ctc-iva">
@@ -5003,6 +5023,7 @@ const TAB_INTROS = {
   facturas: '🧾 <b>Facturas emitidas</b> — Todas tus facturas F/FD emitidas en Ágora: consultarlas, ver el PDF y descargarlas.',
   proveedores: '📥 <b>Facturas recibidas</b> — Las facturas que te mandan los proveedores (guardadas en Dropbox): revisarlas y ver su PDF.',
   pendcont: '⏳ <b>Pendiente contabilizar</b> — La cola de Raquel: facturas (emitidas y recibidas) que aún no ha pasado a la contabilidad. Cuando las contabiliza, desaparecen solas.',
+  raquel: '📚 <b>Contable oficial</b> — Los informes contables (diario, mayor, sumas y saldos, balance, PyG, libros de IVA, 347, extractos) bebiendo de la copia de seguridad de SisConta. Solo lectura, con filtros, Excel y PDF. Lo que SisConta no sabe sacar bonito.',
   banco: '🏦 <b>Tesorería</b> — Los bancos en detalle: saldos, movimientos y conciliación. La verdad del dinero, cuenta a cuenta.',
   remesas: '🧩 <b>Remesas</b> — Las remesas SEPA giradas al banco: cuáles están cobradas, cuáles pendientes de liquidar y sus devoluciones.',
   ctaprov: '📒 <b>Cuenta de proveedores</b> — Ficha y saldo por proveedor: cuánto le has facturado, cuánto has pagado y qué le debes.',
@@ -5054,6 +5075,212 @@ function switchTabC(tab) {
   if (tab === 'pulso') cargarPulso();
   if (tab === 'pendcont') cargarPendCont();
   if (tab === 'agentes') cargarCatalogoAgentes();
+  if (tab === 'raquel') raqInit();
+}
+
+// ===== 📚 CONTABILIDAD OFICIAL (sección de Raquel) — informes de SisConta =====
+// Solo lectura. Cada informe: filtros propios + tabla + ⬇ CSV (Excel) + 🖨 PDF (imprimir).
+var _raqRep = null, _raqLast = null, _raqEjercicios = [];
+function raqEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function raqEur(x){ return x==null?'—':new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(x)+' €'; }
+var _RAQ_REPS = [
+  {id:'diario',   nombre:'📖 Libro Diario',        filtros:['ejercicio','desde','hasta','cuenta','texto']},
+  {id:'mayor',    nombre:'📘 Mayor / Extracto de cuenta', filtros:['ejercicio','cuenta','desde','hasta']},
+  {id:'sumas',    nombre:'⚖️ Sumas y Saldos',      filtros:['ejercicio','desde','hasta','nivel']},
+  {id:'balance',  nombre:'🏛️ Balance de situación', filtros:['ejercicio','hasta']},
+  {id:'pyg',      nombre:'📈 Pérdidas y Ganancias', filtros:['ejercicio','desde','hasta','nivel']},
+  {id:'pygmes',   nombre:'📅 PyG mensualizada',    filtros:['ejercicio','nivel']},
+  {id:'ivaemit',  nombre:'🧾 IVA emitidas',        filtros:['ejercicio','trimestre']},
+  {id:'ivarec',   nombre:'🧾 IVA recibidas',       filtros:['ejercicio','trimestre']},
+  {id:'ivares',   nombre:'🏛️ Resumen IVA (303)',   filtros:['ejercicio']},
+  {id:'m347',     nombre:'📋 Modelo 347',          filtros:['ejercicio','todos347']},
+  {id:'terceros', nombre:'👥 Terceros',            filtros:['ejercicio','texto']},
+  {id:'extracto', nombre:'🔎 Extracto de tercero', filtros:['ejercicio','nif','desde','hasta']}
+];
+function raqInit(){
+  var ch=document.getElementById('raq-chips');
+  if(ch && !ch.childElementCount){
+    ch.innerHTML=_RAQ_REPS.map(function(r){
+      return '<button id="raqch-'+r.id+'" onclick="raqSel(\''+r.id+'\')" style="padding:6px 11px;border:1.5px solid #d6d3d1;border-radius:16px;background:#fff;cursor:pointer;font-size:12px;font-weight:700;color:#44403c">'+r.nombre+'</button>';
+    }).join('');
+  }
+  raqResumen();
+  if(!_raqRep) raqSel('sumas');
+}
+function raqResumen(){
+  var H={headers:{'ngrok-skip-browser-warning':'true'}};
+  fetch(BRIDGE_URL_C+'/sisconta/resumen?_='+Date.now(),H).then(function(r){return r.json();}).then(function(j){
+    var f=document.getElementById('raq-fuente'); if(!f) return;
+    if(!j||!j.ok){ f.innerHTML='<span style="color:#c00">No disponible (¿bridge sin reiniciar?)</span>'; return; }
+    _raqEjercicios=(j.ejercicios||[]).map(function(e){return e.ejercicio;});
+    if(!j.ejercicios||!j.ejercicios.length){ f.innerHTML='<span style="color:#b45309">Sin datos: dejad el .zip en la carpeta y pulsad «Releer copia».</span>'; return; }
+    f.innerHTML=j.ejercicios.map(function(e){
+      return '<b>'+raqEsc(e.ejercicio)+'</b>: '+raqEsc(e.zip)+' · diario '+raqEsc(e.fecha_min)+' → '+raqEsc(e.fecha_max)+' · '+e.n_asientos+' asientos · '+(Math.abs((e.debe||0)-(e.haber||0))<0.01?'✓ cuadra al céntimo':'⚠️ DESCUADRA');
+    }).join(' &nbsp;·&nbsp; ');
+  }).catch(function(){});
+}
+function raqCargarCopia(){
+  var b=document.getElementById('raq-btn-cargar'); if(b){b.disabled=true;b.textContent='Leyendo…';}
+  var H={headers:{'ngrok-skip-browser-warning':'true'}};
+  fetch(BRIDGE_URL_C+'/sisconta/cargar?_='+Date.now(),H).then(function(r){return r.json();}).then(function(j){
+    if(b){b.disabled=false;b.textContent='🔄 Releer copia';}
+    if(!j||!j.ok){ alert('No se pudo leer la copia: '+((j&&j.error)||'error')); return; }
+    alert('✅ Copia leída: ejercicio '+j.ejercicio+' · '+j.asientos+' asientos ('+j.desde+' → '+j.hasta+')'+(j.cuadra?' · cuadra al céntimo':' · ⚠️ descuadra'));
+    raqResumen(); if(_raqRep) raqRun();
+  }).catch(function(){ if(b){b.disabled=false;b.textContent='🔄 Releer copia';} alert('No se pudo conectar.'); });
+}
+function raqSel(id){
+  _raqRep=id;
+  _RAQ_REPS.forEach(function(r){ var b=document.getElementById('raqch-'+r.id);
+    if(b){ b.style.background=(r.id===id)?'#534AB7':'#fff'; b.style.color=(r.id===id)?'#fff':'#44403c'; b.style.borderColor=(r.id===id)?'#534AB7':'#d6d3d1'; } });
+  raqBuildFiltros(); raqRun();
+}
+function raqBuildFiltros(){
+  var rep=_RAQ_REPS.filter(function(r){return r.id===_raqRep;})[0]; if(!rep) return;
+  var f=rep.filtros, h='';
+  function w(lab,inner){ return '<div style="display:flex;flex-direction:column;gap:3px"><span style="font-size:10.5px;color:var(--texto-suave);font-weight:700">'+lab+'</span>'+inner+'</div>'; }
+  var st='padding:6px 8px;border:1.5px solid #d6d3d1;border-radius:7px;font-size:12.5px';
+  if(f.indexOf('ejercicio')>=0) h+=w('Ejercicio','<select id="raqf-anio" style="'+st+'">'+(_raqEjercicios.length?_raqEjercicios:['2026']).map(function(a){return '<option>'+a+'</option>';}).join('')+'</select>');
+  if(f.indexOf('trimestre')>=0) h+=w('Trimestre','<select id="raqf-tri" style="'+st+'"><option value="">Todo el año</option><option value="1">T1</option><option value="2">T2</option><option value="3">T3</option><option value="4">T4</option></select>');
+  if(f.indexOf('desde')>=0) h+=w('Desde','<input type="date" id="raqf-desde" style="'+st+'">');
+  if(f.indexOf('hasta')>=0) h+=w('Hasta','<input type="date" id="raqf-hasta" style="'+st+'">');
+  if(f.indexOf('cuenta')>=0) h+=w('Cuenta (prefijo)','<input id="raqf-cuenta" placeholder="p.ej. 572 o 430000742" style="'+st+';width:150px">');
+  if(f.indexOf('nivel')>=0) h+=w('Nivel','<select id="raqf-nivel" style="'+st+'"><option value="1">Grupo (1 díg.)</option><option value="2">2 dígitos</option><option value="3" selected>Cuenta (3 díg.)</option><option value="sub">Subcuenta</option></select>');
+  if(f.indexOf('texto')>=0) h+=w('Buscar','<input id="raqf-texto" placeholder="concepto, nº, NIF…" style="'+st+';width:160px">');
+  if(f.indexOf('nif')>=0) h+=w('NIF del tercero','<input id="raqf-nif" placeholder="B30701924" style="'+st+';width:130px">');
+  if(f.indexOf('todos347')>=0) h+=w('Ver','<select id="raqf-todos" style="'+st+'"><option value="">Solo &gt; 3.005,06 €</option><option value="1">Todos los terceros</option></select>');
+  h+='<button onclick="raqRun()" style="padding:7px 16px;border:none;border-radius:7px;background:#534AB7;color:#fff;cursor:pointer;font-size:12.5px;font-weight:800">Ver informe</button>';
+  h+='<button onclick="raqCSV()" style="padding:7px 12px;border:1.5px solid #16a34a;border-radius:7px;background:#f0fdf4;color:#166534;cursor:pointer;font-size:12px;font-weight:700">⬇ Excel (CSV)</button>';
+  h+='<button onclick="raqPrint()" style="padding:7px 12px;border:1.5px solid #d6d3d1;border-radius:7px;background:#fff;color:#44403c;cursor:pointer;font-size:12px;font-weight:700">🖨 PDF</button>';
+  document.getElementById('raq-filtros').innerHTML=h;
+}
+function raqV(id){ var e=document.getElementById(id); return e?e.value.trim():''; }
+function raqQS(extra){
+  var p=['_='+Date.now()];
+  var an=raqV('raqf-anio'); if(an) p.push('anio='+an);
+  ['desde','hasta'].forEach(function(k){ var v=raqV('raqf-'+k); if(v) p.push(k+'='+v); });
+  (extra||[]).forEach(function(x){ p.push(x); });
+  return '?'+p.join('&');
+}
+function raqRun(){
+  var out=document.getElementById('raq-out'); if(!out) return;
+  out.innerHTML='<div style="color:var(--texto-suave);font-size:13px">Cargando…</div>';
+  var H={headers:{'ngrok-skip-browser-warning':'true'}};
+  var rep=_raqRep, url='';
+  if(rep==='diario'){ var ex=[]; if(raqV('raqf-cuenta'))ex.push('cuenta='+encodeURIComponent(raqV('raqf-cuenta'))); if(raqV('raqf-texto'))ex.push('texto='+encodeURIComponent(raqV('raqf-texto'))); url='/sisconta/diario'+raqQS(ex); }
+  else if(rep==='mayor'){ if(!raqV('raqf-cuenta')){ out.innerHTML='<div style="color:#b45309;font-size:13px">Pon una cuenta (p.ej. 572 = bancos, 430 = clientes, 400 = proveedores).</div>'; return; } url='/sisconta/mayor'+raqQS(['cuenta='+encodeURIComponent(raqV('raqf-cuenta'))]); }
+  else if(rep==='sumas'){ url='/sisconta/sumas_saldos'+raqQS(['nivel='+(raqV('raqf-nivel')||'3')]); }
+  else if(rep==='balance'){ url='/sisconta/balance'+raqQS(); }
+  else if(rep==='pyg'){ url='/sisconta/pyg'+raqQS(['nivel='+(raqV('raqf-nivel')||'3')]); }
+  else if(rep==='pygmes'){ url='/sisconta/pyg'+raqQS(['nivel='+(raqV('raqf-nivel')||'3'),'mensual=1']); }
+  else if(rep==='ivaemit'||rep==='ivarec'){ var e2=['libro='+(rep==='ivaemit'?'emitidas':'recibidas')]; if(raqV('raqf-tri'))e2.push('trimestre='+raqV('raqf-tri')); url='/sisconta/iva_libro'+raqQS(e2); }
+  else if(rep==='ivares'){ url='/sisconta/iva_resumen'+raqQS(); }
+  else if(rep==='m347'){ var e3=[]; if(raqV('raqf-todos'))e3.push('todos=1'); url='/sisconta/m347'+raqQS(e3); }
+  else if(rep==='terceros'){ var e4=[]; if(raqV('raqf-texto'))e4.push('texto='+encodeURIComponent(raqV('raqf-texto'))); url='/sisconta/terceros'+raqQS(e4); }
+  else if(rep==='extracto'){ if(!raqV('raqf-nif')){ out.innerHTML='<div style="color:#b45309;font-size:13px">Pon el NIF del tercero (lo tienes en el informe 👥 Terceros).</div>'; return; } url='/sisconta/extracto_tercero'+raqQS(['nif='+encodeURIComponent(raqV('raqf-nif'))]); }
+  fetch(BRIDGE_URL_C+url,H).then(function(r){return r.json();}).then(function(j){
+    if(!j||!j.ok){ out.innerHTML='<div style="color:#c00;font-size:13px">'+raqEsc((j&&j.error)||'Error al cargar')+'</div>'; return; }
+    raqRender(rep,j,out);
+  }).catch(function(){ out.innerHTML='<div style="color:#c00;font-size:13px">No se pudo conectar.</div>'; });
+}
+function raqTabla(cols, rows, titulo, resumenHtml){
+  _raqLast={cols:cols, rows:rows, titulo:titulo};
+  var h='<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px"><b style="font-size:14px">'+raqEsc(titulo)+'</b><span style="font-size:11.5px;color:var(--texto-suave)">'+rows.length+' líneas</span></div>';
+  if(resumenHtml) h+='<div style="font-size:12.5px;margin-bottom:8px">'+resumenHtml+'</div>';
+  h+='<div style="overflow:auto;max-height:65vh;border:1px solid var(--borde);border-radius:8px"><table id="raq-tabla" style="width:100%;border-collapse:collapse;font-size:12px">';
+  h+='<thead><tr>'+cols.map(function(c){return '<th style="position:sticky;top:0;background:#f5f5f4;text-align:'+(c.num?'right':'left')+';padding:6px 8px;border-bottom:2px solid var(--borde);white-space:nowrap">'+raqEsc(c.t)+'</th>';}).join('')+'</tr></thead><tbody>';
+  rows.forEach(function(r){
+    h+='<tr>'+cols.map(function(c){ var v=r[c.k];
+      return '<td style="padding:4px 8px;border-bottom:1px solid #f0f0ef;text-align:'+(c.num?'right':'left')+';'+(c.num?'font-variant-numeric:tabular-nums;white-space:nowrap':'')+'">'+(c.num?(v==null?'—':raqEur(v)):raqEsc(v))+'</td>'; }).join('')+'</tr>';
+  });
+  h+='</tbody></table></div>';
+  return h;
+}
+function raqRender(rep,j,out){
+  var h='';
+  if(rep==='diario'){
+    h=raqTabla([{t:'Asiento',k:'asiento'},{t:'Fecha',k:'fecha'},{t:'Subcuenta',k:'subcuenta'},{t:'Cuenta',k:'nombre'},{t:'Concepto',k:'concepto'},{t:'Documento',k:'documento'},{t:'D/H',k:'dh'},{t:'Importe',k:'importe',num:1}], j.apuntes||[],
+      '📖 Libro Diario '+j.ejercicio, 'Debe '+raqEur(j.debe)+' · Haber '+raqEur(j.haber)+(j.truncado?' · <span style="color:#b45309">⚠️ truncado, afina el filtro</span>':''));
+  } else if(rep==='mayor'){
+    h=raqTabla([{t:'Fecha',k:'fecha'},{t:'Asiento',k:'asiento'},{t:'Subcuenta',k:'subcuenta'},{t:'Concepto',k:'concepto'},{t:'D/H',k:'dh'},{t:'Importe',k:'importe',num:1},{t:'Saldo',k:'saldo',num:1}], j.apuntes||[],
+      '📘 Mayor '+j.cuenta+(j.nombre?' — '+j.nombre:'')+' · '+j.ejercicio,
+      'Saldo anterior '+raqEur(j.saldo_anterior)+' · Debe '+raqEur(j.debe)+' · Haber '+raqEur(j.haber)+' · <b>Saldo final '+raqEur(j.saldo_final)+'</b>');
+  } else if(rep==='sumas'){
+    h=raqTabla([{t:'Cuenta',k:'cuenta'},{t:'Nombre',k:'nombre'},{t:'Debe',k:'debe',num:1},{t:'Haber',k:'haber',num:1},{t:'Saldo deudor',k:'saldo_deudor',num:1},{t:'Saldo acreedor',k:'saldo_acreedor',num:1}], j.cuentas||[],
+      '⚖️ Balance de Sumas y Saldos · '+j.ejercicio, 'Debe '+raqEur(j.debe)+' = Haber '+raqEur(j.haber)+' · '+(j.cuadra?'✓ cuadra al céntimo':'⚠️ DESCUADRA'));
+  } else if(rep==='balance'){
+    var rows=[]; (j.activo||[]).forEach(function(r){rows.push({bloque:'ACTIVO',grupo:r.grupo,nombre:r.nombre,saldo:r.saldo});});
+    (j.pasivo||[]).forEach(function(r){rows.push({bloque:'PATRIMONIO NETO Y PASIVO',grupo:r.grupo,nombre:r.nombre,saldo:r.saldo});});
+    h=raqTabla([{t:'Bloque',k:'bloque'},{t:'Grupo',k:'grupo'},{t:'Nombre',k:'nombre'},{t:'Saldo',k:'saldo',num:1}], rows,
+      '🏛️ Balance de situación · '+j.ejercicio+' (a '+raqEsc(j.hasta)+')',
+      'Activo '+raqEur(j.total_activo)+' = PN+Pasivo '+raqEur(j.total_pasivo)+' · '+(j.cuadra?'✓ cuadra':'⚠️ descuadra')+' · <span style="color:var(--texto-suave)">agrupado por grupos PGC; el oficial con formato de modelo lo saca SisConta</span>');
+  } else if(rep==='pyg'){
+    var rows2=[]; (j.ingresos||[]).forEach(function(r){rows2.push({bloque:'INGRESOS',cuenta:r.cuenta,nombre:r.nombre,total:r.total,pct:r.pct_ventas==null?'':r.pct_ventas+' %'});});
+    (j.gastos||[]).forEach(function(r){rows2.push({bloque:'GASTOS',cuenta:r.cuenta,nombre:r.nombre,total:r.total,pct:r.pct_ventas==null?'':r.pct_ventas+' %'});});
+    var res=j.resultado||0;
+    h=raqTabla([{t:'Bloque',k:'bloque'},{t:'Cuenta',k:'cuenta'},{t:'Nombre',k:'nombre'},{t:'Importe',k:'total',num:1},{t:'% s/ ventas',k:'pct'}], rows2,
+      '📈 Cuenta de Pérdidas y Ganancias · '+j.ejercicio,
+      'Ingresos '+raqEur(j.total_ingresos)+' − Gastos '+raqEur(j.total_gastos)+' = <b style="color:'+(res>=0?'#16a34a':'#dc2626')+'">Resultado '+raqEur(res)+'</b>');
+  } else if(rep==='pygmes'){
+    var meses=j.meses||[]; var cols=[{t:'Bloque',k:'bloque'},{t:'Cuenta',k:'cuenta'},{t:'Nombre',k:'nombre'}];
+    meses.forEach(function(m){cols.push({t:m,k:'m'+m,num:1});}); cols.push({t:'Total',k:'total',num:1});
+    var rows3=[];
+    [['INGRESOS',j.ingresos||[]],['GASTOS',j.gastos||[]]].forEach(function(par){
+      par[1].forEach(function(r){ var f={bloque:par[0],cuenta:r.cuenta,nombre:r.nombre,total:r.total};
+        meses.forEach(function(m){ f['m'+m]=(r.meses&&r.meses[m]!=null)?r.meses[m]:null; }); rows3.push(f); });
+    });
+    var res2=j.resultado||0;
+    h=raqTabla(cols, rows3, '📅 PyG mensualizada · '+j.ejercicio,
+      'Resultado acumulado <b style="color:'+(res2>=0?'#16a34a':'#dc2626')+'">'+raqEur(res2)+'</b>');
+  } else if(rep==='ivaemit'||rep==='ivarec'){
+    h=raqTabla([{t:'Fecha',k:'fecha'},{t:'Serie',k:'serie'},{t:'Nº',k:'numero'},{t:'NIF',k:'nif'},{t:'Tercero',k:'tercero'},{t:'Base',k:'base',num:1},{t:'% IVA',k:'tipo'},{t:'Cuota',k:'cuota',num:1},{t:'Total factura',k:'total_factura',num:1}], j.lineas||[],
+      '🧾 Libro de IVA — facturas '+(j.libro==='emitidas'?'EMITIDAS':'RECIBIDAS')+' · '+j.ejercicio+(raqV('raqf-tri')?' T'+raqV('raqf-tri'):''),
+      'Base '+raqEur(j.base)+' · Cuota '+raqEur(j.cuota)+' · '+j.n_facturas+' facturas · total facturado '+raqEur(j.total_facturado));
+  } else if(rep==='ivares'){
+    var rows4=[]; var ts=j.trimestres||{};
+    Object.keys(ts).sort().forEach(function(t){ var e=ts[t];
+      rows4.push({tri:t,brep:e.repercutido.base,rep:e.repercutido.cuota,bsop:e.soportado.base,sop:e.soportado.cuota,res:e.resultado}); });
+    h=raqTabla([{t:'Trimestre',k:'tri'},{t:'Base repercutida',k:'brep',num:1},{t:'IVA repercutido',k:'rep',num:1},{t:'Base soportada',k:'bsop',num:1},{t:'IVA soportado',k:'sop',num:1},{t:'Resultado 303',k:'res',num:1}], rows4,
+      '🏛️ Resumen de IVA por trimestre · '+j.ejercicio, 'Resultado > 0 = a ingresar · < 0 = a compensar/devolver. Sale del libro oficial (472/477).');
+  } else if(rep==='m347'){
+    var rows5=[]; ['ventas','compras'].forEach(function(lado){ (j[lado]||[]).forEach(function(r){
+      rows5.push({lado:lado.toUpperCase(),nif:r.nif,nombre:r.nombre+(r.excluir347?' (excluido 347 en SisConta)':''),total:r.total,T1:r.T1,T2:r.T2,T3:r.T3,T4:r.T4,n:r.n_facturas}); }); });
+    h=raqTabla([{t:'Lado',k:'lado'},{t:'NIF',k:'nif'},{t:'Tercero',k:'nombre'},{t:'Total año',k:'total',num:1},{t:'T1',k:'T1',num:1},{t:'T2',k:'T2',num:1},{t:'T3',k:'T3',num:1},{t:'T4',k:'T4',num:1},{t:'Nº fac',k:'n'}], rows5,
+      '📋 Modelo 347 · '+j.ejercicio, raqEsc(j.nota||''));
+  } else if(rep==='terceros'){
+    h=raqTabla([{t:'NIF',k:'nif'},{t:'Nombre',k:'nombre'},{t:'Comercial',k:'comercial'},{t:'Municipio',k:'municipio'},{t:'Teléfono',k:'telefono'},{t:'Email',k:'email'},{t:'IBAN',k:'iban'},{t:'Subcuentas',k:'_subs'},{t:'Ventas',k:'ventas',num:1},{t:'Compras',k:'compras',num:1}],
+      (j.terceros||[]).map(function(r){ r._subs=(r.subcuentas||[]).join(' '); return r; }),
+      '👥 Terceros · '+j.ejercicio, 'Clic en 🔎 Extracto de tercero con el NIF para ver su cuenta.');
+  } else if(rep==='extracto'){
+    var t=j.tercero||{};
+    h=raqTabla([{t:'Fecha',k:'fecha'},{t:'Asiento',k:'asiento'},{t:'Subcuenta',k:'subcuenta'},{t:'Concepto',k:'concepto'},{t:'D/H',k:'dh'},{t:'Importe',k:'importe',num:1},{t:'Saldo',k:'saldo',num:1}], j.apuntes||[],
+      '🔎 Extracto de '+(t.nombre||j.nif)+' · '+j.ejercicio,
+      'Subcuentas '+raqEsc((j.subcuentas||[]).join(', '))+' · <b>Saldo '+raqEur(j.saldo)+'</b> · '+(j.facturas||[]).length+' facturas en el libro de IVA');
+  }
+  out.innerHTML=h;
+}
+function raqCSV(){
+  if(!_raqLast||!_raqLast.rows||!_raqLast.rows.length){ alert('Primero carga un informe.'); return; }
+  var sep=';';
+  var lines=[_raqLast.cols.map(function(c){return '"'+String(c.t).replace(/"/g,'""')+'"';}).join(sep)];
+  _raqLast.rows.forEach(function(r){
+    lines.push(_raqLast.cols.map(function(c){ var v=r[c.k]; if(v==null) v='';
+      if(c.num&&typeof v==='number') return String(v.toFixed(2)).replace('.',',');
+      return '"'+String(v).replace(/"/g,'""')+'"'; }).join(sep));
+  });
+  var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=(_raqLast.titulo||'informe').replace(/[^\wáéíóúñÁÉÍÓÚÑ ·-]/g,'').trim().replace(/\s+/g,'_')+'.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function raqPrint(){
+  var t=document.getElementById('raq-tabla'); if(!t){ alert('Primero carga un informe.'); return; }
+  var w=window.open('','_blank');
+  w.document.write('<html><head><title>'+raqEsc(_raqLast.titulo||'Informe')+'</title><style>body{font-family:Segoe UI,Arial,sans-serif;font-size:11px;margin:18px}h2{font-size:15px;margin:0 0 4px}p{color:#666;font-size:10px;margin:0 0 10px}table{width:100%;border-collapse:collapse}th,td{padding:3px 6px;border-bottom:1px solid #ddd;text-align:left;font-size:10px}th{background:#f2f2f2}td[style*="right"],th[style*="right"]{text-align:right}</style></head><body>');
+  w.document.write('<h2>'+raqEsc(_raqLast.titulo||'Informe')+'</h2><p>JS TECHNOLOGY MENORCA SL · fuente: contabilidad oficial SisConta · generado '+new Date().toLocaleString('es-ES')+'</p>');
+  w.document.write(t.outerHTML.replace(/max-height:65vh;?/,'').replace(/position:sticky;?/g,''));
+  w.document.write('</body></html>');
+  w.document.close(); setTimeout(function(){ w.print(); },400);
 }
 
 // ===== PENDIENTE DE CONTABILIZAR (zona Raquel) =====

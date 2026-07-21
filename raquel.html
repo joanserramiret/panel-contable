@@ -169,7 +169,8 @@ var GRUPOS = [
     {id:'extracto',ico:'🔎', n:'Extracto de tercero', d:'La cuenta completa de un cliente o proveedor: todos sus apuntes con saldo corrido y sus facturas.', f:['nif','desde','hasta']}
   ]},
   {g:'Puente con el panel', items:[
-    {id:'cruce',   ico:'🔁', n:'Cruce con el panel', d:'Compara el diario de SisConta con las facturas del panel por CIF y nº de factura: qué coincide, qué le falta a cada lado, y qué se puede marcar contabilizado de un clic.', f:[]}
+    {id:'cruce',   ico:'🔁', n:'Cruce con el panel', d:'Compara el diario de SisConta con las facturas del panel por CIF y nº de factura: qué coincide, qué le falta a cada lado, y qué se puede marcar contabilizado de un clic.', f:[]},
+    {id:'checklist',ico:'📋', n:'Lista de tareas', d:'Todo lo que el cruce detecta que hay que revisar o corregir — ventas mal numeradas, ventas sin contabilizar, compras que faltan — como una lista que marcas cuando la haces. ⭐ Lo que marques como hecho MANDA sobre el panel (nunca sobre SisConta); la próxima copia lo confirmará.', f:[]}
   ]}
 ];
 function repDe(id){ for(var i=0;i<GRUPOS.length;i++){ for(var j=0;j<GRUPOS[i].items.length;j++){ if(GRUPOS[i].items[j].id===id) return GRUPOS[i].items[j]; } } return null; }
@@ -264,6 +265,7 @@ function run(){
   else if(REP==='terceros'){ var e4=[]; if(V('f-texto'))e4.push('texto='+encodeURIComponent(V('f-texto'))); url='/sisconta/terceros'+qs(e4); }
   else if(REP==='extracto'){ if(!V('f-nif')){ out.innerHTML='<div class="vacio">Escribe el NIF del tercero.<br><span class="muted">Lo tienes en 👥 <b>Directorio</b> — o entra desde allí con un clic.</span></div>'; return; } url='/sisconta/extracto_tercero'+qs(['nif='+encodeURIComponent(V('f-nif'))]); }
   else if(REP==='cruce'){ url='/sisconta/cruce'+qs(); out.innerHTML='<div class="vacio">Cruzando el diario con el panel… (unos segundos)</div>'; }
+  else if(REP==='checklist'){ url='/sisconta/checklist'+qs(); out.innerHTML='<div class="vacio">Preparando la lista de tareas… (unos segundos)</div>'; }
   fetch(API+url,H).then(function(r){return r.json();}).then(function(j){
     if(!j||!j.ok){ out.innerHTML='<div class="vacio">⚠️ '+esc((j&&j.error)||'No se pudo cargar')+'</div>'; return; }
     pintar(j,out);
@@ -531,7 +533,47 @@ function pintar(j,out){
     if(!(v.solo_agora||[]).length && !(v.solo_sisconta||[]).length) h2+='<p style="color:var(--verde);font-weight:700;font-size:13px">✓ Todas las ventas del rango cuadran entre Ágora y SisConta.</p>';
     out.innerHTML=h2;
   }
+  else if(REP==='checklist'){
+    var items=j.items||[];
+    var pend=items.filter(function(x){return x.estado==='pendiente';});
+    var hechas=items.filter(function(x){return x.estado!=='pendiente';});
+    var GN={ventas:'🧾 Ventas', compras:'📥 Compras', manual:'✍️ A mano'};
+    function ckCard(x){
+      var acc='';
+      if(x.ver && x.ver.tipo==='pdf') acc+='<button class="btn" onclick="ckVerPdf(\''+encodeURIComponent(x.ver.ruta)+'\')">👁 Ver</button> ';
+      if(x.estado==='pendiente') acc+='<button class="btn verde" onclick="ckMarcar(\''+encodeURIComponent(x.key)+'\',\'contabilizada\')">✔ Hecho</button>';
+      else acc+='<span class="muted" style="font-size:11px">✔ '+esc(x.estado)+(x.cuando?' · '+esc(x.cuando):'')+'</span> <button class="btn" onclick="ckMarcar(\''+encodeURIComponent(x.key)+'\',\'pendiente\')">↩ deshacer</button>';
+      if(x.origen==='manual') acc+=' <button class="btn" onclick="ckBorrar(\''+esc(x.key)+'\')">🗑</button>';
+      return '<div class="carta" style="margin-bottom:8px'+(x.estado!=='pendiente'?';opacity:.5':'')+'"><div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">'+
+        '<div style="flex:1;min-width:240px"><b style="font-size:13px">'+esc(x.titulo)+'</b><br><span class="muted" style="font-size:12px">'+esc(x.detalle)+'</span>'+(x.nota?'<br><span style="font-size:11px;color:var(--marca)">📝 '+esc(x.nota)+'</span>':'')+'</div>'+
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+acc+'</div></div></div>';
+    }
+    var h3='<div class="fichas" style="margin-bottom:14px">'+
+      '<div class="ficha"><div class="l">Pendientes</div><div class="v" style="color:'+(pend.length?'var(--marca)':'var(--verde)')+'">'+pend.length+'</div></div>'+
+      '<div class="ficha"><div class="l">Hechas</div><div class="v">'+hechas.length+'</div></div>'+
+      '<div class="ficha"><div class="l">Copia SisConta</div><div class="v" style="font-size:15px">'+fF(j.copia_hasta)+'</div><div class="s">lo que marques manda sobre el panel; la copia nueva lo confirmará</div></div>'+
+      '</div>';
+    h3+='<div style="margin:0 0 12px"><button class="btn" onclick="ckAdd()">➕ Añadir tarea a mano</button></div>';
+    if(!items.length){ h3+='<p style="color:var(--verde);font-weight:700;font-size:13px">✓ No hay nada pendiente — panel y SisConta cuadran al dedillo.</p>'; out.innerHTML=h3; return; }
+    ['ventas','compras','manual'].forEach(function(g){
+      var gp=pend.filter(function(x){return x.grupo===g;});
+      if(gp.length){ h3+='<h3 style="font-size:14px;margin:18px 0 8px">'+GN[g]+' <span class="muted" style="font-weight:400">('+gp.length+')</span></h3>'; gp.forEach(function(x){ h3+=ckCard(x); }); }
+    });
+    if(hechas.length){ h3+='<h3 style="font-size:13px;margin:24px 0 8px;color:var(--suave)">✔ Ya hechas ('+hechas.length+')</h3>'; hechas.forEach(function(x){ h3+=ckCard(x); }); }
+    out.innerHTML=h3;
+  }
 }
+function ckVerPdf(rutaEnc){ var ruta=decodeURIComponent(rutaEnc); var p=ruta.split('/'); var anio=p.shift();
+  window.open(API+'/proveedores/abrir?anio='+encodeURIComponent(anio)+'&ruta='+encodeURIComponent(p.join('/'))+'&nc='+Date.now(),'_blank'); }
+function ckMarcar(keyEnc,estado){ var key=decodeURIComponent(keyEnc);
+  fetch(API+'/sisconta/checklist/marcar',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({key:key,estado:estado})})
+    .then(function(r){return r.json();}).then(function(j){ if(j&&j.ok) run(); else alert('No se pudo marcar: '+((j&&j.error)||'')); }).catch(function(){ alert('No se pudo conectar.'); }); }
+function ckBorrar(id){ if(!confirm('¿Borrar esta tarea manual?')) return;
+  fetch(API+'/sisconta/checklist/borrar',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({id:id})})
+    .then(function(r){return r.json();}).then(function(){ run(); }); }
+function ckAdd(){ var t=prompt('¿Qué hay que revisar? (título de la tarea)'); if(!t) return; var d=prompt('Detalle (opcional):')||'';
+  fetch(API+'/sisconta/checklist/add',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({titulo:t,detalle:d})})
+    .then(function(r){return r.json();}).then(function(){ run(); }); }
 function irExtracto(nif){ sel('extracto'); var e=document.getElementById('f-nif'); if(e){ e.value=nif; run(); } }
 function cruceAplicar(){
   var b=document.getElementById('btn-cruce-aplicar'); if(!b) return;

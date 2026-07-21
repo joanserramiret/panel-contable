@@ -479,11 +479,17 @@ function pintar(j,out){
     out.innerHTML=h;
   }
   else if(REP==='cruce'){
+    // Separar la COLA DE 2025 (frontera) de lo que de verdad le falta al panel [2026-07-21, Joan]:
+    // el backend marca x.frontera=true en las facturas de dic-2025 que Raquel asienta el 01/01. No son
+    // un agujero (el panel corta en 2026 a propósito) → no deben contar como "Solo en SisConta" ámbar.
+    var _ssAll=(j.solo_sisconta||[]);
+    var _ssFront=_ssAll.filter(function(x){return x.frontera;});
+    var _ssReales=_ssAll.filter(function(x){return !x.frontera;});
     var h2=fichas([
       {l:'Coinciden en los dos sitios', v:j.n_coincidentes, c:'var(--verde)', s:'panel ↔ diario de SisConta'},
       {l:'Para marcar contabilizadas', v:j.n_para_marcar, c:j.n_para_marcar?'var(--marca)':'var(--suave)', s:'ya están en SisConta, el panel aún no lo sabe'},
       {l:'Solo en el panel', v:(j.solo_panel||[]).length+((j.sin_cif||[]).length?' +'+(j.sin_cif||[]).length+' sin CIF':''), c:(j.solo_panel||[]).length?'var(--ambar)':'var(--suave)', s:'a Raquel le pueden faltar'},
-      {l:'Solo en SisConta', v:(j.solo_sisconta||[]).length, c:(j.solo_sisconta||[]).length?'var(--ambar)':'var(--suave)', s:'al panel le faltan (OCR/correo)'}
+      {l:'Solo en SisConta', v:_ssReales.length, c:_ssReales.length?'var(--ambar)':'var(--suave)', s:'al panel le faltan (OCR/correo)'}
     ]);
     h2+='<p class="muted" style="font-size:11.5px;margin:0 0 14px">'+esc(j.nota||'')+'</p>';
     function bloque(tit, sub, tabla_html){ return '<h3 style="font-size:14px;margin:22px 0 2px">'+tit+'</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">'+sub+'</p>'+tabla_html; }
@@ -499,10 +505,16 @@ function pintar(j,out){
         tabla([{t:'Fichero',k:'_fic'},{t:'Proveedor',k:'proveedor'},{t:'Fecha',k:'_f'},{t:'Importe',k:'total',num:1},{t:'Motivo',k:'motivo'}],
           (j.solo_panel||[]).concat(j.sin_cif||[]).map(function(x){ x._fic=x.ruta.split('/').pop(); x._f=fF(x.fecha); return x; }), {}));
     }
-    if((j.solo_sisconta||[]).length){
+    if(_ssReales.length){
       h2+=bloque('🔵 Solo en SisConta','Facturas que Raquel SÍ tiene contabilizadas y el panel no ha visto (no llegaron por correo/portal o el OCR no las casó). Son deducciones reales que al panel se le escapan.',
         tabla([{t:'NIF',k:'nif'},{t:'Tercero',k:'tercero'},{t:'Factura',k:'factura'},{t:'Fecha',k:'_f'},{t:'Importe',k:'total',num:1}],
-          (j.solo_sisconta||[]).map(function(x){ x._f=fF(x.fecha); return x; }), {}));
+          _ssReales.map(function(x){ x._f=fF(x.fecha); return x; }), {}));
+    }
+    if(_ssFront.length){
+      var _frTot=_ssFront.reduce(function(a,x){return a+(x.total||0);},0);
+      h2+=bloque('🟢 Cola de 2025 (frontera) — no falta nada','Facturas de diciembre de 2025 que Raquel asienta el 01/01 al abrir el ejercicio. El panel corta en 2026 a propósito, así que nunca las tendrá: ya están en el cierre de 2025. No son un agujero — no hay que hacer nada con ellas.',
+        tabla([{t:'NIF',k:'nif'},{t:'Tercero',k:'tercero'},{t:'Factura',k:'factura'},{t:'Fecha',k:'_f'},{t:'Importe',k:'total',num:1}],
+          _ssFront.map(function(x){ x._f=fF(x.fecha); return x; }), {tot:{tercero:_ssFront.length+' de 2025', total:_frTot}}));
     }
     if((j.dudosas||[]).length){
       h2+=bloque('⚠️ Dudosas','Mismo nº de factura pero importe distinto — abre el PDF antes de tocar nada.',

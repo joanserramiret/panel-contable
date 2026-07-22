@@ -6254,6 +6254,11 @@ async function remesisarAbrir(banco){
         }});
     }catch(e){}
     window._consRecibos=regir.concat(conMandato).concat(nuevas).concat(revisar);
+    // ⭐ IBAN por factura (puntual): un local con cuenta distinta al mandato del CIF. LOMIDES SL comparte CIF
+    //    (B21949474) entre GREEN GARDEN y TAPS CAN AVELINO; F-7943 es de TAPS → cobra en la cuenta de TAPS.
+    //    [2026-07-22] Durable pendiente: leer el último artículo de la factura (= nombre del local) → IBAN.
+    var _ibanFac={'F-7943':'ES9321000055560201215544'};
+    window._consRecibos.forEach(function(r){ var ib=_ibanFac[(r.fact||'').toUpperCase()]; if(ib){ r.iban=ib; r.ref_mandato=(r.nif||'').replace(/[^A-Za-z0-9]/g,'').toUpperCase(); } });
     var nRem=Object.keys(yaRem).length;
     var row=function(r,i,col){return '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:4px 2px;border-bottom:1px solid #f4f4f4;cursor:pointer"><input type="checkbox" '+(r._sel?'checked':'')+' onchange="window._consRecibos['+i+']._sel=this.checked;consTotal()"><span style="width:70px;color:'+col+';font-weight:600">'+r.fact+'</span><span style="flex:1">'+(r.cliente||'(sin nombre)')+(r.gastos>0?' <span style="color:#185FA5;font-size:11px">+ '+eur(r.gastos)+' gastos dev'+(r.bancoDev?' '+r.bancoDev:'')+'</span>':'')+(r.devuelta?' <span style="background:#fdecec;color:#c0392b;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700">🔄 botó · re-giro</span>':'')+(r.nif?'':' <span style=\'color:#c00\'>⚠ sin NIF</span>')+'</span><span style="font-weight:600">'+eur(r.importe)+'</span></label>';};
     var html='';

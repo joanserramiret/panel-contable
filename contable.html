@@ -503,10 +503,6 @@
     <div class="nav-tab tab-clasico" onclick="switchTabC('ctacli')" id="ctab-ctacli">📗 Cuenta clientes</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('semaforo')" id="ctab-semaforo">🎯 Estado proveedores</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('tarjeta')" id="ctab-tarjeta">💳 Compras tarjeta</div>
-    <div class="nav-tab tab-simple" onclick="switchTabC('agentes')" id="ctab-agentes">🤖 Agentes</div>
-    <!-- 📚 Contable Oficial [2026-07-18, Joan: "casi como un programa aparte"]: es una APP propia
-         (raquel.html, servida por el bridge en /raquel) — este botón solo la abre en otra pestaña. -->
-    <div class="nav-tab tab-simple" onclick="window.open(BRIDGE_URL_C+'/raquel','_blank')" id="ctab-raquel" title="Los informes contables oficiales (SisConta), como programa aparte">📚 Contable oficial ↗</div>
     <div class="nav-toggle" onclick="toggleModoClasico()" id="cnav-toggle" title="Abre el DETALLE: bancos en tiempo real, remesas, proveedores… (lo que usa Raquel). Es solo de visualización: no borra nada.">🔧 Detalle · Raquel</div>
     <!-- Podadas a petición de Joan (2026-06): Calendario e Impuestos·IVA — SisConta es la fuente oficial del IVA.
          Para recuperarlas, restaurar estas dos líneas:
@@ -789,6 +785,7 @@
             <option value="vencida">Vencidas</option>
           </select>
           <button class="btn-secondary" onclick="descargarSeleccionadas()">⬇ Descargar seleccionadas</button>
+          <button onclick="enviarSeleccionadasEmail()" title="Enviar por email cada factura marcada a su cliente (PDF adjunto, email de la ficha de Ágora). Se envían directamente, sin abrir el editor una a una." style="padding:8px 14px;background:#0F6E56;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">✉️ Enviar seleccionadas</button>
           <button onclick="reclamarCobroEmail()" title="Generar un email de reclamación con las facturas seleccionadas del cliente" style="padding:8px 14px;background:#b45309;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">✉ Reclamar cobro</button>
           <button class="btn-naranja" onclick="subirCajasFaltantes()" title="Copia en PDF a Dropbox · CAJAS las facturas de los días que falten">📦 Subir a CAJAS (faltantes)</button>
           <button class="btn-secondary" onclick="exportarExcel()">📊 Excel</button>
@@ -1148,12 +1145,6 @@
         <div style="font-size:13px;color:var(--texto-suave);margin-bottom:10px">Compras pagadas con la tarjeta de crédito (se concilian con el cargo mensual). 🟢 con factura · 🟡 falta factura · 🚫 gasto no deducible.</div>
         <div id="tarjeta-cont"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div>
       </div>
-    </div>
-
-    <!-- 🤖 CATÁLOGO DE AGENTES [2026-07-17, Joan]: todos los agentes, su función, si están activos,
-         sus alertas y sus incidencias. La ficha completa; el Pulso mantiene su resumen compacto. -->
-    <div class="tab-content" id="ctc-agentes">
-      <div id="agentes-catalogo"><div style="color:var(--texto-suave);font-size:13px;padding:16px">Cargando catálogo de agentes…</div></div>
     </div>
 
     <div class="tab-content" id="ctc-iva">
@@ -2373,6 +2364,53 @@ async function descargarSeleccionadas() {
     await descargarFacturaObj(sel[i]);
   }
   if (statusEl) setStatusC(statusEl, '✓ ' + sel.length + ' PDF descargado/s.', 'success');
+}
+
+// ✉️ ENVÍO MASIVO: manda por email cada factura MARCADA a su cliente (email de la ficha de Ágora, resuelto por CIF),
+// con el PDF adjunto (misma plantilla del panel). Envío directo, sin abrir el editor una a una. Reusa los primitivos
+// del reclamador (/clientes/email, generarPDFBlobC, blobABase64C, /correo/enviar). Reporta enviadas / sin email / errores.
+async function enviarSeleccionadasEmail() {
+  var todo = getSeleccionadas().filter(function (f) { return f; });
+  if (!todo.length) { alert('Marca al menos una factura para enviar.'); return; }
+  var sel = todo.filter(function (f) { return f.Totals && f.Totals.GrossAmount > 0; });
+  var quitadas = todo.length - sel.length; // devoluciones/abonos (importe ≤ 0) no se envían
+  if (!sel.length) { alert('Las facturas marcadas son devoluciones/abonos (importe ≤ 0): no se envían por aquí.'); return; }
+  var aviso = 'Enviar por email las ' + sel.length + ' factura(s) marcada(s)?\n\n' +
+    'Cada una va a su cliente (email de la ficha de Ágora) con el PDF adjunto.\nSe envían directamente, sin abrir el editor de cada una.';
+  if (quitadas) aviso += '\n\n(' + quitadas + ' marcada(s) son devoluciones/abonos y se omiten.)';
+  if (!confirm(aviso)) return;
+  var st = document.getElementById('c-status');
+  var HP = { 'ngrok-skip-browser-warning': 'true', 'Content-Type': 'application/json' };
+  var enviadas = 0, sinEmail = [], errores = [];
+  for (var i = 0; i < sel.length; i++) {
+    var f = sel[i], ref = f.Serie + '-' + f.Number;
+    var cli = f.Customer ? (f.Customer.BusinessName || f.Customer.FiscalName || '') : '';
+    var cif = f.Customer ? (f.Customer.Cif || '') : '';
+    if (st) setStatusC(st, 'Enviando ' + (i + 1) + '/' + sel.length + ' — ' + ref + '…', 'loading');
+    var para = '';
+    try {
+      var q = cif ? ('cif=' + encodeURIComponent(cif)) : ('cliente=' + encodeURIComponent(cli));
+      var je = await fetch(BRIDGE_URL_C + '/clientes/email?' + q + '&_=' + Date.now(), { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(function (r) { return r.json(); });
+      para = (je.email || '').trim();
+    } catch (e) {}
+    if (!para || para.indexOf('@') < 0) { sinEmail.push(ref + ' · ' + (cli || cif || '?')); continue; }
+    try {
+      var bl = await generarPDFBlobC(f);
+      var b64 = await blobABase64C(bl);
+      var asunto = 'Factura ' + ref + ' · JS Technology Menorca';
+      var cuerpo = 'Hola,\n\nTe adjuntamos la factura ' + ref + '.\n\nUn saludo,\nJS Technology Menorca SL';
+      var j = await fetch(BRIDGE_URL_C + '/correo/enviar', { method: 'POST', headers: HP,
+        body: JSON.stringify({ de: 'info@js-tech.es', para: para, asunto: asunto, cuerpo: cuerpo,
+          adjuntos: [{ nombre: ref + '.pdf', base64: b64 }] }) }).then(function (r) { return r.json(); });
+      if (j.ok) { enviadas++; fetch(BRIDGE_URL_C + '/clientes/email', { method: 'POST', headers: HP, body: JSON.stringify({ cliente: cli, email: para }) }).catch(function () {}); }
+      else errores.push(ref + ': ' + (j.error || '?'));
+    } catch (e) { errores.push(ref + ': ' + e.message); }
+  }
+  if (st) setStatusC(st, '✅ ' + enviadas + ' enviada(s)' + (sinEmail.length ? ' · ' + sinEmail.length + ' sin email' : '') + (errores.length ? ' · ' + errores.length + ' error(es)' : ''), errores.length ? 'error' : 'success');
+  var msg = '✅ Enviadas: ' + enviadas + ' de ' + sel.length;
+  if (sinEmail.length) msg += '\n\n⚠️ Sin email en Ágora (' + sinEmail.length + ') — ponlo en su ficha y saldrá solo, o mándalas con ✉️ una a una:\n' + sinEmail.join('\n');
+  if (errores.length) msg += '\n\n❌ Errores (' + errores.length + '):\n' + errores.join('\n');
+  alert(msg);
 }
 
 function descargarFactura(i) {
@@ -5013,8 +5051,7 @@ const TAB_INTROS = {
   semaforo: '🎯 <b>Estado de proveedores</b> — Estado de un vistazo con colores: qué está al día (verde) y qué necesita atención (rojo).',
   tarjeta: '💳 <b>Compras con tarjeta</b> — Los extractos de la tarjeta de crédito de empresa: compras y liquidación mensual.',
   iva: '📊 <b>IVA</b> — Resumen del IVA repercutido y soportado del período.',
-  calendario: '📅 <b>Calendario</b> — Vencimientos y cobros previstos del mes.',
-  agentes: '🤖 <b>Catálogo de agentes</b> — Todos los agentes que vigilan el negocio: qué hace cada uno, con qué datos trabaja, cuándo corre, si está activo, su última pasada y sus incidencias. Desde aquí los activas, desactivas o los pones a currar.'
+  calendario: '📅 <b>Calendario</b> — Vencimientos y cobros previstos del mes.'
 };
 function _pintarTabIntro(tab){
   var el = document.getElementById('tab-intro'); if(!el) return;
@@ -5056,7 +5093,6 @@ function switchTabC(tab) {
   if (tab === 'buscar') { const bq = document.getElementById('busc-q'); if (bq) bq.focus(); }
   if (tab === 'pulso') cargarPulso();
   if (tab === 'pendcont') cargarPendCont();
-  if (tab === 'agentes') cargarCatalogoAgentes();
 }
 
 // ===== PENDIENTE DE CONTABILIZAR (zona Raquel) =====
@@ -5346,7 +5382,7 @@ async function cargarAgentes(){
   const cont=document.getElementById('pulso-agentes'); if(!cont) return;
   try{
     const j=await fetch(BRIDGE_URL_C+'/agentes?_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(r=>r.json());
-    const ags=((j&&j.agentes)||[]).filter(a=>!a.servicio);   // el Pulso muestra los agentes; los servicios (OCR) viven en la pestaña 🤖 Agentes
+    const ags=(j&&j.agentes)||[];
     let h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title" style="margin:0">🤖 Centro de agentes</div>'+
       '<span style="font-size:11px;color:var(--texto-suave)">Auditores que razonan con FINA · avisan por ntfy al móvil</span></div>';
     h+=ags.map(function(a){
@@ -5372,75 +5408,6 @@ async function cargarAgentes(){
 async function agenteToggle(id,enabled){
   try{ await fetch(BRIDGE_URL_C+'/agentes/toggle',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({id:id,enabled:enabled})}); }catch(e){}
   cargarAgentes();
-  if(document.getElementById('ctc-agentes').classList.contains('active')) cargarCatalogoAgentes();
-}
-
-// ===== 🤖 CATÁLOGO DE AGENTES [2026-07-17, Joan] — la ficha completa de cada agente =====
-async function cargarCatalogoAgentes(){
-  const cont=document.getElementById('agentes-catalogo'); if(!cont) return;
-  try{
-    const j=await fetch(BRIDGE_URL_C+'/agentes?_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(r=>r.json());
-    const ags=(j&&j.agentes)||[], hue=(j&&j.huerfanos)||[];
-    const nAct=ags.filter(a=>a.enabled!==false&&!a.servicio).length, nAle=ags.filter(a=>a.ultimo_alerta).length,
-          nInc=ags.filter(a=>(a.incidencias||[]).length).length,
-          nAg=ags.filter(a=>!a.servicio).length;
-    const eurTot=(j.consumo_total&&j.consumo_total.eur)||0;
-    const fmtEur=v=>(v<0.01&&v>0)?'<0,01 €':((v||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €');
-    const cronTxt=c=>({diario:'cada día',semanal:'cada lunes',mensual:'el día 1'}[c]||(c&&c.replace('dia_','el día '))||c);
-    let h='<div class="card" style="margin-bottom:14px"><div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'+
-      '<div class="card-title" style="margin:0">🤖 Catálogo de agentes</div>'+
-      '<span style="font-size:12px;background:#e8f7ef;color:#1b7a3d;border-radius:8px;padding:3px 10px;font-weight:700">'+nAct+'/'+nAg+' activos</span>'+
-      '<span title="Gasto de API estimado (precios de lista por Mtok). Se cierra por mes natural, como factura Anthropic. Taxímetro local desde el 17/07/2026." style="font-size:12px;background:#eef4ff;color:#1a2e6e;border-radius:8px;padding:3px 10px;font-weight:700">💶 '+fmtEur(eurTot)+' · ciclo '+esc(j.consumo_ciclo||'')+'</span>'+
-      ((j.ciclos_cerrados||[]).length?'<span title="Ciclos de facturación ya cerrados" style="font-size:11px;color:var(--texto-suave)">cerrados: '+(j.ciclos_cerrados||[]).map(c=>esc(c.ciclo)+' '+fmtEur(c.eur||0)).join(' · ')+'</span>':'')+
-      (nAle?'<span style="font-size:12px;background:#fff7ed;color:#b45309;border-radius:8px;padding:3px 10px;font-weight:700">⚠️ '+nAle+' con alerta</span>':'')+
-      (nInc?'<span style="font-size:12px;background:#fdeaea;color:#b3261e;border-radius:8px;padding:3px 10px;font-weight:700">🩹 '+nInc+' con incidencias</span>':'')+
-      '<span style="flex:1"></span>'+
-      '<button onclick="agentesACurrar()" style="padding:5px 12px;border:1px solid #c4b5fd;border-radius:8px;background:#ede9fe;color:#6d28d9;cursor:pointer;font-size:12px;font-weight:700">🛠️ ¡A currar todos!</button>'+
-      '</div>'+
-      '<div style="font-size:11.5px;color:var(--texto-suave);margin-top:6px">'+esc(j.programacion||'')+'</div></div>';
-    h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px">';
-    h+=ags.map(function(a){
-      const on=a.enabled!==false, inc=a.incidencias||[];
-      const tipoTxt=a.tipo==='auditor'?'🔍 auditor (solo avisa si hay algo)':'🔔 recordatorio (avisa siempre)';
-      const consEur=(a.consumo&&a.consumo.eur)||0, consN=(a.consumo&&a.consumo.llamadas)||0;
-      return '<div class="card" style="'+(on?'':'opacity:.55')+'">'+
-        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
-          '<span style="font-size:19px">'+a.icono+'</span>'+
-          '<b style="font-size:14px">'+esc(a.nombre)+'</b>'+
-          (a.ultimo_alerta?'<span style="font-size:10.5px;background:#fff7ed;color:#b45309;border-radius:7px;padding:2px 7px;font-weight:700">⚠️ alerta</span>':'')+
-          '<span style="flex:1"></span>'+
-          (a.servicio?'<span style="font-size:10.5px;background:#eef4ff;color:#1a2e6e;border-radius:7px;padding:2px 8px;font-weight:700">⚙️ servicio</span>':
-          '<button onclick="agenteEjecutarCat(\''+a.id+'\')" style="padding:3px 9px;border:1px solid #c0cbea;border-radius:7px;background:#f0f4fb;color:#1a2e6e;cursor:pointer;font-size:11px;font-weight:700">▶ Ejecutar</button>'+
-          '<button onclick="agenteToggle(\''+a.id+'\','+(!on)+')" style="padding:3px 9px;border:1px solid '+(on?'#a7d7b8':'#ddd')+';border-radius:7px;background:'+(on?'#e8f7ef':'#f5f5f5')+';color:'+(on?'#1b7a3d':'#999')+';cursor:pointer;font-size:11px;font-weight:700">'+(on?'ON':'OFF')+'</button>')+
-        '</div>'+
-        '<div style="font-size:12px;color:#33456b;margin-top:6px;line-height:1.45">'+esc(a.desc)+'</div>'+
-        '<div style="font-size:11px;color:var(--texto-suave);margin-top:6px">'+(a.servicio?'⚙️ servicio de lectura (no razona con FINA) · bajo demanda':tipoTxt+' · corre '+cronTxt(a.cron))+'</div>'+
-        '<div style="font-size:11px;color:var(--texto-suave);margin-top:2px">📡 Datos: '+esc(a.fuente||'')+'</div>'+
-        '<div style="font-size:11px;color:var(--texto-suave);margin-top:2px">💶 Consumo API: '+(consN?fmtEur(consEur)+' en '+consN+' llamada'+(consN===1?'':'s'):'aún sin llamadas contadas')+'</div>'+
-        (inc.length?'<div style="font-size:11.5px;background:#fdeaea;color:#b3261e;border-radius:8px;padding:6px 9px;margin-top:7px;line-height:1.4">🩹 '+inc.map(esc).join('<br>🩹 ')+'</div>':'')+
-        '<div id="agc-out-'+a.id+'">'+
-        (a.ultimo?'<div style="font-size:11.5px;color:'+(a.ultimo_alerta?'#b45309':'#1b7a3d')+';margin-top:7px;line-height:1.45;background:'+(a.ultimo_alerta?'#fff7ed':'#f0faf4')+';border-radius:8px;padding:7px 9px;max-height:130px;overflow:auto">'+
-          (a.ultimo_alerta?'⚠️ ':'✓ ')+esc(a.ultimo).replace(/\n/g,'<br>')+
-          (a.ultimo_cuando?'<div style="color:var(--texto-suave);margin-top:4px">Última pasada: '+esc((a.ultimo_cuando||'').replace('T',' '))+'</div>':'')+'</div>':
-          '<div style="font-size:11.5px;color:var(--texto-suave);margin-top:7px">Aún sin pasadas.</div>')+
-        '</div>'+
-      '</div>';
-    }).join('');
-    h+='</div>';
-    if(hue.length){
-      h+='<div class="card" style="margin-top:14px;border-left:4px solid #b45309"><div class="card-title" style="margin:0 0 6px">👻 Estados huérfanos (agentes que ya no existen)</div>'+
-        hue.map(x=>'<div style="font-size:12px;color:#33456b;margin-top:4px"><b>'+esc(x.id)+'</b> · última pasada '+esc((x.cuando||'?').replace('T',' '))+' — su estado sigue guardado en agentes_estado.json; si no se va a recuperar, se puede borrar esa entrada.</div>').join('')+'</div>';
-    }
-    cont.innerHTML=h;
-  }catch(e){ cont.innerHTML='<div style="color:#c0392b;font-size:13px;padding:16px">No se pudo cargar el catálogo: '+esc(e.message)+'</div>'; }
-}
-async function agenteEjecutarCat(id){
-  const o=document.getElementById('agc-out-'+id); if(o) o.innerHTML='<div style="color:var(--texto-suave);font-size:12px;margin-top:6px"><span class="spinner"></span> FINA está analizando…</div>';
-  try{
-    const j=await fetch(BRIDGE_URL_C+'/agentes/ejecutar?id='+id+'&_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(r=>r.json());
-    const r=(j.resultados||[])[0];
-    if(o) o.innerHTML=r? '<div style="font-size:12px;color:'+(r.alerta?'#b45309':'#1b7a3d')+';margin-top:6px;line-height:1.45;background:'+(r.alerta?'#fff7ed':'#f0faf4')+';border-radius:8px;padding:7px 9px">'+(r.alerta?'⚠️ ':'✓ ')+esc(r.parte).replace(/\n/g,'<br>')+'</div>' : '<div style="color:#c0392b;font-size:12px">Sin respuesta.</div>';
-  }catch(e){ if(o) o.innerHTML='<div style="color:#c0392b;font-size:12px">Error: '+e.message+'</div>'; }
 }
 async function agenteEjecutar(id){
   const o=document.getElementById('ag-out-'+id); if(o) o.innerHTML='<div style="color:var(--texto-suave);font-size:12px;margin-top:4px"><span class="spinner"></span> FINA está analizando…</div>';
@@ -5502,18 +5469,6 @@ async function cargarPulso(){
             '<button onclick="ivaDudosas('+jiva.trimestre+','+jiva.anio+')" style="margin-top:7px;padding:6px 12px;border:1.5px solid #e8b27a;border-radius:7px;background:#fff7ed;color:#b45309;cursor:pointer;font-size:11.5px;font-weight:700">✏️ Revisar '+jiva.n_estimadas+' cuotas a mano</button>';
           else ivh+='<div style="margin-top:5px;font-size:10.5px;color:var(--texto-suave)">'+jiva.n_ventas+' ventas · '+jiva.n_compras+' compras · todas con cuota real. Guía, no el 303 oficial.</div>';
           _pi.innerHTML=ivh;
-          // 🏛️ IVA OFICIAL — libro de IVA de SisConta (SisConta manda; la estimación de arriba es solo radar)
-          fetch(BRIDGE_URL_C+'/contabilidad/iva_declarado?_='+Date.now(),H).then(r=>r.json()).then(jd=>{
-            if(!jd||!jd.ok||!jd.trimestres) return;
-            const ks=Object.keys(jd.trimestres).sort(); if(!ks.length) return;
-            let dh='<div style="margin-top:10px;padding-top:8px;border-top:2px solid #534AB7"><div style="font-size:11px;font-weight:800;color:#534AB7;margin-bottom:4px">🏛️ IVA oficial (SisConta)</div>';
-            ks.forEach(k=>{const t=jd.trimestres[k]||{}; const res=t.resultado||0; const pend=(t.estado||'')!=='declarado';
-              dh+='<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:12px"><span>'+k.replace('-',' T').replace('TT','T')+(pend?' <span style="font-size:9.5px;color:#b45309;font-weight:800">POR PRESENTAR</span>':'')+'</span><b style="color:'+(res>=0?'#dc2626':'#16a34a')+'">'+(res>=0?'a pagar ':'a favor ')+eur2(Math.abs(res))+'</b></div>';
-              dh+='<div style="font-size:10px;color:var(--texto-suave);margin-bottom:3px">rep. '+eur2(t.repercutido||0)+' − sop. '+eur2(t.soportado||0)+(t.nota?' · '+t.nota:'')+'</div>';
-            });
-            dh+='<div style="font-size:9.5px;color:var(--texto-suave);margin-top:3px">'+(jd.fuente||'')+' · esto es lo que manda; la estimación de arriba es el radar del trimestre en curso.</div></div>';
-            _pi.innerHTML+=dh;
-          }).catch(()=>{});
         }
       }
     }catch(e){}

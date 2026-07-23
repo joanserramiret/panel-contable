@@ -6265,6 +6265,7 @@ async function remesisarAbrir(banco){
         if(!yaEn[fk] && !yaRem[fk]){
           var rec=mk({fact:fc,cliente:v.cliente,importe:+v.importe,fecha:v.fecha},'mandato');
           if(!rec.nif && v.cif) rec.nif=v.cif;   // respaldo: NIF del propio endpoint si Ágora no lo trae
+          if(v.iban) rec.iban=v.iban;   // 🪪 IBAN del local (último artículo de la factura) → cobra en su cuenta
           rec.devuelta=!!v.devuelta;   // 🔄 botó en una remesa anterior → re-giro legítimo (marcarlo)
           conMandato.push(rec);
         }});

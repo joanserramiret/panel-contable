@@ -504,7 +504,7 @@ function pintar(j,out){
     }
     if((j.solo_panel||[]).length||(j.sin_cif||[]).length){
       h2+=bloque('🟠 Solo en el panel','Facturas que el panel tiene y NO aparecen en el diario — o Raquel aún no las ha puenteado, o el nº/CIF no se ha podido leer. Ninguna es un veredicto: son para revisar.',
-        tabla([{t:'Fichero',k:'_fic'},{t:'Proveedor',k:'proveedor'},{t:'Fecha',k:'_f'},{t:'Importe',k:'total',num:1},{t:'Motivo',k:'motivo'}],
+        tabla([{t:'Fichero',k:'_fic'},{t:'Proveedor',k:'proveedor'},{t:'Fecha',k:'_f'},{t:'Importe',k:'total',num:1},{t:'Motivo',k:'motivo'},{t:'',k:'_noded',fmt:function(v,r){ return '<button class="btn" style="background:#fde68a;color:#92400e;border:1px solid #d9a441;font-weight:700;padding:2px 8px;white-space:nowrap" title="Marcar NO DEDUCIBLE: mueve el PDF a la carpeta NO DEDUCIBLE del mes. Cuenta como gasto pero NO deduce el IVA." onclick="raqNoDed(\''+encodeURIComponent(r.ruta||'')+'\',\''+encodeURIComponent(r.proveedor||'')+'\')">no&nbsp;ded</button>'; }}],
           (j.solo_panel||[]).concat(j.sin_cif||[]).map(function(x){ x._fic=x.ruta.split('/').pop(); x._f=fF(x.fecha); return x; }), {}));
     }
     if(_ssReales.length){
@@ -541,6 +541,7 @@ function pintar(j,out){
     function ckCard(x){
       var acc='';
       if(x.ver && x.ver.tipo==='pdf') acc+='<button class="btn" onclick="ckVerPdf(\''+encodeURIComponent(x.ver.ruta)+'\')">👁 Ver</button> ';
+      else if(x.ver && x.ver.tipo==='venta') acc+='<button class="btn" onclick="ckVerVenta(\''+encodeURIComponent(x.ver.factura)+'\')">👁 Ver</button> ';
       if(x.estado==='pendiente') acc+='<button class="btn verde" onclick="ckMarcar(\''+encodeURIComponent(x.key)+'\',\'contabilizada\')">✔ Hecho</button>';
       else acc+='<span class="muted" style="font-size:11px">✔ '+esc(x.estado)+(x.cuando?' · '+esc(x.cuando):'')+'</span> <button class="btn" onclick="ckMarcar(\''+encodeURIComponent(x.key)+'\',\'pendiente\')">↩ deshacer</button>';
       if(x.origen==='manual') acc+=' <button class="btn" onclick="ckBorrar(\''+esc(x.key)+'\')">🗑</button>';
@@ -565,6 +566,8 @@ function pintar(j,out){
 }
 function ckVerPdf(rutaEnc){ var ruta=decodeURIComponent(rutaEnc); var p=ruta.split('/'); var anio=p.shift();
   window.open(API+'/proveedores/abrir?anio='+encodeURIComponent(anio)+'&ruta='+encodeURIComponent(p.join('/'))+'&nc='+Date.now(),'_blank'); }
+function ckVerVenta(facEnc){ var fac=decodeURIComponent(facEnc);
+  window.open(API+'/sisconta/ver_venta?factura='+encodeURIComponent(fac)+'&nc='+Date.now(),'_blank'); }
 function ckMarcar(keyEnc,estado){ var key=decodeURIComponent(keyEnc);
   fetch(API+'/sisconta/checklist/marcar',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({key:key,estado:estado})})
     .then(function(r){return r.json();}).then(function(j){ if(j&&j.ok) run(); else alert('No se pudo marcar: '+((j&&j.error)||'')); }).catch(function(){ alert('No se pudo conectar.'); }); }
@@ -575,6 +578,19 @@ function ckAdd(){ var t=prompt('¿Qué hay que revisar? (título de la tarea)');
   fetch(API+'/sisconta/checklist/add',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({titulo:t,detalle:d})})
     .then(function(r){return r.json();}).then(function(){ run(); }); }
 function irExtracto(nif){ sel('extracto'); var e=document.getElementById('f-nif'); if(e){ e.value=nif; run(); } }
+// Marca una factura del cruzador como NO DEDUCIBLE (mueve el PDF a la carpeta NO DEDUCIBLE del mes;
+// cuenta como gasto pero NO deduce IVA). Mismo endpoint que el repaso y Facturas recibidas.
+function raqNoDed(rutaEnc, provEnc){
+  var ruta=decodeURIComponent(rutaEnc||''), prov=decodeURIComponent(provEnc||'');
+  if(!ruta) return;
+  if(!confirm('🚫 Marcar como NO DEDUCIBLE:\n\n'+(prov||'—')+'\n'+ruta.split('/').pop()+'\n\nSe mueve a la carpeta NO DEDUCIBLE del mes. Cuenta como GASTO pero NO se deduce su IVA soportado, y sale de la cola de pendientes.\n\n¿Confirmas?')) return;
+  fetch(API+'/contabilidad/marcar_no_deducible',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({ruta:ruta})})
+    .then(function(r){return r.json();}).then(function(j){
+      if(!j||!j.ok){ alert('Error: '+((j&&j.error)||'no se pudo marcar')); return; }
+      run();
+    }).catch(function(){ alert('No se pudo conectar.'); });
+}
+
 function cruceAplicar(){
   var b=document.getElementById('btn-cruce-aplicar'); if(!b) return;
   if(!confirm('Se van a marcar como CONTABILIZADAS las facturas de la lista.\n\nEl PDF de cada una se mueve de su carpeta pendiente a la carpeta del proveedor (la marca de Raquel), igual que en su repaso. La evidencia es que YA están en el diario de SisConta.\n\n¿Seguimos?')) return;

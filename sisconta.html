@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contable Oficial · JS TECHNOLOGY</title>
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════════
+     CONTABLE OFICIAL (la sección de Raquel) — programa aparte [2026-07-18]
+     Informes contables bonitos bebiendo de la copia de seguridad de SisConta (sisconta.db en el
+     bridge). SOLO LECTURA: no toca SisConta ni el panel. Se abre desde el panel con un botón o
+     directo en panel.js-tech.es/raquel. Servido por el bridge desde el repo (cambios al vuelo).
+     ═══════════════════════════════════════════════════════════════════════════════════════════ -->
+<style>
+  :root{
+    --fondo:#f4f3ef; --carta:#ffffff; --borde:#e7e5e0; --tinta:#1c1917; --suave:#79716b;
+    --marca:#534AB7; --marca-suave:#eef0fb; --verde:#15803d; --rojo:#b91c1c; --ambar:#b45309;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--fondo);color:var(--tinta);font-size:14px}
+  /* ── Cabecera ── */
+  header{background:linear-gradient(120deg,#1e1b4b,#3730a3);color:#fff;padding:14px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header .marca{font-size:17px;font-weight:800;letter-spacing:.2px}
+  header .marca small{display:block;font-size:10.5px;font-weight:500;opacity:.75;letter-spacing:.6px;text-transform:uppercase}
+  #h-fuente{font-size:11.5px;opacity:.85;flex:1;min-width:220px;line-height:1.45}
+  header select{padding:6px 10px;border-radius:8px;border:none;font-size:13px;font-weight:700;color:#1e1b4b}
+  header button{padding:7px 13px;border:1px solid rgba(255,255,255,.45);border-radius:8px;background:rgba(255,255,255,.12);color:#fff;font-size:12px;font-weight:700;cursor:pointer}
+  header button:hover{background:rgba(255,255,255,.22)}
+  /* ── Estructura ── */
+  #cuerpo{display:flex;min-height:calc(100vh - 64px)}
+  nav{width:236px;flex:0 0 236px;padding:18px 12px 24px;border-right:1px solid var(--borde)}
+  nav .grupo{font-size:10px;font-weight:800;letter-spacing:1.2px;color:var(--suave);text-transform:uppercase;margin:18px 10px 6px}
+  nav .grupo:first-child{margin-top:0}
+  nav .item{display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:600;color:#3f3a36;margin-bottom:1px}
+  nav .item:hover{background:#ebe9e4}
+  nav .item.activo{background:var(--marca);color:#fff}
+  nav .item .ico{width:20px;text-align:center}
+  main{flex:1;padding:20px 26px 40px;min-width:0}
+  .carta{background:var(--carta);border:1px solid var(--borde);border-radius:14px;padding:18px 20px;box-shadow:0 1px 2px rgba(28,25,23,.04)}
+  /* ── Cabecera de informe ── */
+  #rep-cab{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+  #rep-titulo{font-size:20px;font-weight:800;letter-spacing:-.2px}
+  #rep-desc{font-size:12.5px;color:var(--suave);margin-top:2px;max-width:640px;line-height:1.5}
+  .acciones{margin-left:auto;display:flex;gap:8px}
+  .btn{padding:8px 14px;border-radius:9px;border:1.5px solid var(--borde);background:#fff;font-size:12.5px;font-weight:700;cursor:pointer;color:#3f3a36}
+  .btn:hover{border-color:#c9c5be}
+  .btn.primario{background:var(--marca);border-color:var(--marca);color:#fff}
+  .btn.verde{background:#f0fdf4;border-color:#86efac;color:#166534}
+  /* ── Filtros ── */
+  #filtros{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;padding:13px 16px;background:var(--carta);border:1px solid var(--borde);border-radius:12px;margin-bottom:16px}
+  #filtros label{display:flex;flex-direction:column;gap:4px;font-size:10.5px;font-weight:700;color:var(--suave);text-transform:uppercase;letter-spacing:.4px}
+  #filtros input,#filtros select{padding:7px 10px;border:1.5px solid var(--borde);border-radius:8px;font-size:13px;font-family:inherit;background:#fff}
+  #filtros input:focus,#filtros select:focus{outline:none;border-color:var(--marca)}
+  /* ── Fichas resumen ── */
+  .fichas{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .ficha{flex:1;min-width:150px;background:var(--carta);border:1px solid var(--borde);border-radius:12px;padding:12px 16px}
+  .ficha .l{font-size:10.5px;font-weight:700;color:var(--suave);text-transform:uppercase;letter-spacing:.5px}
+  .ficha .v{font-size:21px;font-weight:800;margin-top:3px;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+  .ficha .s{font-size:11px;color:var(--suave);margin-top:2px}
+  /* ── Tablas ── */
+  .tabla-marco{background:var(--carta);border:1px solid var(--borde);border-radius:12px;overflow:hidden}
+  .tabla-scroll{overflow:auto;max-height:calc(100vh - 320px)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{position:sticky;top:0;z-index:2;background:#faf9f7;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--suave);text-align:left;padding:9px 12px;border-bottom:2px solid var(--borde);white-space:nowrap}
+  thead th.num{text-align:right}
+  tbody td{padding:7px 12px;border-bottom:1px solid #f2f1ed;vertical-align:top}
+  tbody tr:hover td{background:#faf9f5}
+  tbody tr.sep td{border-top:2px solid #e2e0da}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  td.neg{color:var(--rojo)}
+  tfoot td{padding:9px 12px;font-weight:800;border-top:2px solid var(--borde);background:#faf9f7;font-variant-numeric:tabular-nums}
+  tfoot td.num{text-align:right}
+  .chip-dh{display:inline-block;min-width:20px;text-align:center;padding:1px 6px;border-radius:6px;font-size:10.5px;font-weight:800}
+  .chip-dh.D{background:#eef0fb;color:#3730a3}
+  .chip-dh.H{background:#fef3c7;color:#92400e}
+  .barra{height:8px;border-radius:5px;background:#edecf8;overflow:hidden;min-width:60px}
+  .barra i{display:block;height:100%;background:var(--marca);border-radius:5px}
+  .muted{color:var(--suave)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:10px;font-size:10.5px;font-weight:800}
+  .pill.ok{background:#dcfce7;color:#166534}
+  .pill.warn{background:#fef3c7;color:#92400e}
+  /* ── Portada vacía / cargando ── */
+  .vacio{padding:60px 30px;text-align:center;color:var(--suave);font-size:14px;line-height:1.7}
+  .vacio b{color:var(--tinta)}
+  /* ── IVA cards ── */
+  .tri-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+  .tri-card{background:var(--carta);border:1px solid var(--borde);border-radius:14px;padding:16px 18px}
+  .tri-card h3{margin:0 0 4px;font-size:14px}
+  .tri-res{font-size:23px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+  .tri-linea{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f2f1ed;font-size:12.5px}
+  .tri-linea b{font-variant-numeric:tabular-nums}
+  /* ── Balance 2 columnas ── */
+  .bal-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:860px){.bal-grid{grid-template-columns:1fr}}
+  .bal-col{background:var(--carta);border:1px solid var(--borde);border-radius:14px;overflow:hidden}
+  .bal-col h3{margin:0;padding:12px 16px;background:#faf9f7;border-bottom:2px solid var(--borde);font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--suave)}
+  .bal-fila{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid #f2f1ed;font-size:12.5px}
+  .bal-fila .n{flex:1;min-width:0}
+  .bal-fila .g{color:var(--suave);font-size:10.5px;font-weight:800;width:26px}
+  .bal-fila .imp{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .bal-tot{display:flex;justify-content:space-between;padding:11px 16px;font-weight:800;background:#faf9f7;border-top:2px solid var(--borde);font-variant-numeric:tabular-nums}
+  /* ── Móvil ── */
+  @media(max-width:760px){
+    #cuerpo{display:block}
+    nav{width:auto;flex:none;display:flex;overflow-x:auto;gap:4px;padding:10px;border-right:none;border-bottom:1px solid var(--borde);background:#fbfaf8}
+    nav .grupo{display:none}
+    nav .item{white-space:nowrap;flex:0 0 auto}
+    main{padding:14px}
+    .tabla-scroll{max-height:none}
+  }
+  @media print{
+    header,nav,#filtros,.acciones{display:none!important}
+    body{background:#fff}
+    .tabla-scroll{max-height:none;overflow:visible}
+    thead th{position:static}
+    .carta,.tabla-marco{border:none;box-shadow:none}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="marca">📚 Contable Oficial<small>JS Technology · fuente: SisConta</small></div>
+  <div id="h-fuente">Cargando…</div>
+  <select id="h-anio" onchange="run()" title="Ejercicio"></select>
+  <button onclick="cargarCopia()" id="h-releer">🔄 Releer copia</button>
+</header>
+<div id="cuerpo">
+  <nav id="menu"></nav>
+  <main>
+    <div id="rep-cab">
+      <div>
+        <div id="rep-titulo"></div>
+        <div id="rep-desc"></div>
+      </div>
+      <div class="acciones">
+        <button class="btn verde" onclick="csv()">⬇ Excel</button>
+        <button class="btn" onclick="window.print()">🖨 PDF</button>
+      </div>
+    </div>
+    <div id="filtros"></div>
+    <div id="out"><div class="vacio">Cargando…</div></div>
+  </main>
+</div>
+<script>
+'use strict';
+// La API vive en panel.js-tech.es (el bridge). Si esta app se abre desde otro subdominio, se apunta ahí.
+var API = /js-tech\.es$/.test(location.hostname) ? location.protocol+'//panel.js-tech.es' : (location.origin.indexOf('http')===0 ? location.origin : 'https://panel.js-tech.es');
+var H = {headers:{'ngrok-skip-browser-warning':'true'}};
+var REP = null, LAST = null, EJERCICIOS = [];
+
+var GRUPOS = [
+  {g:'Libros oficiales', items:[
+    {id:'diario',  ico:'📖', n:'Libro Diario',       d:'Todos los asientos del ejercicio, tal y como están en SisConta. Filtra por fechas, cuenta o texto.', f:['desde','hasta','cuenta','texto']},
+    {id:'mayor',   ico:'📘', n:'Libro Mayor',        d:'Extracto de una cuenta con saldo corrido: qué ha entrado, qué ha salido y cómo queda.', f:['cuenta','desde','hasta']},
+    {id:'sumas',   ico:'⚖️', n:'Sumas y Saldos',     d:'El balance de comprobación: todas las cuentas con su debe, haber y saldo. Tiene que cuadrar al céntimo.', f:['desde','hasta','nivel']}
+  ]},
+  {g:'Cuentas anuales', items:[
+    {id:'balance', ico:'🏛️', n:'Balance de situación', d:'Activo frente a patrimonio neto y pasivo, a la fecha que elijas. Agrupado por grupos del PGC.', f:['hasta']},
+    {id:'pyg',     ico:'📈', n:'Pérdidas y Ganancias', d:'Ingresos y gastos por cuenta con su peso sobre las ventas, y el resultado del periodo.', f:['desde','hasta','nivel']},
+    {id:'pygmes',  ico:'📅', n:'PyG mensualizada',     d:'La cuenta de resultados mes a mes: cómo evoluciona cada partida a lo largo del año.', f:['nivel']}
+  ]},
+  {g:'IVA y fiscal', items:[
+    {id:'ivares',  ico:'🧮', n:'Resumen IVA (303)',  d:'La foto del 303 por trimestre según el libro oficial: bases y cuotas por tipo, y el resultado.', f:[]},
+    {id:'ivaemit', ico:'🧾', n:'IVA emitidas',       d:'El libro registro de facturas emitidas: fecha, cliente, base, tipo y cuota, línea a línea.', f:['trimestre']},
+    {id:'ivarec',  ico:'🧾', n:'IVA recibidas',      d:'El libro registro de facturas recibidas: fecha, proveedor, base, tipo y cuota, línea a línea.', f:['trimestre']},
+    {id:'m347',    ico:'📋', n:'Modelo 347',         d:'Operaciones con terceros que superan 3.005,06 € en el año, con el desglose trimestral que pide el modelo.', f:['todos347']}
+  ]},
+  {g:'Terceros', items:[
+    {id:'terceros',ico:'👥', n:'Directorio',         d:'El fichero maestro de clientes y proveedores: NIF, contacto, IBAN, subcuentas y volumen del año. Clic en uno para ver su extracto.', f:['texto']},
+    {id:'extracto',ico:'🔎', n:'Extracto de tercero', d:'La cuenta completa de un cliente o proveedor: todos sus apuntes con saldo corrido y sus facturas.', f:['nif','desde','hasta']}
+  ]},
+  {g:'Puente con el panel', items:[
+    {id:'cruce',   ico:'🔁', n:'Cruce con el panel', d:'Compara el diario de SisConta con las facturas del panel por CIF y nº de factura: qué coincide, qué le falta a cada lado, y qué se puede marcar contabilizado de un clic.', f:[]},
+    {id:'checklist',ico:'📋', n:'Lista de tareas', d:'Todo lo que el cruce detecta que hay que revisar o corregir — ventas mal numeradas, ventas sin contabilizar, compras que faltan — como una lista que marcas cuando la haces. ⭐ Lo que marques como hecho MANDA sobre el panel (nunca sobre SisConta); la próxima copia lo confirmará.', f:[]}
+  ]}
+];
+function repDe(id){ for(var i=0;i<GRUPOS.length;i++){ for(var j=0;j<GRUPOS[i].items.length;j++){ if(GRUPOS[i].items[j].id===id) return GRUPOS[i].items[j]; } } return null; }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function eur(x){ return x==null?'—':new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(x)+' €'; }
+function fF(s){ if(!s) return '—'; var p=String(s).split('-'); return p.length===3 ? p[2]+'-'+p[1]+'-'+p[0] : s; }
+
+// ── Menú lateral ──
+(function(){
+  var h='';
+  GRUPOS.forEach(function(g){
+    h+='<div class="grupo">'+esc(g.g)+'</div>';
+    g.items.forEach(function(r){
+      h+='<div class="item" id="mi-'+r.id+'" onclick="sel(\''+r.id+'\')"><span class="ico">'+r.ico+'</span>'+esc(r.n)+'</div>';
+    });
+  });
+  document.getElementById('menu').innerHTML=h;
+})();
+
+function resumen(cb){
+  fetch(API+'/sisconta/resumen?_='+Date.now(),H).then(function(r){return r.json();}).then(function(j){
+    var f=document.getElementById('h-fuente');
+    if(!j||!j.ok||!j.ejercicios||!j.ejercicios.length){
+      f.innerHTML='<b style="color:#fbbf24">Sin datos.</b> Dejad el .zip de la copia de SisConta en C:\\agora-bridge\\sisconta_backups y pulsad «Releer copia».';
+      if(cb) cb(); return;
+    }
+    EJERCICIOS=j.ejercicios.map(function(e){return e.ejercicio;});
+    var e0=j.ejercicios[0];
+    f.innerHTML='Copia <b>'+esc(e0.zip)+'</b> · diario '+fF(e0.fecha_min)+' → '+fF(e0.fecha_max)+' · '+e0.n_asientos+' asientos · '+
+      (Math.abs((e0.debe||0)-(e0.haber||0))<0.01?'✓ cuadra al céntimo':'⚠️ descuadra')+' · solo lectura';
+    var sel=document.getElementById('h-anio'); var v=sel.value;
+    sel.innerHTML=EJERCICIOS.map(function(a){return '<option>'+a+'</option>';}).join('');
+    if(v && EJERCICIOS.indexOf(v)>=0) sel.value=v;
+    if(cb) cb();
+  }).catch(function(){ document.getElementById('h-fuente').textContent='No se pudo conectar con el bridge.'; if(cb) cb(); });
+}
+function cargarCopia(){
+  var b=document.getElementById('h-releer'); b.disabled=true; b.textContent='Leyendo…';
+  fetch(API+'/sisconta/cargar?_='+Date.now(),H).then(function(r){return r.json();}).then(function(j){
+    b.disabled=false; b.textContent='🔄 Releer copia';
+    if(!j||!j.ok){ alert('No se pudo leer la copia: '+((j&&j.error)||'error')); return; }
+    alert('✅ Copia leída: ejercicio '+j.ejercicio+' · '+j.asientos+' asientos ('+fF(j.desde)+' → '+fF(j.hasta)+')'+(j.cuadra?' · cuadra al céntimo':' · ⚠️ descuadra'));
+    resumen(function(){ if(REP) run(); });
+  }).catch(function(){ b.disabled=false; b.textContent='🔄 Releer copia'; alert('No se pudo conectar.'); });
+}
+
+// ── Selección de informe + filtros ──
+function sel(id){
+  REP=id;
+  document.querySelectorAll('nav .item').forEach(function(el){ el.classList.toggle('activo', el.id==='mi-'+id); });
+  var r=repDe(id);
+  document.getElementById('rep-titulo').textContent=r.ico+' '+r.n;
+  document.getElementById('rep-desc').textContent=r.d;
+  var h='', st='';
+  if(r.f.indexOf('trimestre')>=0) h+='<label>Trimestre<select id="f-tri" onchange="run()"><option value="">Todo el año</option><option value="1">1º trimestre</option><option value="2">2º trimestre</option><option value="3">3º trimestre</option><option value="4">4º trimestre</option></select></label>';
+  if(r.f.indexOf('desde')>=0) h+='<label>Desde<input type="date" id="f-desde" onchange="run()"></label>';
+  if(r.f.indexOf('hasta')>=0) h+='<label>Hasta<input type="date" id="f-hasta" onchange="run()"></label>';
+  if(r.f.indexOf('cuenta')>=0) h+='<label>Cuenta'+(id==='mayor'?'':' (opcional)')+'<input id="f-cuenta" placeholder="572 bancos · 430 clientes · 400 proveedores" style="width:230px" onkeydown="if(event.key===\'Enter\')run()"></label>';
+  if(r.f.indexOf('nivel')>=0) h+='<label>Detalle<select id="f-nivel" onchange="run()"><option value="1">Por grupo</option><option value="2">2 dígitos</option><option value="3" selected>Por cuenta</option><option value="sub">Por subcuenta</option></select></label>';
+  if(r.f.indexOf('texto')>=0) h+='<label>Buscar<input id="f-texto" placeholder="concepto, nº de factura, NIF…" style="width:190px" onkeydown="if(event.key===\'Enter\')run()"></label>';
+  if(r.f.indexOf('nif')>=0) h+='<label>NIF del tercero<input id="f-nif" placeholder="B30701924" style="width:130px" onkeydown="if(event.key===\'Enter\')run()"></label>';
+  if(r.f.indexOf('todos347')>=0) h+='<label>Mostrar<select id="f-todos" onchange="run()"><option value="">Solo los que superan 3.005,06 €</option><option value="1">Todos los terceros</option></select></label>';
+  h+='<button class="btn primario" onclick="run()">Actualizar</button>';
+  document.getElementById('filtros').innerHTML=h;
+  run();
+}
+function V(id){ var e=document.getElementById(id); return e?e.value.trim():''; }
+function qs(extra){
+  var p=['_='+Date.now()];
+  var an=V('h-anio'); if(an) p.push('anio='+an);
+  if(V('f-desde')) p.push('desde='+V('f-desde'));
+  if(V('f-hasta')) p.push('hasta='+V('f-hasta'));
+  (extra||[]).forEach(function(x){p.push(x);});
+  return '?'+p.join('&');
+}
+
+// ── Cargar y pintar ──
+function run(){
+  if(!REP) return;
+  var out=document.getElementById('out');
+  out.innerHTML='<div class="vacio">Cargando…</div>';
+  var url='';
+  if(REP==='diario'){ var e1=[]; if(V('f-cuenta'))e1.push('cuenta='+encodeURIComponent(V('f-cuenta'))); if(V('f-texto'))e1.push('texto='+encodeURIComponent(V('f-texto'))); url='/sisconta/diario'+qs(e1); }
+  else if(REP==='mayor'){ if(!V('f-cuenta')){ out.innerHTML='<div class="vacio">Escribe una cuenta arriba.<br><span class="muted">Por ejemplo: <b>572</b> bancos · <b>430</b> clientes · <b>400</b> proveedores · <b>477</b> IVA repercutido — o una subcuenta entera.</span></div>'; return; } url='/sisconta/mayor'+qs(['cuenta='+encodeURIComponent(V('f-cuenta'))]); }
+  else if(REP==='sumas'){ url='/sisconta/sumas_saldos'+qs(['nivel='+(V('f-nivel')||'3')]); }
+  else if(REP==='balance'){ url='/sisconta/balance'+qs(); }
+  else if(REP==='pyg'){ url='/sisconta/pyg'+qs(['nivel='+(V('f-nivel')||'3')]); }
+  else if(REP==='pygmes'){ url='/sisconta/pyg'+qs(['nivel='+(V('f-nivel')||'3'),'mensual=1']); }
+  else if(REP==='ivaemit'||REP==='ivarec'){ var e2=['libro='+(REP==='ivaemit'?'emitidas':'recibidas')]; if(V('f-tri'))e2.push('trimestre='+V('f-tri')); url='/sisconta/iva_libro'+qs(e2); }
+  else if(REP==='ivares'){ url='/sisconta/iva_resumen'+qs(); }
+  else if(REP==='m347'){ var e3=[]; if(V('f-todos'))e3.push('todos=1'); url='/sisconta/m347'+qs(e3); }
+  else if(REP==='terceros'){ var e4=[]; if(V('f-texto'))e4.push('texto='+encodeURIComponent(V('f-texto'))); url='/sisconta/terceros'+qs(e4); }
+  else if(REP==='extracto'){ if(!V('f-nif')){ out.innerHTML='<div class="vacio">Escribe el NIF del tercero.<br><span class="muted">Lo tienes en 👥 <b>Directorio</b> — o entra desde allí con un clic.</span></div>'; return; } url='/sisconta/extracto_tercero'+qs(['nif='+encodeURIComponent(V('f-nif'))]); }
+  else if(REP==='cruce'){ url='/sisconta/cruce'+qs(); out.innerHTML='<div class="vacio">Cruzando el diario con el panel… (unos segundos)</div>'; }
+  else if(REP==='checklist'){ url='/sisconta/checklist'+qs(); out.innerHTML='<div class="vacio">Preparando la lista de tareas… (unos segundos)</div>'; }
+  fetch(API+url,H).then(function(r){return r.json();}).then(function(j){
+    if(!j||!j.ok){ out.innerHTML='<div class="vacio">⚠️ '+esc((j&&j.error)||'No se pudo cargar')+'</div>'; return; }
+    pintar(j,out);
+  }).catch(function(){ out.innerHTML='<div class="vacio">No se pudo conectar con el bridge.</div>'; });
+}
+
+// ── Piezas de presentación ──
+function fichas(arr){
+  return '<div class="fichas">'+arr.map(function(f){
+    return '<div class="ficha"><div class="l">'+esc(f.l)+'</div><div class="v"'+(f.c?' style="color:'+f.c+'"':'')+'>'+f.v+'</div>'+(f.s?'<div class="s">'+f.s+'</div>':'')+'</div>';
+  }).join('')+'</div>';
+}
+function tabla(cols, filas, opts){
+  opts=opts||{}; LAST={cols:cols, rows:filas, titulo:(repDe(REP)||{}).n||'informe'};
+  var h='<div class="tabla-marco"><div class="tabla-scroll"><table><thead><tr>';
+  cols.forEach(function(c){ h+='<th'+(c.num?' class="num"':'')+'>'+esc(c.t)+'</th>'; });
+  h+='</tr></thead><tbody>';
+  var prev=null;
+  filas.forEach(function(r){
+    var sep = opts.grupo && prev!==null && r[opts.grupo]!==prev; if(opts.grupo) prev=r[opts.grupo];
+    h+='<tr'+(sep?' class="sep"':'')+(r._click?' style="cursor:pointer" onclick="'+r._click+'"':'')+'>';
+    cols.forEach(function(c){
+      var v=r[c.k];
+      if(c.fmt) v=c.fmt(v,r);
+      else if(c.num) v=(v==null?'<span class="muted">—</span>':eur(v));
+      else v=esc(v);
+      h+='<td class="'+(c.num?'num':'')+((c.neg&&r[c.k]<0)?' neg':'')+'">'+(v==null?'':v)+'</td>';
+    });
+    h+='</tr>';
+  });
+  h+='</tbody>';
+  if(opts.tot){
+    h+='<tfoot><tr>';
+    cols.forEach(function(c){ var v=opts.tot[c.k]; h+='<td class="'+(c.num?'num':'')+'">'+(v==null?'':(typeof v==='number'?eur(v):v))+'</td>'; });
+    h+='</tr></tfoot>';
+  }
+  h+='</table></div></div>';
+  if(!filas.length) h='<div class="vacio">No hay nada con estos filtros.</div>';
+  return h;
+}
+function barra(v,max){ var p=max?Math.max(2,Math.round(Math.abs(v)/max*100)):0; return '<div class="barra"><i style="width:'+p+'%"></i></div>'; }
+function dh(v){ return '<span class="chip-dh '+v+'">'+(v==='D'?'D':'H')+'</span>'; }
+
+// ── Renderers ──
+function pintar(j,out){
+  var r;
+  if(REP==='diario'){
+    var filas=(j.apuntes||[]).map(function(a){ return {asiento:a.asiento, fecha:fF(a.fecha), subcuenta:a.subcuenta, nombre:a.nombre, concepto:a.concepto, documento:a.documento, debe:(a.dh==='D'?a.importe:null), haber:(a.dh==='H'?a.importe:null)}; });
+    out.innerHTML=fichas([
+      {l:'Apuntes', v:j.n+(j.truncado?' <span class="pill warn">truncado — afina el filtro</span>':'')},
+      {l:'Suma del Debe', v:eur(j.debe)}, {l:'Suma del Haber', v:eur(j.haber)},
+      {l:'Cuadre', v:Math.abs((j.debe||0)-(j.haber||0))<0.01?'✓':'⚠️', c:Math.abs((j.debe||0)-(j.haber||0))<0.01?'var(--verde)':'var(--rojo)', s:'Debe = Haber'}
+    ])+tabla([
+      {t:'Asiento',k:'asiento'},{t:'Fecha',k:'fecha'},{t:'Subcuenta',k:'subcuenta'},{t:'Cuenta',k:'nombre'},
+      {t:'Concepto',k:'concepto'},{t:'Debe',k:'debe',num:1},{t:'Haber',k:'haber',num:1}
+    ], filas, {grupo:'asiento', tot:{concepto:'TOTAL', debe:j.debe, haber:j.haber}});
+  }
+  else if(REP==='mayor'){
+    var filas2=(j.apuntes||[]).map(function(a){ return {fecha:fF(a.fecha), asiento:a.asiento, subcuenta:a.subcuenta, concepto:a.concepto, debe:(a.dh==='D'?a.importe:null), haber:(a.dh==='H'?a.importe:null), saldo:a.saldo}; });
+    out.innerHTML=fichas([
+      {l:'Cuenta '+j.cuenta, v:esc(j.nombre||'—'), s:j.n+' apuntes'},
+      {l:'Saldo anterior', v:eur(j.saldo_anterior)},
+      {l:'Debe / Haber del periodo', v:eur(j.debe)+' <span class="muted" style="font-size:13px">/</span> '+eur(j.haber)},
+      {l:'Saldo final', v:eur(j.saldo_final), c:(j.saldo_final||0)>=0?'var(--tinta)':'var(--rojo)', s:(j.saldo_final||0)>=0?'saldo deudor':'saldo acreedor'}
+    ])+tabla([
+      {t:'Fecha',k:'fecha'},{t:'Asiento',k:'asiento'},{t:'Subcuenta',k:'subcuenta'},{t:'Concepto',k:'concepto'},
+      {t:'Debe',k:'debe',num:1},{t:'Haber',k:'haber',num:1},{t:'Saldo',k:'saldo',num:1,neg:1}
+    ], filas2, {tot:{concepto:'TOTAL', debe:j.debe, haber:j.haber, saldo:j.saldo_final}});
+  }
+  else if(REP==='sumas'){
+    out.innerHTML=fichas([
+      {l:'Cuentas', v:j.n}, {l:'Suma del Debe', v:eur(j.debe)}, {l:'Suma del Haber', v:eur(j.haber)},
+      {l:'Cuadre', v:j.cuadra?'✓ al céntimo':'⚠️', c:j.cuadra?'var(--verde)':'var(--rojo)'}
+    ])+tabla([
+      {t:'Cuenta',k:'cuenta'},{t:'Nombre',k:'nombre'},{t:'Debe',k:'debe',num:1},{t:'Haber',k:'haber',num:1},
+      {t:'Saldo deudor',k:'saldo_deudor',num:1,fmt:function(v){return v?eur(v):'<span class="muted">—</span>';}},
+      {t:'Saldo acreedor',k:'saldo_acreedor',num:1,fmt:function(v){return v?eur(v):'<span class="muted">—</span>';}}
+    ], (j.cuentas||[]).map(function(c){ c._g=(c.cuenta||' ').charAt(0); return c; }), {grupo:'_g', tot:{nombre:'TOTAL', debe:j.debe, haber:j.haber}});
+  }
+  else if(REP==='balance'){
+    var maxb=Math.max(j.total_activo||0, j.total_pasivo||0, 1);
+    function lado(tit, filas, tot){
+      var h='<div class="bal-col"><h3>'+tit+'</h3>';
+      filas.forEach(function(f){
+        h+='<div class="bal-fila"><span class="g">'+esc(f.grupo)+'</span><span class="n">'+esc(f.nombre||'—')+barra(f.saldo,maxb)+'</span><span class="imp">'+eur(f.saldo)+'</span></div>';
+      });
+      h+='<div class="bal-tot"><span>Total</span><span>'+eur(tot)+'</span></div></div>';
+      return h;
+    }
+    LAST={cols:[{t:'Bloque',k:'b'},{t:'Grupo',k:'grupo'},{t:'Nombre',k:'nombre'},{t:'Saldo',k:'saldo',num:1}],
+          rows:(j.activo||[]).map(function(f){f.b='ACTIVO';return f;}).concat((j.pasivo||[]).map(function(f){f.b='PN Y PASIVO';return f;})), titulo:'Balance de situación'};
+    out.innerHTML=fichas([
+      {l:'Total activo', v:eur(j.total_activo)}, {l:'Total PN + pasivo', v:eur(j.total_pasivo)},
+      {l:'Cuadre', v:j.cuadra?'✓':'⚠️', c:j.cuadra?'var(--verde)':'var(--rojo)', s:'a '+esc(j.hasta==='fin de datos'?'fin de los datos':fF(j.hasta))}
+    ])+'<div class="bal-grid">'+lado('Activo', j.activo||[], j.total_activo)+lado('Patrimonio neto y pasivo', j.pasivo||[], j.total_pasivo)+'</div>'+
+    '<p class="muted" style="font-size:11.5px">Agrupado por grupos del PGC a partir del diario. El balance con formato de modelo oficial lo imprime SisConta.</p>';
+  }
+  else if(REP==='pyg'){
+    var res=j.resultado||0;
+    var maxi=Math.max.apply(null,(j.ingresos||[]).concat(j.gastos||[]).map(function(x){return Math.abs(x.total);}).concat([1]));
+    function seccion(tit, arr){
+      return arr.map(function(x){ return {bloque:tit, cuenta:x.cuenta, nombre:x.nombre, _bar:x.total, total:x.total, pct:(x.pct_ventas==null?'—':new Intl.NumberFormat('es-ES',{maximumFractionDigits:1}).format(x.pct_ventas)+' %')}; });
+    }
+    var filas3=seccion('INGRESOS', j.ingresos||[]).concat(seccion('GASTOS', j.gastos||[]));
+    out.innerHTML=fichas([
+      {l:'Ingresos', v:eur(j.total_ingresos)}, {l:'Gastos', v:eur(j.total_gastos)},
+      {l:'Resultado', v:eur(res), c:res>=0?'var(--verde)':'var(--rojo)', s:res>=0?'beneficio':'pérdida'},
+      {l:'Sobre ventas', v:(j.ventas?new Intl.NumberFormat('es-ES',{maximumFractionDigits:1}).format(res/j.ventas*100)+' %':'—'), s:'margen del periodo'}
+    ])+tabla([
+      {t:'',k:'bloque',fmt:function(v){return '<b style="font-size:10.5px;color:var(--suave)">'+v+'</b>';}},
+      {t:'Cuenta',k:'cuenta'},{t:'Nombre',k:'nombre'},
+      {t:'Peso',k:'_bar',fmt:function(v){return barra(v,maxi);}},
+      {t:'Importe',k:'total',num:1},{t:'% s/ ventas',k:'pct',num:1,fmt:function(v){return v;}}
+    ], filas3, {grupo:'bloque', tot:{nombre:'RESULTADO', total:res}});
+  }
+  else if(REP==='pygmes'){
+    var meses=j.meses||[];
+    var cols=[{t:'',k:'bloque',fmt:function(v){return '<b style="font-size:10.5px;color:var(--suave)">'+v+'</b>';}},{t:'Cuenta',k:'cuenta'},{t:'Nombre',k:'nombre'}];
+    meses.forEach(function(m){ cols.push({t:m.slice(5)+'/'+m.slice(2,4), k:'m'+m, num:1, fmt:function(v){return v==null?'<span class="muted">·</span>':eur(v);}}); });
+    cols.push({t:'Total año',k:'total',num:1});
+    var filas4=[];
+    [['INGRESOS',j.ingresos||[]],['GASTOS',j.gastos||[]]].forEach(function(par){
+      par[1].forEach(function(x){ var f={bloque:par[0],cuenta:x.cuenta,nombre:x.nombre,total:x.total};
+        meses.forEach(function(m){ f['m'+m]=(x.meses&&x.meses[m]!=null)?x.meses[m]:null; }); filas4.push(f); });
+    });
+    var res2=j.resultado||0;
+    out.innerHTML=fichas([
+      {l:'Ingresos', v:eur(j.total_ingresos)}, {l:'Gastos', v:eur(j.total_gastos)},
+      {l:'Resultado acumulado', v:eur(res2), c:res2>=0?'var(--verde)':'var(--rojo)'}
+    ])+tabla(cols, filas4, {grupo:'bloque'});
+  }
+  else if(REP==='ivaemit'||REP==='ivarec'){
+    var filas5=(j.lineas||[]).map(function(l){ return {fecha:fF(l.fecha), factura:((l.serie?l.serie+'-':'')+(l.numero||'')), nif:l.nif, tercero:l.tercero, base:l.base, tipo:(l.tipo==null?'—':new Intl.NumberFormat('es-ES',{maximumFractionDigits:1}).format(l.tipo)+' %'), cuota:l.cuota, total:l.total_factura}; });
+    out.innerHTML=fichas([
+      {l:'Facturas', v:j.n_facturas, s:j.n+' líneas de IVA'},
+      {l:'Base imponible', v:eur(j.base)}, {l:'Cuota de IVA', v:eur(j.cuota)},
+      {l:'Total facturado', v:eur(j.total_facturado), s:'IVA incluido'}
+    ])+tabla([
+      {t:'Fecha',k:'fecha'},{t:'Factura',k:'factura'},{t:'NIF',k:'nif'},{t:'Tercero',k:'tercero'},
+      {t:'Base',k:'base',num:1},{t:'Tipo',k:'tipo',num:1,fmt:function(v){return v;}},{t:'Cuota',k:'cuota',num:1},{t:'Total factura',k:'total',num:1}
+    ], filas5, {tot:{tercero:'TOTAL', base:j.base, cuota:j.cuota}});
+  }
+  else if(REP==='ivares'){
+    var ts=j.trimestres||{}, ks=Object.keys(ts).sort();
+    LAST={cols:[{t:'Trimestre',k:'t'},{t:'Base rep.',k:'br',num:1},{t:'IVA repercutido',k:'r',num:1},{t:'Base sop.',k:'bs',num:1},{t:'IVA soportado',k:'s',num:1},{t:'Resultado',k:'res',num:1}],
+          rows:ks.map(function(t){var e=ts[t];return {t:t,br:e.repercutido.base,r:e.repercutido.cuota,bs:e.soportado.base,s:e.soportado.cuota,res:e.resultado};}), titulo:'Resumen IVA'};
+    var h='<div class="tri-grid">';
+    ks.forEach(function(t){
+      var e=ts[t], pos=(e.resultado||0)>=0;
+      h+='<div class="tri-card"><h3>'+t+' · '+esc(j.ejercicio)+'</h3>'+
+        '<div class="tri-res" style="color:'+(pos?'var(--rojo)':'var(--verde)')+'">'+(pos?'A ingresar ':'A favor ')+eur(Math.abs(e.resultado))+'</div>'+
+        '<div class="tri-linea"><span>IVA repercutido (ventas)</span><b>'+eur(e.repercutido.cuota)+'</b></div>'+
+        '<div class="tri-linea"><span class="muted">base '+eur(e.repercutido.base)+'</span><span></span></div>'+
+        '<div class="tri-linea"><span>IVA soportado (compras)</span><b>−'+eur(e.soportado.cuota)+'</b></div>'+
+        '<div class="tri-linea"><span class="muted">base '+eur(e.soportado.base)+'</span><span></span></div>';
+      var tt=e.soportado.tipos||{};
+      var desglose=Object.keys(tt).sort().map(function(k){ return k.replace('.0','')+'%: '+eur(tt[k].cuota); }).join(' · ');
+      if(desglose) h+='<div style="font-size:11px;color:var(--suave);margin-top:8px">Soportado por tipo → '+desglose+'</div>';
+      h+='</div>';
+    });
+    h+='</div><p class="muted" style="font-size:11.5px;margin-top:12px">Calculado del libro oficial de SisConta (cuentas 472/477), sin el asiento de apertura. Resultado positivo = a ingresar · negativo = a compensar o devolver.</p>';
+    out.innerHTML=h;
+    if(!ks.length) out.innerHTML='<div class="vacio">No hay datos de IVA en este ejercicio.</div>';
+  }
+  else if(REP==='m347'){
+    var filas6=[], maxt=1;
+    ['ventas','compras'].forEach(function(lado){ (j[lado]||[]).forEach(function(x){ maxt=Math.max(maxt,Math.abs(x.total)); }); });
+    ['ventas','compras'].forEach(function(lado){
+      (j[lado]||[]).forEach(function(x){
+        filas6.push({lado:lado.toUpperCase(), nif:x.nif, nombre:x.nombre+(x.excluir347?' ⚠️ excluido en SisConta':''), _bar:x.total, total:x.total, T1:x.T1||null, T2:x.T2||null, T3:x.T3||null, T4:x.T4||null, n:x.n_facturas});
+      });
+    });
+    out.innerHTML=fichas([
+      {l:'Clientes que superan el umbral', v:(j.ventas||[]).length},
+      {l:'Proveedores que superan el umbral', v:(j.compras||[]).length},
+      {l:'Umbral', v:eur(j.umbral), s:'total factura, IVA incluido, por año'}
+    ])+tabla([
+      {t:'',k:'lado',fmt:function(v){return '<b style="font-size:10.5px;color:var(--suave)">'+v+'</b>';}},
+      {t:'NIF',k:'nif'},{t:'Tercero',k:'nombre'},
+      {t:'',k:'_bar',fmt:function(v){return barra(v,maxt);}},
+      {t:'Total año',k:'total',num:1},{t:'1T',k:'T1',num:1},{t:'2T',k:'T2',num:1},{t:'3T',k:'T3',num:1},{t:'4T',k:'T4',num:1},{t:'Fac.',k:'n',num:1,fmt:function(v){return v;}}
+    ], filas6, {grupo:'lado'});
+  }
+  else if(REP==='terceros'){
+    var filas7=(j.terceros||[]).map(function(x){
+      return {_click:"irExtracto('"+esc(x.nif).replace(/'/g,'')+"')", nif:x.nif, nombre:x.nombre||x.comercial, municipio:x.municipio, contacto:[x.telefono,x.email].filter(Boolean).join(' · '), subs:(x.subcuentas||[]).join(' '), ventas:(x.ventas||null), compras:(x.compras||null)};
+    });
+    out.innerHTML=fichas([
+      {l:'Terceros', v:j.n, s:'del fichero maestro de SisConta'},
+      {l:'Con ventas este año', v:filas7.filter(function(x){return x.ventas;}).length},
+      {l:'Con compras este año', v:filas7.filter(function(x){return x.compras;}).length}
+    ])+'<p class="muted" style="font-size:12px;margin:0 0 10px">Clic en cualquier fila para abrir su extracto completo.</p>'+
+    tabla([
+      {t:'NIF',k:'nif'},{t:'Nombre',k:'nombre'},{t:'Municipio',k:'municipio'},{t:'Contacto',k:'contacto'},
+      {t:'Subcuentas',k:'subs'},{t:'Ventas año',k:'ventas',num:1},{t:'Compras año',k:'compras',num:1}
+    ], filas7, {});
+  }
+  else if(REP==='extracto'){
+    var t=j.tercero||{};
+    var filas8=(j.apuntes||[]).map(function(a){ return {fecha:fF(a.fecha), asiento:a.asiento, subcuenta:a.subcuenta, concepto:a.concepto, debe:(a.dh==='D'?a.importe:null), haber:(a.dh==='H'?a.importe:null), saldo:a.saldo}; });
+    var fac=(j.facturas||[]);
+    var h=fichas([
+      {l:esc(t.nombre||'Tercero'), v:esc(j.nif), s:[t.municipio,t.provincia].filter(Boolean).join(', ')},
+      {l:'Subcuentas', v:(j.subcuentas||[]).join('<br>'), s:''},
+      {l:'Saldo', v:eur(j.saldo), c:(j.saldo||0)>=0?'var(--tinta)':'var(--rojo)', s:(j.saldo||0)>=0?'deudor (nos debe / anticipado)':'acreedor (le debemos)'},
+      {l:'Facturas en el libro de IVA', v:fac.length}
+    ]);
+    if(t.email||t.telefono||t.iban) h+='<p class="muted" style="font-size:12px;margin:0 0 12px">'+[t.telefono,t.email,t.iban].filter(Boolean).map(esc).join(' · ')+'</p>';
+    h+=tabla([
+      {t:'Fecha',k:'fecha'},{t:'Asiento',k:'asiento'},{t:'Subcuenta',k:'subcuenta'},{t:'Concepto',k:'concepto'},
+      {t:'Debe',k:'debe',num:1},{t:'Haber',k:'haber',num:1},{t:'Saldo',k:'saldo',num:1,neg:1}
+    ], filas8, {tot:{concepto:'SALDO FINAL', saldo:j.saldo}});
+    out.innerHTML=h;
+  }
+  else if(REP==='cruce'){
+    // Separar la COLA DE 2025 (frontera) de lo que de verdad le falta al panel [2026-07-21, Joan]:
+    // el backend marca x.frontera=true en las facturas de dic-2025 que Raquel asienta el 01/01. No son
+    // un agujero (el panel corta en 2026 a propósito) → no deben contar como "Solo en SisConta" ámbar.
+    var _ssAll=(j.solo_sisconta||[]);
+    var _ssFront=_ssAll.filter(function(x){return x.frontera;});
+    var _ssReales=_ssAll.filter(function(x){return !x.frontera;});
+    var h2=fichas([
+      {l:'Coinciden en los dos sitios', v:j.n_coincidentes, c:'var(--verde)', s:'panel ↔ diario de SisConta'},
+      {l:'Para marcar contabilizadas', v:j.n_para_marcar, c:j.n_para_marcar?'var(--marca)':'var(--suave)', s:'ya están en SisConta, el panel aún no lo sabe'},
+      {l:'Solo en el panel', v:(j.solo_panel||[]).length+((j.sin_cif||[]).length?' +'+(j.sin_cif||[]).length+' sin CIF':''), c:(j.solo_panel||[]).length?'var(--ambar)':'var(--suave)', s:'a Raquel le pueden faltar'},
+      {l:'Solo en SisConta', v:_ssReales.length, c:_ssReales.length?'var(--ambar)':'var(--suave)', s:'al panel le faltan (OCR/correo)'}
+    ]);
+    h2+='<p class="muted" style="font-size:11.5px;margin:0 0 14px">'+esc(j.nota||'')+'</p>';
+    function bloque(tit, sub, tabla_html){ return '<h3 style="font-size:14px;margin:22px 0 2px">'+tit+'</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">'+sub+'</p>'+tabla_html; }
+    if(j.n_para_marcar){
+      h2+='<div class="carta" style="border-color:#c7d2fe;background:#f5f6ff;margin-bottom:6px"><div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'+
+        '<div style="flex:1;min-width:240px"><b>🟢 '+j.n_para_marcar+' facturas ya puenteadas por Raquel</b><br><span class="muted" style="font-size:12px">Están en el diario de SisConta pero el panel aún las tiene como pendientes. Al marcarlas, el PDF se mueve a la carpeta del proveedor — exactamente lo mismo que hace Raquel en su repaso.</span></div>'+
+        '<button class="btn primario" id="btn-cruce-aplicar" onclick="cruceAplicar()">✔ Marcar '+j.n_para_marcar+' contabilizadas</button></div></div>';
+      h2+=tabla([{t:'Fichero',k:'_fic'},{t:'Proveedor',k:'proveedor'},{t:'Fecha',k:'_f'},{t:'Importe',k:'total',num:1},{t:'En SisConta',k:'sc_factura'},{t:'Casada por',k:'via'}],
+        (j.para_marcar||[]).map(function(x){ x._fic=x.ruta.split('/').pop(); x._f=fF(x.fecha); return x; }), {});
+    }
+    if((j.solo_panel||[]).length||(j.sin_cif||[]).length){
+      h2+=bloque('🟠 Solo en el panel','Facturas que el panel tiene y NO aparecen en el diario — o Raquel aún no las ha puenteado, o el nº/CIF no se ha podido leer. Ninguna es un veredicto: son para revisar.',
+        tabla([{t:'Fichero',k:'_fic'},{t:'Proveedor',k:'proveedor'},{t:'Fecha',k:'_f'},{t:'Importe',k:'total',num:1},{t:'Motivo',k:'motivo'},{t:'',k:'_noded',fmt:function(v,r){ return '<button class="btn" style="background:#fde68a;color:#92400e;border:1px solid #d9a441;font-weight:700;padding:2px 8px;white-space:nowrap" title="Marcar NO DEDUCIBLE: mueve el PDF a la carpeta NO DEDUCIBLE del mes. Cuenta como gasto pero NO deduce el IVA." onclick="raqNoDed(\''+encodeURIComponent(r.ruta||'')+'\',\''+encodeURIComponent(r.proveedor||'')+'\')">no&nbsp;ded</button>'; }}],
+          (j.solo_panel||[]).concat(j.sin_cif||[]).map(function(x){ x._fic=x.ruta.split('/').pop(); x._f=fF(x.fecha); return x; }), {}));
+    }
+    if(_ssReales.length){
+      h2+=bloque('🔵 Solo en SisConta','Facturas que Raquel SÍ tiene contabilizadas y el panel no ha visto (no llegaron por correo/portal o el OCR no las casó). Son deducciones reales que al panel se le escapan.',
+        tabla([{t:'NIF',k:'nif'},{t:'Tercero',k:'tercero'},{t:'Factura',k:'factura'},{t:'Fecha',k:'_f'},{t:'Importe',k:'total',num:1}],
+          _ssReales.map(function(x){ x._f=fF(x.fecha); return x; }), {}));
+    }
+    if(_ssFront.length){
+      var _frTot=_ssFront.reduce(function(a,x){return a+(x.total||0);},0);
+      h2+=bloque('🟢 Cola de 2025 (frontera) — no falta nada','Facturas de diciembre de 2025 que Raquel asienta el 01/01 al abrir el ejercicio. El panel corta en 2026 a propósito, así que nunca las tendrá: ya están en el cierre de 2025. No son un agujero — no hay que hacer nada con ellas.',
+        tabla([{t:'NIF',k:'nif'},{t:'Tercero',k:'tercero'},{t:'Factura',k:'factura'},{t:'Fecha',k:'_f'},{t:'Importe',k:'total',num:1}],
+          _ssFront.map(function(x){ x._f=fF(x.fecha); return x; }), {tot:{tercero:_ssFront.length+' de 2025', total:_frTot}}));
+    }
+    if((j.dudosas||[]).length){
+      h2+=bloque('⚠️ Dudosas','Mismo nº de factura pero importe distinto — abre el PDF antes de tocar nada.',
+        tabla([{t:'Fichero',k:'_fic'},{t:'Proveedor',k:'proveedor'},{t:'Panel',k:'total',num:1},{t:'SisConta',k:'sc_total',num:1},{t:'Factura',k:'sc_factura'}],
+          (j.dudosas||[]).map(function(x){ x._fic=x.ruta.split('/').pop(); return x; }), {}));
+    }
+    var v=j.ventas||{};
+    h2+='<h3 style="font-size:14px;margin:22px 0 2px">🧾 Ventas (Ágora ↔ SisConta)</h3>'+
+      '<p class="muted" style="font-size:11.5px;margin:0 0 8px">'+(v.n_agora||0)+' F/FD en Ágora · '+(v.n_sisconta||0)+' emitidas en el diario, dentro del rango de la copia.</p>';
+    if((v.solo_agora||[]).length) h2+=bloque('Emitidas que faltan en SisConta','Están en Ágora y no en el diario.',
+      tabla([{t:'Factura',k:'factura'},{t:'Importe',k:'total',num:1}], v.solo_agora, {}));
+    if((v.solo_sisconta||[]).length) h2+=bloque('En el diario y no en Ágora','Raro: emitidas contabilizadas que Ágora no muestra en el rango.',
+      tabla([{t:'Factura',k:'factura'},{t:'Fecha',k:'_f'},{t:'Importe',k:'total',num:1}], v.solo_sisconta.map(function(x){x._f=fF(x.fecha);return x;}), {}));
+    if(!(v.solo_agora||[]).length && !(v.solo_sisconta||[]).length) h2+='<p style="color:var(--verde);font-weight:700;font-size:13px">✓ Todas las ventas del rango cuadran entre Ágora y SisConta.</p>';
+    out.innerHTML=h2;
+  }
+  else if(REP==='checklist'){
+    var items=j.items||[];
+    var pend=items.filter(function(x){return x.estado==='pendiente';});
+    var hechas=items.filter(function(x){return x.estado!=='pendiente';});
+    var GN={ventas:'🧾 Ventas', compras:'📥 Compras', manual:'✍️ A mano'};
+    function ckCard(x){
+      var acc='';
+      if(x.ver && x.ver.tipo==='pdf') acc+='<button class="btn" onclick="ckVerPdf(\''+encodeURIComponent(x.ver.ruta)+'\')">👁 Ver</button> ';
+      else if(x.ver && x.ver.tipo==='venta') acc+='<button class="btn" onclick="ckVerVenta(\''+encodeURIComponent(x.ver.factura)+'\')">👁 Ver</button> ';
+      if(x.estado==='pendiente') acc+='<button class="btn verde" onclick="ckMarcar(\''+encodeURIComponent(x.key)+'\',\'contabilizada\')">✔ Hecho</button>';
+      else acc+='<span class="muted" style="font-size:11px">✔ '+esc(x.estado)+(x.cuando?' · '+esc(x.cuando):'')+'</span> <button class="btn" onclick="ckMarcar(\''+encodeURIComponent(x.key)+'\',\'pendiente\')">↩ deshacer</button>';
+      if(x.origen==='manual') acc+=' <button class="btn" onclick="ckBorrar(\''+esc(x.key)+'\')">🗑</button>';
+      return '<div class="carta" style="margin-bottom:8px'+(x.estado!=='pendiente'?';opacity:.5':'')+'"><div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">'+
+        '<div style="flex:1;min-width:240px"><b style="font-size:13px">'+esc(x.titulo)+'</b><br><span class="muted" style="font-size:12px">'+esc(x.detalle)+'</span>'+(x.nota?'<br><span style="font-size:11px;color:var(--marca)">📝 '+esc(x.nota)+'</span>':'')+'</div>'+
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+acc+'</div></div></div>';
+    }
+    var h3='<div class="fichas" style="margin-bottom:14px">'+
+      '<div class="ficha"><div class="l">Pendientes</div><div class="v" style="color:'+(pend.length?'var(--marca)':'var(--verde)')+'">'+pend.length+'</div></div>'+
+      '<div class="ficha"><div class="l">Hechas</div><div class="v">'+hechas.length+'</div></div>'+
+      '<div class="ficha"><div class="l">Copia SisConta</div><div class="v" style="font-size:15px">'+fF(j.copia_hasta)+'</div><div class="s">lo que marques manda sobre el panel; la copia nueva lo confirmará</div></div>'+
+      '</div>';
+    h3+='<div style="margin:0 0 12px"><button class="btn" onclick="ckAdd()">➕ Añadir tarea a mano</button></div>';
+    if(!items.length){ h3+='<p style="color:var(--verde);font-weight:700;font-size:13px">✓ No hay nada pendiente — panel y SisConta cuadran al dedillo.</p>'; out.innerHTML=h3; return; }
+    ['ventas','compras','manual'].forEach(function(g){
+      var gp=pend.filter(function(x){return x.grupo===g;});
+      if(gp.length){ h3+='<h3 style="font-size:14px;margin:18px 0 8px">'+GN[g]+' <span class="muted" style="font-weight:400">('+gp.length+')</span></h3>'; gp.forEach(function(x){ h3+=ckCard(x); }); }
+    });
+    if(hechas.length){ h3+='<h3 style="font-size:13px;margin:24px 0 8px;color:var(--suave)">✔ Ya hechas ('+hechas.length+')</h3>'; hechas.forEach(function(x){ h3+=ckCard(x); }); }
+    out.innerHTML=h3;
+  }
+}
+function ckVerPdf(rutaEnc){ var ruta=decodeURIComponent(rutaEnc); var p=ruta.split('/'); var anio=p.shift();
+  window.open(API+'/proveedores/abrir?anio='+encodeURIComponent(anio)+'&ruta='+encodeURIComponent(p.join('/'))+'&nc='+Date.now(),'_blank'); }
+function ckVerVenta(facEnc){ var fac=decodeURIComponent(facEnc);
+  window.open(API+'/sisconta/ver_venta?factura='+encodeURIComponent(fac)+'&nc='+Date.now(),'_blank'); }
+function ckMarcar(keyEnc,estado){ var key=decodeURIComponent(keyEnc);
+  fetch(API+'/sisconta/checklist/marcar',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({key:key,estado:estado})})
+    .then(function(r){return r.json();}).then(function(j){ if(j&&j.ok) run(); else alert('No se pudo marcar: '+((j&&j.error)||'')); }).catch(function(){ alert('No se pudo conectar.'); }); }
+function ckBorrar(id){ if(!confirm('¿Borrar esta tarea manual?')) return;
+  fetch(API+'/sisconta/checklist/borrar',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({id:id})})
+    .then(function(r){return r.json();}).then(function(){ run(); }); }
+function ckAdd(){ var t=prompt('¿Qué hay que revisar? (título de la tarea)'); if(!t) return; var d=prompt('Detalle (opcional):')||'';
+  fetch(API+'/sisconta/checklist/add',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({titulo:t,detalle:d})})
+    .then(function(r){return r.json();}).then(function(){ run(); }); }
+function irExtracto(nif){ sel('extracto'); var e=document.getElementById('f-nif'); if(e){ e.value=nif; run(); } }
+// Marca una factura del cruzador como NO DEDUCIBLE (mueve el PDF a la carpeta NO DEDUCIBLE del mes;
+// cuenta como gasto pero NO deduce IVA). Mismo endpoint que el repaso y Facturas recibidas.
+function raqNoDed(rutaEnc, provEnc){
+  var ruta=decodeURIComponent(rutaEnc||''), prov=decodeURIComponent(provEnc||'');
+  if(!ruta) return;
+  if(!confirm('🚫 Marcar como NO DEDUCIBLE:\n\n'+(prov||'—')+'\n'+ruta.split('/').pop()+'\n\nSe mueve a la carpeta NO DEDUCIBLE del mes. Cuenta como GASTO pero NO se deduce su IVA soportado, y sale de la cola de pendientes.\n\n¿Confirmas?')) return;
+  fetch(API+'/contabilidad/marcar_no_deducible',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({ruta:ruta})})
+    .then(function(r){return r.json();}).then(function(j){
+      if(!j||!j.ok){ alert('Error: '+((j&&j.error)||'no se pudo marcar')); return; }
+      run();
+    }).catch(function(){ alert('No se pudo conectar.'); });
+}
+
+function cruceAplicar(){
+  var b=document.getElementById('btn-cruce-aplicar'); if(!b) return;
+  if(!confirm('Se van a marcar como CONTABILIZADAS las facturas de la lista.\n\nEl PDF de cada una se mueve de su carpeta pendiente a la carpeta del proveedor (la marca de Raquel), igual que en su repaso. La evidencia es que YA están en el diario de SisConta.\n\n¿Seguimos?')) return;
+  b.disabled=true; b.textContent='Marcando…';
+  fetch(API+'/sisconta/cruce_aplicar',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({confirmar:true})})
+    .then(function(r){return r.json();}).then(function(j){
+      if(!j||!j.ok){ alert('Error: '+((j&&j.error)||'no se pudo aplicar')); b.disabled=false; b.textContent='✔ Reintentar'; return; }
+      var msg='✅ '+j.marcadas+' facturas marcadas contabilizadas.';
+      if(j.n_errores) msg+='\n⚠️ '+j.n_errores+' con aviso:\n'+ (j.errores||[]).map(function(e){return '· '+e.ruta.split('/').pop()+': '+e.error;}).join('\n');
+      alert(msg); run();
+    }).catch(function(){ alert('No se pudo conectar.'); b.disabled=false; b.textContent='✔ Reintentar'; });
+}
+
+// ── Exportar ──
+function csv(){
+  if(!LAST||!LAST.rows||!LAST.rows.length){ alert('Primero abre un informe con datos.'); return; }
+  var sep=';';
+  var cols=LAST.cols.filter(function(c){ return c.k!=='_bar' && c.k.charAt(0)!=='_'; });
+  var lines=[cols.map(function(c){return '"'+String(c.t||c.k).replace(/"/g,'""')+'"';}).join(sep)];
+  LAST.rows.forEach(function(r){
+    lines.push(cols.map(function(c){ var v=r[c.k]; if(v==null) v='';
+      if(typeof v==='number') return String(v.toFixed(2)).replace('.',',');
+      return '"'+String(v).replace(/<[^>]*>/g,'').replace(/"/g,'""')+'"'; }).join(sep));
+  });
+  var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=(LAST.titulo||'informe').replace(/[^\wáéíóúñÁÉÍÓÚÑ -]/g,'').trim().replace(/\s+/g,'_')+'_'+(V('h-anio')||'')+'.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ── Arranque ──
+resumen(function(){ sel('ivares'); });
+</script>
+</body>
+</html>

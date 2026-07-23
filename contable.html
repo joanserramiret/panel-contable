@@ -1311,6 +1311,9 @@ function initContable() {
   try { checkConexion(); } catch(e) { console.warn(e); }
   // Auto-load data on entry
   setTimeout(() => { try { cargarDatos(); } catch(e) { console.warn(e); } }, 400);
+  // Pre-cargar + sincronizar el Pulso al ARRANCAR (interanual al día, tesorería, alertas, IVA…): así ya está
+  //   fresco al abrir la pestaña, y FINA/agentes leen totales al día. [2026-07-23]
+  setTimeout(() => { try { cargarPulso(); } catch(e) { console.warn(e); } }, 800);
 }
 
 async function checkConexion() {
@@ -5436,6 +5439,10 @@ async function cargarPulso(){
   const eur=x=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(Math.round(x||0))+' €';
   const S=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
   try{
+    // 📈 Interanual siempre al día: sincroniza los totales del año en curso ANTES de leerlos (idempotente, rápido). [2026-07-23]
+    try{ var _yrPulso=new Date().getFullYear(), _qSync=1, _vSync=0;
+      while(_qSync>0 && _vSync<3){ var _rSync=await fetch(BRIDGE_URL_C+'/agora/sync_totales?anio='+_yrPulso+'&_='+Date.now(),H).then(function(r){return r.json();}); _qSync=(_rSync&&_rSync.quedan)||0; _vSync++; }
+    }catch(e){}
     const [jp,jpag,jt,js,jiva,jmov,jver,jprov,jcli]=await Promise.all([
       fetch(BRIDGE_URL_C+'/contabilidad/clientes_pendientes?anio=2026&_='+Date.now(),H).then(r=>r.json()),
       fetch(BRIDGE_URL_C+'/contabilidad/pagos?anio=2026&_='+Date.now(),H).then(r=>r.json()),

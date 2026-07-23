@@ -1500,6 +1500,15 @@ async function cargarDatos() {
   }
 }
 
+// 🛡️ Garantiza que las facturas de Ágora estén cargadas antes de una remesa (evita girar con datos incompletos).
+//    Si el auto-cargado del arranque no terminó o falló, las descarga AQUÍ, bajo demanda. [2026-07-22]
+async function asegurarFacturas(){
+  if(todasFacturasC && todasFacturasC.length) return true;
+  try{ var d=document.getElementById('c-desde'); if(d && !d.value){ setPeriod('year'); } }catch(e){}
+  try{ await cargarDatos(); }catch(e){}
+  return !!(todasFacturasC && todasFacturasC.length);
+}
+
 // ===== DASHBOARD =====
 // KPI clicable: salta a Facturas emitidas con el filtro de estado puesto
 function irAFacturas(estado) {
@@ -6284,6 +6293,8 @@ async function remesisarGenerar(){
   var all=window._consRecibos||[];
   var recibos=all.filter(function(r){return r._sel!==false;});
   if(!recibos.length){ alert('No has marcado ningún recibo.'); return; }
+  var _sinNif=recibos.filter(function(r){return !(((r.nif||'')+'').trim());});
+  if(_sinNif.length){ alert('⚠️ '+_sinNif.length+' recibo(s) SIN NIF ('+_sinNif.slice(0,4).map(function(r){return r.fact;}).join(', ')+(_sinNif.length>4?'…':'')+').\n\nFaltan los datos de esas facturas (aún no descargadas de Ágora). Ve a 🧾 Facturas emitidas, pulsa 🔍 Cargar datos y vuelve a abrir el Constructor. No genero la remesa para no mandar recibos con datos incompletos.'); return; }
   var banco=window._remesisarBanco||'Sabadell';
   var H={'Content-Type':'application/json','ngrok-skip-browser-warning':'true'};
   var body=document.getElementById('rem-body');
@@ -8543,9 +8554,16 @@ async function remesaAsignarManual(movId, fi) {
   // Pool SIN LÍMITE: todas las facturas de venta cargadas (solo fuera tickets/devoluciones
   // y las que ya están en ESTE mismo desglose, que sería duplicarlas)
   const enEsta = new Set(bkClavesDeConciliado(m.conciliado).map(([k]) => k));
-  const pool = bkCandidatos({ importe: 1 }).filter(c =>
+  let pool = bkCandidatos({ importe: 1 }).filter(c =>
     !/^(T|TD|D|FD|APPFD)$/i.test(c.serie || '') && !enEsta.has(bkNormClave(c.clave)));
-  if (!pool.length) { alert('No hay facturas disponibles — ¿has cargado el período en Facturas emitidas?'); return; }
+  if (!pool.length) {
+    // 🛡️ pase previo automático: si aún no hay facturas cargadas, se descargan aquí y se reintenta [2026-07-22]
+    if (await asegurarFacturas()) {
+      pool = bkCandidatos({ importe: 1 }).filter(c =>
+        !/^(T|TD|D|FD|APPFD)$/i.test(c.serie || '') && !enEsta.has(bkNormClave(c.clave)));
+    }
+    if (!pool.length) { alert('No hay facturas disponibles para esta remesa. Intenté descargarlas de Ágora y no aparecieron — reintenta cuando el servidor responda.'); return; }
+  }
   remAsig = { movId: movId, fi: fi, anadir: anadir, objetivo: entrada.importe || 0, cliente: entrada.cliente || '',
               situacion: entrada.situacion || 'abonado', pool: pool, sel: {}, imputadas: imputadas };
   const viejo = document.getElementById('rasig-modal');

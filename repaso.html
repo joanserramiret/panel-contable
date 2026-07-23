@@ -333,6 +333,7 @@ function render(){
     const acc = x.contabilizada ? ver+edImp
       : ver+edImp+'<span class="act" style="background:#e0e7ff" title="Corregir el nombre del proveedor (se recuerda)" onclick="corregirNombre('+i+')">✏️</span>'
            +'<span class="act ok" title="Marcar contabilizada (mover a la carpeta del proveedor)" onclick="marcarCont('+i+')">✓</span>'
+           +'<span class="act" style="background:#fde68a;color:#92400e;font-size:10px;font-weight:700" title="No deducible → mueve a la carpeta NO DEDUCIBLE del mes. Cuenta como GASTO pero NO se deduce el IVA. Sale de tu cola." onclick="marcarNoDeducible('+i+')">no&nbsp;ded</span>'
            +'<span class="act no" title="No es una factura (mover a PARA BORRAR)" onclick="noFactura('+i+')">🚫</span>';
     html+='<div class="row '+(x.contabilizada?'v':'r')+'">'
       +'<div><div class="prov">'+esc(x.proveedor||'—')+'</div><div class="fac">'+esc(x.nombre||'')+'</div>'+metBadge(x)+'</div>'
@@ -377,6 +378,14 @@ async function noFactura(i){
   if(mot===null) return;
   try{
     const r=await fetch(API+'/contabilidad/no_es_factura',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruta:x.ruta, motivo:(mot||'').trim()})}).then(r=>r.json());
+    if(r.ok){ cargar(); } else alert('Error: '+(r.error||''));
+  }catch(e){ alert('Error: '+e.message); }
+}
+async function marcarNoDeducible(i){
+  const x=(window._fsActual||[])[i]; if(!x) return;
+  if(!confirm('🚫 Marcar como NO DEDUCIBLE:\n\n'+(x.proveedor||'—')+' · '+(x.nombre||'')+' · '+eur(x.total)+'\n\nSe mueve a la carpeta NO DEDUCIBLE del mes. Cuenta como GASTO pero NO se deduce su IVA, y sale de tu cola de pendientes.\n\n¿Confirmas?')) return;
+  try{
+    const r=await fetch(API+'/contabilidad/marcar_no_deducible',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruta:x.ruta})}).then(r=>r.json());
     if(r.ok){ cargar(); } else alert('Error: '+(r.error||''));
   }catch(e){ alert('Error: '+e.message); }
 }

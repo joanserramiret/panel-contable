@@ -9251,7 +9251,8 @@ function pvRender() {
           '<button onclick="enviarRecibida(\'' + url.replace(/'/g, "\\'") + '\',\'' + (a.nombre || '').replace(/'/g, "\\'") + '\',\'' + (dat.proveedor_nombre || a.proveedor || '').replace(/'/g, "\\'") + '\')" title="Enviar por email o WhatsApp" style="padding:3px 9px;background:#e8f7ef;border:1px solid #a7d7b8;color:#0F6E56;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">✉️</button>' +
           '<button onclick="pvSustituir(\'' + ruta.replace(/'/g, "\\'") + '\')" title="Sustituir por la versión rectificada: el original va a PARA BORRAR y la nueva ocupa su lugar" style="padding:3px 8px;background:#fff3e0;border:1px solid #e8b27a;color:#b45309;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">🔄</button>' +
           '<button onclick="pvBorrar(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + a.nombre.replace(/'/g, "\\'") + '\')" title="Mover a PARA BORRAR (se cuela y no debería estar)" style="padding:3px 8px;background:#fde8e8;border:1px solid #e0b0b0;color:#c0392b;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">🗑</button>' +
-          '<button onclick="marcarNoFactura(\'' + encodeURIComponent(ruta) + '\',\'pvCargar\')" title="No es una factura (contrato, ticket, de otro titular…) → sale del cómputo. Te pregunto el motivo para entrenar el filtro." style="padding:3px 8px;background:#f3e8ff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">🚫</button></td></tr>';
+          '<button onclick="marcarNoFactura(\'' + encodeURIComponent(ruta) + '\',\'pvCargar\')" title="No es una factura (contrato, ticket, de otro titular…) → sale del cómputo. Te pregunto el motivo para entrenar el filtro." style="padding:3px 8px;background:#f3e8ff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">🚫</button>' +
+          '<button onclick="pvMarcarNoDeducible(\'' + ruta.replace(/'/g, "\\'") + '\',\'' + (dat.proveedor_nombre || a.proveedor || '').replace(/'/g, "\\'") + '\',\'' + (a.nombre || '').replace(/'/g, "\\'") + '\')" title="No deducible → la mueve a la carpeta NO DEDUCIBLE del mes. Cuenta como GASTO pero NO se deduce su IVA soportado. Sale de la cola de pendientes." style="padding:3px 8px;background:#fde68a;border:1px solid #d9a441;color:#92400e;font-weight:700;border-radius:6px;font-size:11px;cursor:pointer;margin-left:4px">no&nbsp;ded</button></td></tr>';
     }).join('');
     return '<div style="font-weight:800;font-size:13px;color:#1a2e6e;margin:12px 0 4px">' + mes + ' <span style="font-weight:400;color:#888">(' + porMes[mes].length + ')</span></div>' +
       '<table style="width:100%;border-collapse:collapse;font-size:12.5px">' +
@@ -9259,6 +9260,25 @@ function pvRender() {
       filas + '</table>';
   }).join('');
   pvSelChange();
+}
+
+// 🚫 Marcar una factura recibida como NO DEDUCIBLE → la mueve a la carpeta NO DEDUCIBLE del mes.
+//    Cuenta como GASTO pero su IVA soportado NO se deduce, y le limpia la vista a Raquel.
+async function pvMarcarNoDeducible(ruta, proveedor, nombre) {
+  if (!confirm('🚫 Marcar como NO DEDUCIBLE:\n\n' + (proveedor || '—') + '\n' + (nombre || '') +
+    '\n\nSe mueve a la carpeta NO DEDUCIBLE del mes. Sigue contando como GASTO, pero NO se deduce su IVA soportado, y sale de la cola de pendientes.\n\n¿Confirmas?')) return;
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/contabilidad/marcar_no_deducible', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ ruta: ruta })
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('✗ ' + (d.error || 'No se pudo marcar')); return; }
+    const anio = document.getElementById('pv-anio').value || new Date().getFullYear();
+    await pvCargarDatos(anio);
+    pvRender();
+  } catch (e) { alert('✗ ' + e.message); }
 }
 
 // Re-lee el importe de TODOS los años con la lógica actual (tras un cambio en el extractor)

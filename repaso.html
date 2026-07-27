@@ -29,6 +29,9 @@
   .row.r{ background:var(--rojo); border-left-color:var(--rojo-bd); }
   .prov{ font-weight:700; }
   .fac{ font-size:12px; color:#475569; margin-top:1px; word-break:break-word; }
+  .faclink{ color:#1d4ed8; text-decoration:none; border-bottom:1px dotted #93c5fd; }
+  .facnum{ font-weight:700; }
+  .facarch{ color:#94a3b8; }
   .fecha{ font-size:13px; color:#334155; }
   .imp{ font-weight:700; text-align:right; }
   .ver{ text-align:center; cursor:pointer; font-size:18px; text-decoration:none; }
@@ -316,6 +319,19 @@ function metBadge(x){
     : 'background:'+c[0]+';color:'+c[1]+';border:1px solid '+c[0];
   return '<span class="metbadge" title="'+esc(tip)+'" style="display:inline-block;margin-top:4px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;'+est+'">'+esc(et)+(prev?' · previsto':'')+'</span>';
 }
+// 🔗 Nº de factura CLICABLE, que abre el PDF [Joan 2026-07-27: «me lo pones igual en el repaso»].
+// El número lo calcula el bridge (`_fac_numero_display`), la MISMA fuente que el extracto de tarjeta,
+// leyendo el nombre del fichero y, si allí no hay nada, el texto del OCR con etiqueta explícita.
+// Si no hay número creíble se enlaza el nombre del fichero: no se inventa ningún número.
+function celdaFac(x){
+  const rel = (x.ruta||'').split('/').slice(1).join('/');
+  const url = API+'/proveedores/abrir?anio='+encodeURIComponent(x.anio)+'&ruta='+encodeURIComponent(rel);
+  const arch = esc(x.nombre||'');
+  if(!x.numero) return '<a class="faclink" href="'+url+'" target="_blank" title="Ver factura">'+arch+'</a>';
+  return '<a class="faclink facnum" href="'+url+'" target="_blank" title="Ver factura · '+arch+'">nº '+esc(x.numero)+'</a>'
+       + ' <span class="facarch">'+arch+'</span>';
+}
+
 function render(){
   let fs = DATA.filter(x=>x.mes_carpeta===MES);
   const nV = fs.filter(x=>x.contabilizada).length, nR = fs.length-nV;
@@ -336,7 +352,7 @@ function render(){
            +'<span class="act" style="background:#fde68a;color:#92400e;font-size:10px;font-weight:700" title="No deducible → mueve a la carpeta NO DEDUCIBLE del mes. Cuenta como GASTO pero NO se deduce el IVA. Sale de tu cola." onclick="marcarNoDeducible('+i+')">no&nbsp;ded</span>'
            +'<span class="act no" title="No es una factura (mover a PARA BORRAR)" onclick="noFactura('+i+')">🚫</span>';
     html+='<div class="row '+(x.contabilizada?'v':'r')+'">'
-      +'<div><div class="prov">'+esc(x.proveedor||'—')+'</div><div class="fac">'+esc(x.nombre||'')+'</div>'+metBadge(x)+'</div>'
+      +'<div><div class="prov">'+esc(x.proveedor||'—')+'</div><div class="fac">'+celdaFac(x)+'</div>'+metBadge(x)+'</div>'
       +'<div class="fecha">'+esc(x.fecha||'')+'</div>'
       +'<div class="imp">'+eur(x.total)+'</div>'
       +'<div class="acc">'+acc+'</div>'

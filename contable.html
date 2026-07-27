@@ -9065,7 +9065,7 @@ async function pvCorreo() {
 
 async function pvOrdenarCajon() {
   const btn = document.getElementById('pv-cajon');
-  if (!confirm('Se ordenarán los PDFs del "cajón desastre IA":\n· cada factura a su mes → PDTE CONTABILITZAR\n· duplicadas → carpeta PARA BORRAR\n· sin fecha clara → se quedan en el cajón\n\n(Usa OCR con IA si hace falta — céntimos)\n¿Continuar?')) return;
+  if (!confirm('Se ordenarán los PDFs del "cajón desastre IA":\n· cada factura a su mes → PDTE CONTABILITZAR\n· nóminas (recibo de salarios) → NOMINAS/<año>\n· duplicadas → carpeta PARA BORRAR\n· sin fecha clara → se quedan en el cajón\n\n(Usa OCR con IA si hace falta — céntimos)\n¿Continuar?')) return;
   btn.disabled = true; btn.textContent = '🗂 Ordenando...';
   try {
     const r = await fetch(BRIDGE_URL_C + '/proveedores/ordenar_cajon', {
@@ -9076,10 +9076,15 @@ async function pvOrdenarCajon() {
     const d = await r.json();
     if (d.ok) {
       const det = (d.colocadas || []).slice(0, 12).map(c => '· ' + c.archivo + ' → ' + c.destino).join('\n');
+      const noms = (d.nominas || []);
+      const detNom = noms.map(n => '· ' + (n.trabajador || n.archivo) + ' · ' + (n.mes || '') +
+                                   ' · ' + (n.liquido != null ? n.liquido + ' €' : '')).join('\n');
       alert('🗂 Cajón ordenado:\n· ' + d.colocadas.length + ' colocada(s)\n· ' + d.duplicadas.length +
             ' duplicada(s) → PARA BORRAR\n· ' + d.sin_fecha.length + ' sin fecha (siguen en el cajón)' +
+            (noms.length ? '\n· ' + noms.length + ' nómina(s) → NOMINAS (no son gasto de proveedor)' : '') +
             (d.no_pdf.length ? '\n· ' + d.no_pdf.length + ' no-PDF ignorado(s)' : '') +
-            (det ? '\n\n' + det + (d.colocadas.length > 12 ? '\n...' : '') : ''));
+            (det ? '\n\n' + det + (d.colocadas.length > 12 ? '\n...' : '') : '') +
+            (detNom ? '\n\n💼 Nóminas:\n' + detNom : ''));
       pvCargar();
     } else {
       alert('✗ ' + (d.error || 'Error'));

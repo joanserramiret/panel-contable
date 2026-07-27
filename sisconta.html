@@ -338,7 +338,7 @@ function pintar(j,out){
   }
   else if(REP==='sumas'){
     out.innerHTML=fichas([
-      {l:'Cuentas', v:j.n}, {l:'Suma del Debe', v:eur(j.debe)}, {l:'Suma del Haber', v:eur(j.haber)},
+      {l:'Cuentas', v:j.n}, {l:'Suma del Debe', v:eur(j.debe), s:'suma de TODOS los apuntes del año (incluye saldos de arranque y la línea de crédito) — NO es la facturación'}, {l:'Suma del Haber', v:eur(j.haber), s:'lo relevante es el SALDO de cada cuenta, no esta suma'},
       {l:'Cuadre', v:j.cuadra?'✓ al céntimo':'⚠️', c:j.cuadra?'var(--verde)':'var(--rojo)'}
     ])+tabla([
       {t:'Cuenta',k:'cuenta'},{t:'Nombre',k:'nombre'},{t:'Debe',k:'debe',num:1},{t:'Haber',k:'haber',num:1},

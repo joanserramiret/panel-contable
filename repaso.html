@@ -94,6 +94,7 @@
     <button class="btn on" id="ordProv" onclick="setOrden('prov')">Ordenar: Proveedor</button>
     <button class="btn" id="ordFecha" onclick="setOrden('fecha')">Fecha</button>
     <button class="btn" id="btnIA" onclick="leerProveedoresIA()" style="background:#ede9fe;border-color:#c4b5fd;color:#5b21b6;font-weight:700" title="Lee el nombre fiscal real de los proveedores que salen sucios (carpeta genérica, cabecera OCR, dirección) con IA. Amazon se agrupa. Se recuerda para no repetir.">🔍 Leer proveedores (IA)</button>
+    <button class="btn" id="btnNumIA" onclick="leerNumerosIA()" style="background:#e0f2fe;border-color:#7dd3fc;color:#075985;font-weight:700" title="Para las facturas a las que el texto del OCR no le saca el nº (escaneos sin OCR, o facturas largas donde el nº queda fuera del texto que guardamos), se lo pregunta a la IA leyendo el PDF. Una sola vez por factura: se recuerda.">🔢 Leer nº factura (IA)</button>
     <span class="cont"><span class="chip v" id="cV">🟢 0</span><span class="chip r" id="cR">🔴 0</span></span>
   </div>
   <div id="lista"><div class="muted">Cargando…</div></div>
@@ -347,8 +348,10 @@ function render(){
     const rel = (x.ruta||'').split('/').slice(1).join('/');
     const ver='<a class="ver" href="'+API+'/proveedores/abrir?anio='+encodeURIComponent(x.anio)+'&ruta='+encodeURIComponent(rel)+'" target="_blank" title="Ver factura">👁</a>';
     const edImp='<span class="act" style="background:#fef3c7" title="Corregir el importe (si el OCR lo cogió mal). Recalcula base e IVA solo." onclick="corregirImporte('+i+')">💶</span>';
-    const acc = x.contabilizada ? ver+edImp
-      : ver+edImp+'<span class="act" style="background:#e0e7ff" title="Corregir el nombre del proveedor (se recuerda)" onclick="corregirNombre('+i+')">✏️</span>'
+    // 🔢 corregir el nº de factura a mano: manda sobre el OCR y se recuerda [Joan 2026-07-27]
+    const edNum='<span class="act" style="background:#e0f2fe" title="Corregir el nº de factura (el impreso, el que casa con SisConta). Se recuerda." onclick="corregirNumero('+i+')">🔢</span>';
+    const acc = x.contabilizada ? ver+edImp+edNum
+      : ver+edImp+edNum+'<span class="act" style="background:#e0e7ff" title="Corregir el nombre del proveedor (se recuerda)" onclick="corregirNombre('+i+')">✏️</span>'
            +'<span class="act ok" title="Marcar contabilizada (mover a la carpeta del proveedor)" onclick="marcarCont('+i+')">✓</span>'
            +'<span class="act" style="background:#fde68a;color:#92400e;font-size:10px;font-weight:700" title="No deducible → mueve a la carpeta NO DEDUCIBLE del mes. Cuenta como GASTO pero NO se deduce el IVA. Sale de tu cola." onclick="marcarNoDeducible('+i+')">no&nbsp;ded</span>'
            +'<span class="act no" title="No es una factura (mover a PARA BORRAR)" onclick="noFactura('+i+')">🚫</span>';
@@ -419,6 +422,51 @@ async function corregirNombre(i){
       render();
     } else alert('Error: '+(r.error||''));
   }catch(e){ alert('Error: '+e.message); }
+}
+
+// ── Corregir A MANO el nº de factura. Manda sobre el OCR y sobre la IA, y se recuerda por hash
+//    del fichero → aguanta que la factura cambie de carpeta al contabilizarla. [Joan 2026-07-27]
+async function corregirNumero(i){
+  const x=(window._fsActual||[])[i]; if(!x) return;
+  const n=prompt('🔢 Nº de factura IMPRESO en el documento (el que casa con SisConta).\n\n'
+    +(x.proveedor||'—')+' · '+(x.nombre||'')+'\n\nDéjalo vacío para olvidar la corrección y volver a lo que lea el OCR:', x.numero||'');
+  if(n===null) return;
+  try{
+    const r=await fetch(API+'/proveedores/numero_manual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruta:x.ruta, numero:n.trim()})}).then(r=>r.json());
+    if(r.ok){
+      DATA.forEach(d=>{ if(d.ruta===x.ruta) d.numero=r.numero||''; });
+      render();
+    } else alert('Error: '+(r.error||''));
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+// ── Leer con IA el nº de las facturas que el texto del OCR no resuelve (en tandas hasta acabar) ──
+let _numRun=false;
+async function leerNumerosIA(){
+  if(_numRun) return; _numRun=true;
+  const b=$('#btnNumIA'); const t0=b.textContent;
+  try{
+    // primero un sondeo SIN gastar IA, para poder avisar de cuántas son
+    const s=await fetch(API+'/proveedores/numeros_ia',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({anio:'2026', max:0})}).then(r=>r.json());
+    if(!s.ok){ alert('Error: '+(s.error||'')); return; }
+    const n=s.total_sin_numero||0;
+    if(!n){ b.textContent='✅ ninguna pendiente'; setTimeout(()=>{ b.textContent=t0; }, 3000); return; }
+    if(!confirm('🔢 Hay '+n+' factura(s) a las que el texto del OCR no les saca el número.\n\nSe le preguntará a la IA leyendo el PDF (una llamada por factura, se recuerda para siempre).\n\n¿Tiro?')) return;
+    let vueltas=0, hechas=0, sin=[];
+    while(vueltas<40){
+      vueltas++;
+      const r=await fetch(API+'/proveedores/numeros_ia',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({anio:'2026', max:8})}).then(r=>r.json());
+      if(!r.ok){ alert('Error: '+(r.error||'')); break; }
+      hechas+=(r.procesadas||0); sin=sin.concat(r.sin_numero||[]);
+      b.textContent='🔢 Leyendo… '+hechas+' · quedan '+(r.quedan||0);
+      if((r.quedan||0)<=0 || (r.procesadas||0)===0) break;
+    }
+    b.textContent='✅ '+hechas+' nº leídos';
+    if(sin.length) alert('La IA tampoco le ha visto el número a '+sin.length+' factura(s):\n\n'+sin.slice(0,15).join('\n')+(sin.length>15?'\n…':'')+'\n\nEsas se pueden poner a mano con el botón 🔢 de cada línea.');
+    cargar();
+    setTimeout(()=>{ b.textContent=t0; }, 4000);
+  }catch(e){ alert('Error: '+e.message); b.textContent=t0; }
+  finally{ _numRun=false; }
 }
 
 // ── Leer el nombre fiscal real de los proveedores sucios con IA (en tandas hasta acabar) ──

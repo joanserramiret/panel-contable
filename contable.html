@@ -1071,6 +1071,7 @@
               <button onclick="pvOrdenarCajon()" id="pv-cajon" title="Ordenar las facturas del cajón desastre IA en sus meses" style="padding:6px 12px;background:#0e7490;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🗂 Ordenar cajón</button>
               <button onclick="pvEscanear()" id="pv-escanear" title="Extraer importes y fechas de los PDF" style="padding:6px 12px;background:#e87e1a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🔍 Escanear</button>
               <button onclick="pvOCR()" id="pv-ocr" title="Leer con IA las facturas escaneadas o dudosas" style="padding:6px 12px;background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🤖 OCR IA</button>
+              <button onclick="pvNumerosIA()" id="pv-numia" title="Leer con IA el Nº DE FACTURA de las que el texto del OCR no resuelve (escaneos sin OCR, o facturas largas donde el nº queda fuera del texto guardado). Se recuerda por factura." style="padding:6px 12px;background:#0369a1;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🔢 Nº factura IA</button>
               <button onclick="pvReescanearTodo()" id="pv-reescan" title="Releer el importe de TODOS los años con la lógica actual (respeta los corregidos a mano)" style="padding:6px 12px;background:#ede9fe;border:1px solid #c4b5fd;color:#6d28d9;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">♻ Releer años</button>
               <button onclick="pvBorrarDuplicados()" id="pv-dup" title="Eliminar del Dropbox los PDF duplicados (se conserva el original)" style="padding:6px 12px;background:#fde8e8;border:1px solid #e0b0b0;color:#c0392b;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🧹 Duplicados</button>
               <button onclick="pvControlAlbaranes()" title="Detectar albaranes que no tienen factura posterior del mismo proveedor" style="padding:6px 12px;background:#b45309;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🔎 Albaranes s/fra.</button>
@@ -9611,6 +9612,43 @@ async function pvOCR() {
   btn.disabled = false; btn.textContent = '🤖 OCR IA';
 }
 
+// 🔢 Nº DE FACTURA CON IA [Joan 2026-07-27]. El nº lo saca el bridge del texto del OCR, pero hay dos
+// agujeros que ninguna regex tapa: las facturas ESCANEADAS sin OCR (texto vacío) y las largas, donde
+// el nº cae más allá de los 4.000 caracteres que guardamos. A ésas se les pregunta a la IA leyendo el
+// PDF: una llamada por factura y se recuerda por hash del fichero (aguanta el cambio de carpeta).
+async function pvNumerosIA() {
+  const btn = document.getElementById('pv-numia');
+  const anio = document.getElementById('pv-anio').value || new Date().getFullYear();
+  const t0 = btn.textContent;
+  const pide = (max) => fetch(BRIDGE_URL_C + '/proveedores/numeros_ia', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+    body: JSON.stringify({ anio: anio, max: max })
+  }).then(r => r.json());
+  btn.disabled = true;
+  try {
+    const s = await pide(0);                       // sondeo: cuenta sin gastar IA
+    if (!s.ok) { alert('✗ ' + (s.error || 'Error')); return; }
+    const n = s.total_sin_numero || 0;
+    if (!n) { alert('Todas las facturas de ' + anio + ' tienen ya su nº leído del OCR. No hace falta la IA.'); return; }
+    if (!confirm('Hay ' + n + ' factura(s) de ' + anio + ' a las que el texto del OCR no les saca el número\n(escaneos sin OCR, o el nº queda fuera del texto guardado).\n\nSe le preguntará a la IA leyendo el PDF — una llamada por factura, coste céntimos, y se recuerda para siempre.\n\n¿Continuar?')) return;
+    let vueltas = 0, hechas = 0, sin = [];
+    while (vueltas < 60) {
+      vueltas++;
+      const d = await pide(8);
+      if (!d.ok) { alert('✗ ' + (d.error || 'Error')); break; }
+      hechas += (d.procesadas || 0); sin = sin.concat(d.sin_numero || []);
+      btn.textContent = '🔢 ' + hechas + ' · quedan ' + (d.quedan || 0);
+      if ((d.quedan || 0) <= 0 || (d.procesadas || 0) === 0) break;
+    }
+    alert('🔢 Números leídos: ' + hechas +
+          (sin.length ? '\n\nLa IA tampoco se lo ha visto a ' + sin.length + ':\n' + sin.slice(0, 15).join('\n') + (sin.length > 15 ? '\n…' : '') : ''));
+    await pvCargarDatos(anio);
+    pvRender();
+  } catch(e) { alert('✗ ' + e.message); }
+  btn.disabled = false; btn.textContent = t0;
+}
+
 async function pvCorregir(ruta) {
   const f = pvDatos[ruta] || {};
   const val = prompt('Importe total de la factura (€):', f.total || '');
@@ -9625,6 +9663,26 @@ async function pvCorregir(ruta) {
     });
     const anio = document.getElementById('pv-anio').value || new Date().getFullYear();
     await pvCargarDatos(anio);
+    pvRender();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+// 🔢 Corregir A MANO el nº de factura. Manda sobre el OCR y sobre la IA, y se recuerda por hash del
+//    fichero → no se pierde cuando la factura se mueve a la carpeta del proveedor. [Joan 2026-07-27]
+async function pvCorregirNumero(ruta) {
+  const f = pvDatos[ruta] || {};
+  const val = prompt('🔢 Nº de factura IMPRESO en el documento (el que casa con SisConta).\n\n'
+    + (f.proveedor_nombre || f.proveedor || '—') + ' · ' + (f.nombre || '')
+    + '\n\nDéjalo vacío para olvidar la corrección y volver a lo que lea el OCR:', f.numero || '');
+  if (val === null) return;
+  try {
+    const d = await fetch(BRIDGE_URL_C + '/proveedores/numero_manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ ruta: ruta, numero: val.trim() })
+    }).then(r => r.json());
+    if (!d.ok) { alert('✗ ' + (d.error || 'Error')); return; }
+    if (pvDatos[ruta]) pvDatos[ruta].numero = d.numero || '';
     pvRender();
   } catch(e) { alert('Error: ' + e.message); }
 }
@@ -9721,7 +9779,8 @@ function pvRender() {
           (a.proveedor && (dat.proveedor_nombre || '').toLowerCase().indexOf(a.proveedor.toLowerCase().slice(0, 6)) === -1 ? ' <span style="color:#888;font-weight:400;font-size:10.5px">(' + a.proveedor + ')</span>' : '') + '</td>' +
         // 🔢 Nº de factura del OCR (el IMPRESO), que es el que casa con SisConta. El nombre del
         //    fichero baja a segunda línea en gris: sirve para encontrar el PDF, nada más. [2026-07-27]
-        '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + a.nombre.replace(/"/g, '&quot;') + '">' +
+        //    Clic en la celda → corregirlo a mano (se recuerda y manda sobre el OCR y la IA).
+        '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" title="' + a.nombre.replace(/"/g, '&quot;') + ' — clic para corregir el nº de factura" onclick="pvCorregirNumero(\'' + ruta.replace(/'/g, "\\'") + '\')">' +
           (dat.numero ? '<b style="color:#1a2e6e">' + dat.numero + '</b><div style="color:#aaa;font-size:10.5px;overflow:hidden;text-overflow:ellipsis">' + a.nombre + '</div>'
                       : '<span style="color:#888">' + a.nombre + '</span>') + '</td>' +
         '<td style="white-space:nowrap;color:#888">' + (dat.fecha || (a.modificado || '').slice(0, 10)) + '</td>' +

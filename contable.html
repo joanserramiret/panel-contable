@@ -4419,12 +4419,39 @@ function renderTarjeta(d) {
   tarjRender();
 }
 
+// 🔗 Celda «Factura»: nº de factura como ENLACE que abre el PDF en otra pestaña [Joan 2026-07-27].
+// Si no se ha podido leer el número (ficheros tipo «AMAZON (3).pdf»), se enlaza el nombre del
+// fichero: lo importante es poder abrirla de un clic. El nombre completo va en el `title`.
+function tarjCeldaFactura(it) {
+  if (!it.factura) return '<span style="color:#c00">— sin factura —</span>';
+  // el `ngrok-skip-browser-warning` va como PARÁMETRO, no como cabecera: al abrir en otra pestaña
+  // es el navegador quien navega y no puede añadir cabeceras (mismo truco que en Proveedores).
+  const url = BRIDGE_URL_C + (it.factura_url || ('/proveedores/abrir?ruta=' + encodeURIComponent(it.factura)))
+              + '&ngrok-skip-browser-warning=true';
+  const txt = it.factura_num || it.factura_nombre || it.factura.split('/').pop();
+  const tip = [it.factura_prov, it.factura_nombre || it.factura.split('/').pop(),
+               (it.factura_total != null ? '€' + Number(it.factura_total).toFixed(2) : ''),
+               it.factura_fecha].filter(Boolean).join(' · ');
+  let h = '<a href="' + rtEsc(url) + '" target="_blank" rel="noopener" title="' + rtEsc(tip) +
+          '" style="color:#1a2e6e;font-weight:600;text-decoration:none;border-bottom:1px dotted #1a2e6e">' +
+          rtEsc(txt) + '</a>';
+  if (it.factura_prov) h += '<br><span style="color:#999;font-size:10px">' + rtEsc(it.factura_prov) + '</span>';
+  // ⚠️ aviso, no corrección: el total de la factura no cuadra con lo cargado (propina, divisa,
+  //    factura agrupada…). Se marca para mirarlo; el panel no toca nada.
+  if (it.descuadre) h += ' <span title="El total de la factura no cuadra con el cargo" ' +
+    'style="background:#ffe0b2;color:#a05000;border-radius:4px;padding:1px 5px;font-size:9px">⚠️ €' +
+    Number(it.factura_total).toFixed(2) + '</span>';
+  return h;
+}
+
 function tarjRender() {
   const d = _tarjD; if (!d) return;
   const q = (document.getElementById('tarj-buscar') ? document.getElementById('tarj-buscar').value : '').trim().toLowerCase();
   let items = d.compras || [];
   if (q) items = items.filter(it => {
-    const hay = ((it.comercio||'') + ' ' + it.importe + ' ' + String(it.importe).replace('.', ',') + ' ' + (it.fecha||'') + ' ' + (it.factura||'')).toLowerCase();
+    // ⚠️ El MISMO filtro que `tarjRender`: si no, «Buscar todos (visibles)» actuaría sobre un
+    //    conjunto distinto del que se ve en pantalla. [nº de factura y proveedor incluidos]
+    const hay = ((it.comercio||'') + ' ' + it.importe + ' ' + String(it.importe).replace('.', ',') + ' ' + (it.fecha||'') + ' ' + (it.factura||'') + ' ' + (it.factura_num||'') + ' ' + (it.factura_prov||'')).toLowerCase();
     return hay.includes(q);
   });
   let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' +
@@ -4433,7 +4460,7 @@ function tarjRender() {
     '<th style="padding:8px;text-align:left">Acciones</th></tr></thead><tbody>';
   items.forEach((it) => {
     const bg = it.estado === 'pendiente' ? '#fffbe6' : (it.estado === 'gasto' ? '#f0f0f0' : '#f1fbf2');
-    const fac = it.factura ? it.factura.split('/').pop() : '<span style="color:#c00">— sin factura —</span>';
+    const fac = tarjCeldaFactura(it);
     let acc = '';
     if (it.estado !== 'gasto') {
       acc += '<button onclick="tarjBuscar(' + it.mov + ',' + it.idx + ',' + it.importe + ')" style="padding:4px 8px;margin:1px;border:none;border-radius:6px;background:#0a7d34;color:#fff;cursor:pointer;font-size:11px">🔎 Buscar</button>';
@@ -4534,7 +4561,9 @@ async function tarjBuscarTodos() {
   const q = (document.getElementById('tarj-buscar') ? document.getElementById('tarj-buscar').value : '').trim().toLowerCase();
   let items = d.compras || [];
   if (q) items = items.filter(it => {
-    const hay = ((it.comercio||'') + ' ' + it.importe + ' ' + String(it.importe).replace('.', ',') + ' ' + (it.fecha||'') + ' ' + (it.factura||'')).toLowerCase();
+    // ⚠️ El MISMO filtro que `tarjRender`: si no, «Buscar todos (visibles)» actuaría sobre un
+    //    conjunto distinto del que se ve en pantalla. [nº de factura y proveedor incluidos]
+    const hay = ((it.comercio||'') + ' ' + it.importe + ' ' + String(it.importe).replace('.', ',') + ' ' + (it.fecha||'') + ' ' + (it.factura||'') + ' ' + (it.factura_num||'') + ' ' + (it.factura_prov||'')).toLowerCase();
     return hay.includes(q);
   });
   const pend = items.filter(it => it.estado === 'pendiente');
@@ -5181,6 +5210,8 @@ async function rtAbrir() {
     rtPerfil = p.perfil || {};
     rtPintarPreguntas();
     rtCargado = true;
+    if (rtPerfil._guardado)                  // que se vea que sí quedó guardado
+      rtEstado('Respuestas guardadas el ' + rtCuando(rtPerfil._guardado), 'ok');
     rtCargarAeat();                          // si ya se leyó un borrador, se enseña solo
   } catch (err) {
     document.getElementById('rt-preguntas').innerHTML =
@@ -5258,9 +5289,22 @@ function rtQuitar(id, i) {
   rtPintarPreguntas();
 }
 
-async function rtGuardar() {
+// El avisito de estado se veía tan poco que parecía que no guardaba nada.
+// Ahora es una pastilla de color y, cuando algo se guarda de verdad, se queda
+// puesta con la hora del disco. [2026-07-27, Joan: «creo q no me deja guardarla»]
+function rtEstado(txt, tipo) {
   const est = document.getElementById('rt-estado');
-  est.textContent = 'Guardando…';
+  if (!est) return;
+  const c = { ok: ['#dcfce7', '#86efac', '#166534'], mal: ['#fee2e2', '#fca5a5', '#b91c1c'],
+              va: ['#f1f5f9', '#cbd5e1', '#475569'] }[tipo || 'va'];
+  est.innerHTML = !txt ? '' :
+    '<span style="display:inline-block;padding:5px 11px;border-radius:999px;background:' + c[0] +
+    ';border:1.5px solid ' + c[1] + ';color:' + c[2] + ';font-size:12px;font-weight:600">' + rtEsc(txt) + '</span>';
+}
+function rtCuando(iso) { return String(iso || '').replace('T', ' a las ').slice(0, 19); }
+
+async function rtGuardar() {
+  rtEstado('Guardando…', 'va');
   try {
     const r = await fetch(BRIDGE_URL_C + '/renta/perfil', {
       method: 'POST',
@@ -5268,8 +5312,11 @@ async function rtGuardar() {
       body: JSON.stringify({ perfil: rtPerfil })
     });
     const d = await r.json();
-    est.textContent = d.ok ? '✓ Respuestas guardadas' : '✗ ' + (d.error || 'error');
-  } catch (e) { est.textContent = '✗ ' + e.message; }
+    if (d.ok) {
+      rtPerfil = d.perfil || rtPerfil;
+      rtEstado('✓ Guardado el ' + rtCuando(rtPerfil._guardado), 'ok');
+    } else rtEstado('✗ ' + (d.error || 'error'), 'mal');
+  } catch (e) { rtEstado('✗ ' + e.message, 'mal'); }
 }
 
 async function rtCalcular() {
@@ -5365,8 +5412,8 @@ async function rtSubirBorrador(input) {
   const f = input && input.files && input.files[0];
   input.value = '';                                  // así se puede volver a subir el mismo PDF
   if (!f) return;
-  const est = document.getElementById('rt-estado'), caja = document.getElementById('rt-aeat');
-  est.textContent = 'Leyendo el PDF…';
+  const caja = document.getElementById('rt-aeat');
+  rtEstado('Leyendo el PDF…', 'va');
   caja.innerHTML = '<div style="font-size:13px;color:var(--texto-suave)">Leyendo «' + rtEsc(f.name) + '»…</div>';
   try {
     const fd = new FormData();
@@ -5377,16 +5424,16 @@ async function rtSubirBorrador(input) {
     });
     const d = await r.json();
     if (!d || !d.ok) {
-      est.textContent = '';
+      rtEstado('✗ no he podido leer el PDF', 'mal');
       caja.innerHTML = '<div class="card" style="border-left:6px solid #dc2626"><div style="font-size:13px;color:#b91c1c;line-height:1.6">✗ ' +
         rtEsc((d && d.error) || 'no he podido leerlo') + '</div></div>';
       return;
     }
-    est.textContent = '✓ ' + (d.n_casillas || 0) + ' casillas leídas';
+    rtEstado('✓ leídas ' + (d.n_casillas || 0) + ' casillas de ' + f.name, 'ok');
     rtPintarAeat(d);
     rtComparar();
   } catch (e) {
-    est.textContent = '';
+    rtEstado('✗ ' + e.message, 'mal');
     caja.innerHTML = '<div class="card" style="border-left:6px solid #dc2626"><div style="font-size:13px;color:#b91c1c;line-height:1.6">✗ ' +
       rtEsc(e.message) + '<br>Si el Bridge se acaba de actualizar, reinícialo y vuelve a probar.</div></div>';
   }
@@ -5417,14 +5464,14 @@ function rtPintarAeat(d) {
     (sug ? '<button onclick="rtAplicarAeat()" style="padding:8px 14px;background:#065f46;border:none;border-radius:8px;cursor:pointer;font-size:12.5px;font-weight:600;color:#fff">✍️ Rellenar el cuestionario con estos datos (' + sug + ')</button>' : '') +
     '<button onclick="rtComparar()" style="padding:8px 14px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--azul)">⚖️ Comparar con mi estimación</button>' +
     '</div>' +
-    '<div style="font-size:11px;color:var(--texto-suave);margin-top:8px;line-height:1.5">Rellenar sobrescribe las respuestas que coincidan; lo demás se queda como está.</div>' +
+    '<div style="font-size:11px;color:var(--texto-suave);margin-top:8px;line-height:1.5">Rellenar sobrescribe las respuestas que coincidan y las guarda solo; lo demás se queda como está.</div>' +
+    '<div id="rt-aplicado"></div>' +
     '</div><div id="rt-comparar"></div>';
   document.getElementById('rt-aeat').innerHTML = h;
 }
 
 async function rtAplicarAeat() {
-  const est = document.getElementById('rt-estado');
-  est.textContent = 'Aplicando…';
+  rtEstado('Aplicando…', 'va');
   try {
     const r = await fetch(BRIDGE_URL_C + '/renta/aeat/aplicar', {
       method: 'POST',
@@ -5432,12 +5479,19 @@ async function rtAplicarAeat() {
       body: JSON.stringify({ anio: rtAnio() })
     });
     const d = await r.json();
-    if (!d || !d.ok) { est.textContent = '✗ ' + ((d && d.error) || 'error'); return; }
+    if (!d || !d.ok) { rtEstado('✗ ' + ((d && d.error) || 'error'), 'mal'); return; }
     rtPerfil = d.perfil || rtPerfil;
     rtPintarPreguntas();
-    est.textContent = '✓ ' + (d.aplicados || []).length + ' respuestas rellenadas';
+    // Aplicar YA escribe en renta_perfil.json: no hace falta darle a «Guardar».
+    rtEstado('✓ ' + (d.aplicados || []).length + ' respuestas rellenadas y guardadas el ' +
+      rtCuando(rtPerfil._guardado), 'ok');
+    const av = document.getElementById('rt-aplicado');
+    if (av) av.innerHTML = '<div style="margin-top:9px;background:#dcfce7;border:1.5px solid #86efac;border-radius:8px;' +
+      'padding:9px 11px;font-size:12.5px;line-height:1.55;color:#166534"><b>✓ Guardado.</b> Se han rellenado ' +
+      (d.aplicados || []).length + ' respuestas: ' + rtEsc((d.aplicados || []).join(', ')) +
+      '. Ya están escritas en el disco del Bridge — no hace falta darle a «💾 Guardar respuestas».</div>';
     rtCalcular();
-  } catch (e) { est.textContent = '✗ ' + e.message; }
+  } catch (e) { rtEstado('✗ ' + e.message, 'mal'); }
 }
 
 async function rtComparar() {

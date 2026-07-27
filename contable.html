@@ -495,6 +495,7 @@
     <div class="nav-tab tab-simple" onclick="switchTabC('pagos')" id="ctab-pagos">📅 Pagos</div>
     <div class="nav-tab tab-simple" onclick="switchTabC('cuadrar')" id="ctab-cuadrar">🔗 Conciliar</div>
     <div class="nav-tab tab-simple" onclick="switchTabC('buscar')" id="ctab-buscar">🔎 Buscar</div>
+    <div class="nav-tab tab-simple" onclick="switchTabC('renta')" id="ctab-renta" title="Estimación de tu declaración de la renta a partir de las nóminas archivadas y unas cuantas preguntas. Es orientativa: manda el borrador de la AEAT.">🧮 Renta</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('facturas')" id="ctab-facturas">🧾 Facturas emitidas</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('proveedores')" id="ctab-proveedores">📥 Facturas recibidas</div>
     <div class="nav-tab tab-clasico" onclick="switchTabC('pendcont')" id="ctab-pendcont" style="background:#0e7490;color:#fff;font-weight:700">⏳ Pendiente contabilizar</div>
@@ -1170,6 +1171,31 @@
             <option value="4">4T - Octubre/Diciembre</option>
           </select>
           <button class="btn-primary" onclick="exportarIVA()">📊 Exportar IVA a Excel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🧮 RENTA — estimador estilo borrador. Las preguntas NO están aquí: vienen de
+         /renta/preguntas (bridge.py), para que el cuestionario y el motor de cálculo
+         no se separen nunca. [2026-07-27, Joan] -->
+    <div class="tab-content" id="ctc-renta">
+      <div style="padding:16px">
+        <div style="background:#fff7ed;border:1.5px solid #fdba74;border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.6;margin-bottom:14px">
+          <b>🧮 Estimación de la renta.</b> Contesta lo que te suene — lo que ya sé (nóminas archivadas, bruto y retenciones) lo pongo yo.
+          Lo que dejes en blanco cuenta como cero.<br>
+          <b style="color:#9a3412">Es una ESTIMACIÓN orientativa, no es asesoramiento fiscal ni una declaración.</b>
+          Manda siempre el borrador de la AEAT: contrástalo antes de presentar nada.
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+          <label style="font-size:13px;font-weight:600;color:var(--azul)">Ejercicio</label>
+          <select id="rt-anio" onchange="rtCalcular()" style="padding:9px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);font-family:'Outfit',sans-serif;font-size:13px;color:var(--azul);outline:none"></select>
+          <button class="btn-primary" onclick="rtCalcular()">🧮 Calcular estimación</button>
+          <button onclick="rtGuardar()" style="padding:9px 16px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--azul)">💾 Guardar respuestas</button>
+          <span id="rt-estado" style="font-size:12px;color:var(--texto-suave)"></span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:18px;align-items:start">
+          <div id="rt-preguntas"><div style="color:var(--texto-suave);font-size:13px">Cargando el cuestionario…</div></div>
+          <div id="rt-resultado"><div style="color:var(--texto-suave);font-size:13px">Cuando quieras, pulsa <b>🧮 Calcular estimación</b>.</div></div>
         </div>
       </div>
     </div>
@@ -5107,6 +5133,217 @@ function switchTabC(tab) {
   if (tab === 'buscar') { const bq = document.getElementById('busc-q'); if (bq) bq.focus(); }
   if (tab === 'pulso') cargarPulso();
   if (tab === 'pendcont') cargarPendCont();
+  if (tab === 'renta') rtAbrir();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  🧮 RENTA — estimador estilo borrador [2026-07-27, Joan]
+//  El cuestionario se pinta SOLO a partir de /renta/preguntas: para añadir o
+//  quitar preguntas se toca bridge.py (RENTA_PREGUNTAS), nunca este HTML.
+//  ⚠️ Es una estimación orientativa, no una declaración ni asesoramiento.
+// ══════════════════════════════════════════════════════════════════════════
+let rtEsquema = null, rtPerfil = {}, rtCargado = false;
+const rtH = { headers: { 'ngrok-skip-browser-warning': 'true' } };
+const rtEur = x => new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(x || 0) + ' €';
+
+function rtGet(path) { return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), rtPerfil); }
+function rtSet(path, val) {
+  const p = path.split('.');
+  let o = rtPerfil;
+  for (let i = 0; i < p.length - 1; i++) {
+    if (o[p[i]] == null) o[p[i]] = /^\d+$/.test(p[i + 1]) ? [] : {};
+    o = o[p[i]];
+  }
+  o[p[p.length - 1]] = val;
+}
+function rtBuscarCampo(id) {
+  for (const g of (rtEsquema || [])) for (const c of g.campos) if (c.id === id) return c;
+  return null;
+}
+
+async function rtAbrir() {
+  const sel = document.getElementById('rt-anio');
+  if (sel && !sel.options.length) {
+    const y = new Date().getFullYear();
+    for (let a = y; a >= y - 6; a--) { const o = document.createElement('option'); o.value = a; o.textContent = a; sel.appendChild(o); }
+    sel.value = y - 1;                       // en 2026 se declara 2025
+  }
+  if (rtCargado) return;
+  try {
+    const [e, p] = await Promise.all([
+      fetch(BRIDGE_URL_C + '/renta/preguntas', rtH).then(r => r.json()),
+      fetch(BRIDGE_URL_C + '/renta/perfil', rtH).then(r => r.json())
+    ]);
+    rtEsquema = e.grupos || [];
+    rtPerfil = p.perfil || {};
+    rtPintarPreguntas();
+    rtCargado = true;
+  } catch (err) {
+    document.getElementById('rt-preguntas').innerHTML =
+      '<div style="color:#c00;font-size:13px;line-height:1.6">No puedo cargar el cuestionario: ' + err.message +
+      '<br>Si el Bridge se acaba de actualizar, reinícialo (doble clic en «Reiniciar Bridge») y vuelve a entrar.</div>';
+  }
+}
+
+function rtCampo(c, path) {
+  const v = rtGet(path);
+  const ay = c.ayuda ? '<div style="font-size:11px;color:var(--texto-suave);margin-top:3px;line-height:1.45">' + c.ayuda + '</div>' : '';
+  const lab = '<div style="font-size:12.5px;font-weight:600;color:var(--azul);margin-bottom:4px;line-height:1.35">' + c.txt + '</div>';
+  const est = "padding:7px 10px;border:1.5px solid var(--borde);border-radius:8px;font-family:'Outfit',sans-serif;font-size:13px;width:100%;box-sizing:border-box;outline:none";
+  if (c.tipo === 'si_no') {
+    return '<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer">' +
+      '<input type="checkbox" ' + (v ? 'checked' : '') + ' onchange="rtSet(\'' + path + '\', this.checked)" style="margin-top:2px;width:16px;height:16px;flex:0 0 auto">' +
+      '<span><span style="font-size:12.5px;font-weight:600;color:var(--azul)">' + c.txt + '</span>' + ay + '</span></label>';
+  }
+  if (c.tipo === 'opcion') {
+    const ops = (c.ops || []).map(o => '<option value="' + o[0] + '"' + (String(v) === String(o[0]) ? ' selected' : '') + '>' + o[1] + '</option>').join('');
+    return lab + '<select onchange="rtSet(\'' + path + '\', this.value)" style="' + est + '">' + ops + '</select>' + ay;
+  }
+  if (c.tipo === 'txt') {
+    return lab + '<input type="text" value="' + (v == null ? '' : String(v).replace(/"/g, '&quot;')) + '" oninput="rtSet(\'' + path + '\', this.value)" style="' + est + '">' + ay;
+  }
+  const paso = c.tipo === 'eur' ? '0.01' : '1';
+  return lab + '<div style="position:relative">' +
+    '<input type="number" step="' + paso + '" value="' + (v == null ? '' : v) + '" oninput="rtSet(\'' + path + '\', this.value === \'\' ? 0 : Number(this.value))" style="' + est + (c.tipo === 'eur' ? ';padding-right:26px' : '') + '">' +
+    (c.tipo === 'eur' ? '<span style="position:absolute;right:9px;top:7px;font-size:13px;color:var(--texto-suave)">€</span>' : '') +
+    '</div>' + ay;
+}
+
+function rtFila(c, i) {
+  return '<div style="border:1px dashed var(--borde);border-radius:8px;padding:10px 10px 4px;margin-bottom:8px;position:relative;background:#fafbfe">' +
+    '<button onclick="rtQuitar(\'' + c.id + '\',' + i + ')" title="Quitar" style="position:absolute;top:5px;right:6px;border:none;background:transparent;cursor:pointer;font-size:13px;color:#94a3b8">✕</button>' +
+    c.campos.map(sc => '<div style="margin-bottom:8px">' + rtCampo(sc, c.id + '.' + i + '.' + sc.id) + '</div>').join('') +
+    '</div>';
+}
+
+function rtPintarPreguntas() {
+  // Los valores por defecto se vuelcan al perfil: lo que se ve en pantalla es
+  // EXACTAMENTE lo que se manda a calcular.
+  (rtEsquema || []).forEach(g => g.campos.forEach(c => {
+    if (c.tipo === 'lista') { if (!Array.isArray(rtPerfil[c.id])) rtPerfil[c.id] = []; }
+    else if (rtPerfil[c.id] === undefined && c.def !== undefined) rtPerfil[c.id] = c.def;
+  }));
+  let h = '';
+  (rtEsquema || []).forEach(g => {
+    h += '<div class="card" style="margin-bottom:14px"><div class="card-title">' + g.grupo + '</div>';
+    g.campos.forEach(c => {
+      if (c.tipo === 'lista') {
+        const arr = rtPerfil[c.id] || [];
+        h += '<div style="margin:14px 0 4px;font-size:12.5px;font-weight:700;color:var(--azul)">' + c.txt + '</div>' +
+          (arr.length ? arr.map((_, i) => rtFila(c, i)).join('') : '<div style="font-size:12px;color:var(--texto-suave);margin-bottom:6px">Ninguno.</div>') +
+          '<button onclick="rtAnadir(\'' + c.id + '\')" style="padding:5px 11px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;color:var(--azul)">+ Añadir</button>';
+      } else {
+        h += '<div style="margin:11px 0">' + rtCampo(c, c.id) + '</div>';
+      }
+    });
+    h += '</div>';
+  });
+  document.getElementById('rt-preguntas').innerHTML = h;
+}
+
+function rtAnadir(id) {
+  const c = rtBuscarCampo(id);
+  if (!c) return;
+  const nuevo = {};
+  c.campos.forEach(sc => { nuevo[sc.id] = sc.def; });
+  (rtPerfil[id] = rtPerfil[id] || []).push(nuevo);
+  rtPintarPreguntas();
+}
+function rtQuitar(id, i) {
+  if (Array.isArray(rtPerfil[id])) rtPerfil[id].splice(i, 1);
+  rtPintarPreguntas();
+}
+
+async function rtGuardar() {
+  const est = document.getElementById('rt-estado');
+  est.textContent = 'Guardando…';
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/renta/perfil', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ perfil: rtPerfil })
+    });
+    const d = await r.json();
+    est.textContent = d.ok ? '✓ Respuestas guardadas' : '✗ ' + (d.error || 'error');
+  } catch (e) { est.textContent = '✗ ' + e.message; }
+}
+
+async function rtCalcular() {
+  const cont = document.getElementById('rt-resultado');
+  const anio = (document.getElementById('rt-anio') || {}).value || (new Date().getFullYear() - 1);
+  cont.innerHTML = '<div style="color:var(--texto-suave);font-size:13px">Calculando…</div>';
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/renta/simular', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ anio: anio, perfil: rtPerfil })
+    });
+    const d = await r.json();
+    if (!d || !d.ok) { cont.innerHTML = '<div style="color:#c00;font-size:13px">✗ ' + ((d && d.error) || 'error') + '</div>'; return; }
+    rtPintarResultado(d);
+  } catch (e) {
+    cont.innerHTML = '<div style="color:#c00;font-size:13px;line-height:1.6">✗ ' + e.message +
+      '<br>Si el Bridge se acaba de actualizar, reinícialo y vuelve a probar.</div>';
+  }
+}
+
+function rtPintarResultado(d) {
+  const dev = d.resultado < 0, color = dev ? '#16a34a' : (d.resultado > 0 ? '#dc2626' : '#64748b');
+  const n = d.nominas || {};
+  let h = '<div class="card" style="border-left:6px solid ' + color + '">' +
+    '<div style="font-size:11.5px;color:var(--texto-suave);text-transform:uppercase;letter-spacing:.6px">Ejercicio ' + d.anio +
+    ' · declaración ' + d.recomendada + '</div>' +
+    '<div style="font-size:34px;font-weight:800;color:' + color + ';margin:4px 0 2px">' + rtEur(Math.abs(d.resultado)) + '</div>' +
+    '<div style="font-size:13.5px;font-weight:700;color:' + color + '">' +
+    (dev ? '↩ te saldría A DEVOLVER' : (d.resultado > 0 ? '↪ te saldría A PAGAR' : '= te saldría a cero')) + '</div>' +
+    '<div style="font-size:11.5px;color:var(--texto-suave);margin-top:8px;line-height:1.5">Estimación orientativa. No es una declaración ni asesoramiento fiscal: contrástala con el borrador de la AEAT.</div>' +
+    '</div>';
+
+  // De dónde salen los datos de nómina
+  h += '<div class="card"><div class="card-title">De tus nóminas archivadas</div>' +
+    '<div style="font-size:13px;line-height:1.85">' +
+    '· <b>' + (n.n || 0) + '</b> nómina(s) de ' + d.anio + '<br>' +
+    '· Bruto devengado: <b>' + rtEur(n.devengado) + '</b><br>' +
+    '· Retenido de IRPF: <b>' + rtEur(n.retenido) + '</b></div>';
+  if (n.meses_que_faltan && n.meses_que_faltan.length)
+    h += '<div style="margin-top:9px;background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.5">' +
+      '⚠ Faltan los meses <b>' + n.meses_que_faltan.join(', ') + '</b>. Con nóminas de menos, la estimación se queda corta. ' +
+      'Pásate por la pestaña de nóminas y usa «📧 Buscar las que falten en el correo».</div>';
+  if (n.ilegibles && n.ilegibles.length)
+    h += '<div style="margin-top:9px;font-size:12px;color:#b45309">⚠ No pude leer: ' + n.ilegibles.join(', ') + ' (¿PDF escaneado?)</div>';
+  h += '</div>';
+
+  // Individual vs conjunta
+  if ((d.escenarios || []).length > 1) {
+    h += '<div class="card"><div class="card-title">Individual o conjunta</div><table style="width:100%;font-size:13px;border-collapse:collapse">';
+    d.escenarios.forEach(e => {
+      const mejor = Math.abs(e.resultado - d.resultado) < 0.01;
+      h += '<tr style="' + (mejor ? 'font-weight:700;background:#f0fdf4' : '') + '">' +
+        '<td style="padding:7px 6px">' + (e.conjunta ? 'Conjunta' : 'Individual') + (mejor ? ' ✓' : '') + '</td>' +
+        '<td style="padding:7px 6px;text-align:right;color:' + (e.resultado < 0 ? '#16a34a' : '#dc2626') + '">' +
+        (e.resultado < 0 ? 'devuelven ' : 'pagas ') + rtEur(Math.abs(e.resultado)) + '</td></tr>';
+    });
+    h += '</table></div>';
+  }
+
+  // El desglose del escenario recomendado
+  const esc = (d.escenarios || []).find(e => (e.conjunta ? 'conjunta' : 'individual') === d.recomendada) || (d.escenarios || [])[0];
+  if (esc) {
+    h += '<div class="card"><div class="card-title">Cómo sale ese número</div><table style="width:100%;font-size:12.5px;border-collapse:collapse">';
+    esc.pasos.forEach(s => {
+      const fuerte = s.concepto.indexOf('=') === 0 || s.concepto.indexOf('CUOTA') >= 0;
+      h += '<tr style="border-bottom:1px solid #eef1f7' + (fuerte ? ';font-weight:700;background:#f8fafc' : '') + '">' +
+        '<td style="padding:6px 5px;line-height:1.4">' + s.concepto +
+        (s.nota ? '<div style="font-size:10.5px;color:var(--texto-suave);font-weight:400;line-height:1.4">' + s.nota + '</div>' : '') + '</td>' +
+        '<td style="padding:6px 5px;text-align:right;white-space:nowrap;vertical-align:top">' + rtEur(s.importe) + '</td></tr>';
+    });
+    h += '</table>';
+    if (esc.avisos && esc.avisos.length)
+      h += '<div style="margin-top:10px;font-size:12px;line-height:1.55">' +
+        esc.avisos.map(a => '<div style="margin-bottom:5px">⚠ ' + a + '</div>').join('') + '</div>';
+    h += '</div>';
+  }
+  document.getElementById('rt-resultado').innerHTML = h;
 }
 
 // ===== PENDIENTE DE CONTABILIZAR (zona Raquel) =====

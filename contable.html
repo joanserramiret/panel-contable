@@ -1097,6 +1097,7 @@
           <span style="display:flex;gap:8px;align-items:center">
             <input type="file" id="nom-pdf" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif" multiple style="display:none" onchange="nomImportar(this.files)"/>
             <button onclick="document.getElementById('nom-pdf').click()" title="Sube los recibos de salarios de la gestoría (PDF o foto) — se leen y archivan solos por mes" style="padding:6px 12px;background:#e87e1a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">📥 Importar nóminas (PDF/foto)</button>
+            <button onclick="nomRescatarCorreo()" title="Busca en Outlook las nóminas que te falten (las que manda Ruth de Conta Mo) y las deja en el cajón" style="padding:6px 12px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">📧 Buscar las que falten en el correo</button>
             <button onclick="nomCargar()" title="Actualizar" style="padding:6px 10px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12px">⟳</button>
           </span>
         </div>
@@ -8970,6 +8971,32 @@ async function nomImportar(files) {
     (errores.length ? '\n✗ ' + errores.join('\n✗ ') : '') +
     (ok ? '\n\nYa salen como candidatas al conciliar los cargos del banco (con su 👁).' : ''));
   nomCargar();
+}
+
+// 💼 Rescate de nóminas viejas en Outlook Classic (los correos de Ruth de Conta Mo). El barrido normal
+// del correo se salta los mensajes ya procesados, por eso hace falta esta pasada aparte. [2026-07-27, Joan]
+async function nomRescatarCorreo() {
+  const desde = prompt('Buscar en el correo las nóminas que falten DESDE qué fecha (AAAA-MM-DD):', '2025-01-01');
+  if (!desde) return;
+  if (!confirm('Voy a mirar TODAS las carpetas de Outlook desde ' + desde + ' buscando correos de Ruth / Conta Mo.\n\n' +
+               '· Solo bajo los adjuntos que de verdad son un recibo de salarios.\n' +
+               '· Lo que ya tengo registrado NO se baja otra vez.\n' +
+               '· Lo que encuentre queda en el cajón desastre: luego pulsa "🗂 Ordenar cajón IA".\n\n' +
+               'Outlook tiene que estar abierto. Puede tardar un par de minutos. ¿Sigo?')) return;
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/correo/rescate_nominas?desde=' + encodeURIComponent(desde),
+                          { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    const d = await r.json();
+    if (!d.ok) { alert('✗ ' + (d.error || 'error')); return; }
+    const det = (d.nuevas || []).map(n => '· ' + (n.trabajador || n.archivo) + ' · ' + (n.mes || '?') +
+                                          ' · ' + (n.liquido != null ? n.liquido + ' €' : '?')).join('\n');
+    alert('📧 Rescate de nóminas (' + d.desde + ' → ' + d.hasta + '):\n' +
+          '· ' + d.correos_revisados + ' correo(s) de Ruth/Conta Mo revisados en ' + d.carpetas + ' carpeta(s)\n' +
+          '· ' + (d.nuevas || []).length + ' nómina(s) NUEVAS al cajón\n' +
+          '· ' + (d.ya_las_tenia || []).length + ' que ya tenía (no las he tocado)' +
+          (det ? '\n\n' + det : '') +
+          ((d.nuevas || []).length ? '\n\n➡ Ahora pulsa "🗂 Ordenar cajón IA" y se archivan solas en NOMINAS.' : ''));
+  } catch(e) { alert('✗ ' + e.message); }
 }
 
 async function nomBorrar(ruta) {

@@ -3894,7 +3894,7 @@ function cuadrarRenderCli() {
 function cuadrarRenderProv() {
   const q = (document.getElementById('cuad-prov-buscar') ? document.getElementById('cuad-prov-buscar').value : '').trim().toLowerCase();
   let f = _provPend;
-  if (q) f = f.filter(x => ((x.proveedor || '') + ' ' + (x.proveedor_nombre || '') + ' ' + (x.nombre || '') + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha || '')).toLowerCase().includes(q));
+  if (q) f = f.filter(x => ((x.proveedor || '') + ' ' + (x.proveedor_nombre || '') + ' ' + (x.nombre || '') + ' ' + (x.numero || '') + ' ' + x.importe + ' ' + String(x.importe).replace('.', ',') + ' ' + (x.fecha || '')).toLowerCase().includes(q));
   f = _cuadProvSort.col ? _ordenarPorColumna(f, _GET_PROV[_cuadProvSort.col], _cuadProvSort.dir) : _ordenEstado(f, _provEstado, x => x.ruta || '');
   let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f5f5f5;border-bottom:2px solid #ddd">' + _thSort('Proveedor', 'proveedor', _cuadProvSort, 'cuadSortProv') + _thSort('Factura', 'factura', _cuadProvSort, 'cuadSortProv') + _thSort('Fecha', 'fecha', _cuadProvSort, 'cuadSortProv') + _thSort('Importe', 'importe', _cuadProvSort, 'cuadSortProv', 'right') + '<th style="padding:7px;text-align:left">Acción</th></tr></thead><tbody>';
   f.forEach(x => {
@@ -3902,7 +3902,12 @@ function cuadrarRenderProv() {
     //    cuelga la imputación de pagos por proveedor. Solo se cambia lo que se PINTA. [2026-07-08]
     const args = (Number(x.importe) || 0) + ",'" + encodeURIComponent(x.proveedor || '') + "','" + encodeURIComponent(x.nombre || '') + "','" + encodeURIComponent(x.ruta || '') + "'";
     const _pn = x.proveedor_nombre || x.proveedor || '—';
-    html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px"><b>' + esc(_pn) + '</b>' + _estadoBadge(_provEstado[x.ruta || '']) + '</td><td style="padding:7px">' + (x.nombre || '') + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="provVerDoc(\'' + encodeURIComponent(x.ruta || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="provConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
+    // 🔢 se enseña el nº IMPRESO en la factura (del OCR), que es el que casa con SisConta; el nombre
+    //    del fichero queda debajo en gris, solo para localizar el PDF. [Joan 2026-07-27]
+    const _fac = x.numero
+      ? '<b>' + esc(x.numero) + '</b><div style="color:#999;font-size:10.5px">' + esc(x.nombre || '') + '</div>'
+      : '<span style="color:#b45309" title="Sin nº: la factura no está escaneada o el OCR no lo encuentra. Se enseña el nombre del fichero.">' + esc(x.nombre || '') + '</span>';
+    html += '<tr style="border-bottom:1px solid #eee"><td style="padding:7px"><b>' + esc(_pn) + '</b>' + _estadoBadge(_provEstado[x.ruta || '']) + '</td><td style="padding:7px">' + _fac + '</td><td style="padding:7px">' + (x.fecha || '') + '</td><td style="padding:7px;text-align:right">€' + (Number(x.importe) || 0).toFixed(2) + '</td><td style="padding:7px;white-space:nowrap"><button onclick="provVerDoc(\'' + encodeURIComponent(x.ruta || '') + '\')" style="padding:4px 9px;margin-right:4px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁 Ver</button><button onclick="provConciliar(' + args + ')" style="padding:4px 9px;border:none;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;font-size:11px;font-weight:600">⚖️ Conciliar</button></td></tr>';
   });
   html += '</tbody></table>';
   if (!f.length) html = '<div style="color:#1b7a3d;font-size:13px;padding:6px">✓ Nada pendiente de pago.</div>';
@@ -7118,6 +7123,14 @@ function bkFiltrarSigno(signo) {
   if (lista) lista.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// 🔢 Nº de factura de una entrada conciliada. MANDA EL OCR [Joan 2026-07-27: «lo que manda es el
+// número de factura que aparece en el ocr, SIEMPRE»]. `numero_ocr` lo añade /banco/movimientos
+// leyéndolo del texto de la factura; el `numero` guardado en su día era el NOMBRE DEL FICHERO y
+// por eso no casaba con SisConta. Se deja de reserva por si la factura aún no está escaneada.
+function bkNumFac(f) {
+  return (f && (f.numero_ocr || f.numero)) || '';
+}
+
 function bkRender() {
   const listEl = document.getElementById('bk-lista');
   const q = (document.getElementById('bk-buscar').value || '').toLowerCase();
@@ -7133,7 +7146,8 @@ function bkRender() {
       m.concepto, m.referencia, m.banco, m.fecha,
       String(m.importe), bkFmt(m.importe), m.categoria, BK_CATS[m.categoria],
       conc.length ? 'conciliado' : (m.categoria ? 'categorizado' : 'pendiente'),
-      conc.map(f => f.serie + '-' + f.numero).join(' '),
+      conc.map(f => f.serie + '-' + bkNumFac(f)).join(' '),
+      conc.map(f => f.numero || '').join(' '),          // el nombre del fichero sigue siendo buscable
       conc.map(f => f.cliente || '').join(' ')
     ].join(' ').toLowerCase();
     return blob.includes(q);
@@ -7172,8 +7186,8 @@ function bkRender() {
       const chipInvento = esInvento ? ' <span title="DEDUCIDO automáticamente (sin documento del banco): un invento hasta que lo verifiques — revísalo y rehazlo con 🔗 si no te cuadra" style="background:#fde8e8;color:#c0392b;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:800">⚡ INVENTO</span>' : '';
       const badge = conc
         ? (esParcial
-          ? '<span style="background:#fff4e0;color:#b45309;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">🧮 Parcial: ' + conc.map(f => f.serie + '-' + f.numero).join(', ') + ' · quedan ' + bkFmt(restoConc) + '</span>' + chipInvento
-          : '<span style="background:#e8f7ef;color:#1a7a3f;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">✅ ' + conc.map(f => f.serie + '-' + f.numero).join(', ') + '</span>' + chipInvento)
+          ? '<span style="background:#fff4e0;color:#b45309;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">🧮 Parcial: ' + conc.map(f => f.serie + '-' + bkNumFac(f)).join(', ') + ' · quedan ' + bkFmt(restoConc) + '</span>' + chipInvento
+          : '<span style="background:#e8f7ef;color:#1a7a3f;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">✅ ' + conc.map(f => f.serie + '-' + bkNumFac(f)).join(', ') + '</span>' + chipInvento)
         : '<span style="background:#fff4e0;color:#c96a10;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">⏳ Pendiente</span>';
       const catBadge = m.categoria ? ' <span style="background:#e0f2fe;color:#0e7490;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">🏷 ' + (BK_CATS[m.categoria] || m.categoria) + '</span>' : '';
       const acciones = conc
@@ -7284,7 +7298,9 @@ function bkCandidatos(mov) {
       .filter(f => f.total > 0 && ['ok','corregido','ocr'].includes(f.estado))
       .map(f => ({
         clave: 'PROV:' + f.ruta,
-        serie: 'PROV', numero: f.nombre,
+        // el nº que se guarda al conciliar es el del OCR [Joan 2026-07-27]; si la factura aún no
+        // está escaneada no hay nº y se cae al nombre del fichero, como toda la vida.
+        serie: 'PROV', numero: f.numero || f.nombre, numero_ocr: f.numero || '', nombre: f.nombre,
         ruta: f.ruta,
         fecha: f.fecha || '',
         importe: f.total,
@@ -9703,7 +9719,11 @@ function pvRender() {
         '<td style="padding:5px;white-space:nowrap;max-width:230px;overflow:hidden;text-overflow:ellipsis;color:#1a2e6e;font-weight:700" title="' + ((dat.emisor || '') + (a.proveedor ? ' · carpeta: ' + a.proveedor : '')).replace(/"/g, '&quot;') + '">' +
           (dat.proveedor_nombre || dat.emisor || dat.proveedor || a.proveedor || '—') +
           (a.proveedor && (dat.proveedor_nombre || '').toLowerCase().indexOf(a.proveedor.toLowerCase().slice(0, 6)) === -1 ? ' <span style="color:#888;font-weight:400;font-size:10.5px">(' + a.proveedor + ')</span>' : '') + '</td>' +
-        '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#888" title="' + a.nombre.replace(/"/g, '&quot;') + '">' + a.nombre + '</td>' +
+        // 🔢 Nº de factura del OCR (el IMPRESO), que es el que casa con SisConta. El nombre del
+        //    fichero baja a segunda línea en gris: sirve para encontrar el PDF, nada más. [2026-07-27]
+        '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + a.nombre.replace(/"/g, '&quot;') + '">' +
+          (dat.numero ? '<b style="color:#1a2e6e">' + dat.numero + '</b><div style="color:#aaa;font-size:10.5px;overflow:hidden;text-overflow:ellipsis">' + a.nombre + '</div>'
+                      : '<span style="color:#888">' + a.nombre + '</span>') + '</td>' +
         '<td style="white-space:nowrap;color:#888">' + (dat.fecha || (a.modificado || '').slice(0, 10)) + '</td>' +
         '<td style="white-space:nowrap;text-align:right" onclick="pvCorregir(\'' + ruta.replace(/'/g, "\\'") + '\')" title="Clic para corregir el importe">' + (chip || '<span style="color:#bbb;font-size:11px">sin escanear</span>') + '</td>' +
         '<td style="white-space:nowrap;color:#888;text-align:right">' + kb + '</td>' +

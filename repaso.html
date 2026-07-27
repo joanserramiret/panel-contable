@@ -321,8 +321,9 @@ function metBadge(x){
 }
 // 🔗 Nº de factura CLICABLE, que abre el PDF [Joan 2026-07-27: «me lo pones igual en el repaso»].
 // El número lo calcula el bridge (`_fac_numero_display`), la MISMA fuente que el extracto de tarjeta,
-// leyendo el nombre del fichero y, si allí no hay nada, el texto del OCR con etiqueta explícita.
-// Si no hay número creíble se enlaza el nombre del fichero: no se inventa ningún número.
+// leyendo el TEXTO DEL OCR de la factura [Joan 2026-07-27: «lo que manda es el número de factura que
+// aparece en el ocr, SIEMPRE»]. El nombre del fichero ya NO cuenta como número: solo se enseña detrás
+// para localizar el PDF. Si el OCR no da número creíble se enlaza el nombre: no se inventa nada.
 function celdaFac(x){
   const rel = (x.ruta||'').split('/').slice(1).join('/');
   const url = API+'/proveedores/abrir?anio='+encodeURIComponent(x.anio)+'&ruta='+encodeURIComponent(rel);

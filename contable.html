@@ -1188,11 +1188,14 @@
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
           <label style="font-size:13px;font-weight:600;color:var(--azul)">Ejercicio</label>
-          <select id="rt-anio" onchange="rtCalcular()" style="padding:9px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);font-family:'Outfit',sans-serif;font-size:13px;color:var(--azul);outline:none"></select>
+          <select id="rt-anio" onchange="rtCalcular();rtCargarAeat()" style="padding:9px 14px;border:1.5px solid var(--borde);border-radius:var(--radio-sm);font-family:'Outfit',sans-serif;font-size:13px;color:var(--azul);outline:none"></select>
           <button class="btn-primary" onclick="rtCalcular()">🧮 Calcular estimación</button>
           <button onclick="rtGuardar()" style="padding:9px 16px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--azul)">💾 Guardar respuestas</button>
+          <input type="file" id="rt-pdf" accept="application/pdf" style="display:none" onchange="rtSubirBorrador(this)">
+          <button onclick="document.getElementById('rt-pdf').click()" style="padding:9px 16px;background:#ecfdf5;border:1.5px solid #6ee7b7;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:#065f46" title="El PDF de la AEAT (borrador o declaración presentada). Se lee en este ordenador y no sale de aquí.">📄 Leer el borrador de la AEAT</button>
           <span id="rt-estado" style="font-size:12px;color:var(--texto-suave)"></span>
         </div>
+        <div id="rt-aeat" style="margin-bottom:14px"></div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:18px;align-items:start">
           <div id="rt-preguntas"><div style="color:var(--texto-suave);font-size:13px">Cargando el cuestionario…</div></div>
           <div id="rt-resultado"><div style="color:var(--texto-suave);font-size:13px">Cuando quieras, pulsa <b>🧮 Calcular estimación</b>.</div></div>
@@ -5178,6 +5181,7 @@ async function rtAbrir() {
     rtPerfil = p.perfil || {};
     rtPintarPreguntas();
     rtCargado = true;
+    rtCargarAeat();                          // si ya se leyó un borrador, se enseña solo
   } catch (err) {
     document.getElementById('rt-preguntas').innerHTML =
       '<div style="color:#c00;font-size:13px;line-height:1.6">No puedo cargar el cuestionario: ' + err.message +
@@ -5344,6 +5348,139 @@ function rtPintarResultado(d) {
     h += '</div>';
   }
   document.getElementById('rt-resultado').innerHTML = h;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+//  📄 EL BORRADOR / LA DECLARACIÓN DE LA AEAT
+//  El PDF se sube al Bridge, que lo lee EN ESTE ORDENADOR (no sale de aquí) y
+//  devuelve las casillas. Sirve para dos cosas: rellenar el cuestionario solo
+//  y contrastar la estimación del panel contra las cifras de la Agencia.
+//  Sólo LEE: nunca presenta ni modifica nada en la sede. [2026-07-27, Joan]
+// ──────────────────────────────────────────────────────────────────────────
+function rtAnio() { return (document.getElementById('rt-anio') || {}).value || (new Date().getFullYear() - 1); }
+function rtEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+async function rtSubirBorrador(input) {
+  const f = input && input.files && input.files[0];
+  input.value = '';                                  // así se puede volver a subir el mismo PDF
+  if (!f) return;
+  const est = document.getElementById('rt-estado'), caja = document.getElementById('rt-aeat');
+  est.textContent = 'Leyendo el PDF…';
+  caja.innerHTML = '<div style="font-size:13px;color:var(--texto-suave)">Leyendo «' + rtEsc(f.name) + '»…</div>';
+  try {
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('anio', rtAnio());
+    const r = await fetch(BRIDGE_URL_C + '/renta/borrador', {
+      method: 'POST', headers: { 'ngrok-skip-browser-warning': 'true' }, body: fd
+    });
+    const d = await r.json();
+    if (!d || !d.ok) {
+      est.textContent = '';
+      caja.innerHTML = '<div class="card" style="border-left:6px solid #dc2626"><div style="font-size:13px;color:#b91c1c;line-height:1.6">✗ ' +
+        rtEsc((d && d.error) || 'no he podido leerlo') + '</div></div>';
+      return;
+    }
+    est.textContent = '✓ ' + (d.n_casillas || 0) + ' casillas leídas';
+    rtPintarAeat(d);
+    rtComparar();
+  } catch (e) {
+    est.textContent = '';
+    caja.innerHTML = '<div class="card" style="border-left:6px solid #dc2626"><div style="font-size:13px;color:#b91c1c;line-height:1.6">✗ ' +
+      rtEsc(e.message) + '<br>Si el Bridge se acaba de actualizar, reinícialo y vuelve a probar.</div></div>';
+  }
+}
+
+// Lo que ya se leyó en su día, al abrir la pestaña. Si no hay nada, no molesta.
+async function rtCargarAeat() {
+  try {
+    const d = await fetch(BRIDGE_URL_C + '/renta/aeat?anio=' + rtAnio() + '&_=' + Date.now(), rtH).then(r => r.json());
+    if (!d || !d.ok || d.vacio) { document.getElementById('rt-aeat').innerHTML = ''; return; }
+    rtPintarAeat(d);
+    rtComparar();
+  } catch (e) { /* sin borrador leído, la pestaña funciona igual */ }
+}
+
+function rtPintarAeat(d) {
+  const n = (d.notas || []);
+  let h = '<div class="card" style="border-left:6px solid #10b981">' +
+    '<div class="card-title">📄 Lo que dice la AEAT · ejercicio ' + rtEsc(d.anio) + '</div>' +
+    '<div style="font-size:11.5px;color:var(--texto-suave);margin-bottom:8px">' +
+    rtEsc(d.archivo || '') + (d.leido ? ' · leído el ' + rtEsc(String(d.leido).replace('T', ' a las ')) : '') +
+    ' · el PDF se lee en este ordenador y no sale de aquí</div>';
+  if (n.length)
+    h += '<div style="font-size:12.5px;line-height:1.7">' +
+      n.map(x => '<div style="margin-bottom:3px">· ' + rtEsc(x) + '</div>').join('') + '</div>';
+  const sug = Object.keys(d.sugerido || {}).length;
+  h += '<div style="margin-top:10px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">' +
+    (sug ? '<button onclick="rtAplicarAeat()" style="padding:8px 14px;background:#065f46;border:none;border-radius:8px;cursor:pointer;font-size:12.5px;font-weight:600;color:#fff">✍️ Rellenar el cuestionario con estos datos (' + sug + ')</button>' : '') +
+    '<button onclick="rtComparar()" style="padding:8px 14px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--azul)">⚖️ Comparar con mi estimación</button>' +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--texto-suave);margin-top:8px;line-height:1.5">Rellenar sobrescribe las respuestas que coincidan; lo demás se queda como está.</div>' +
+    '</div><div id="rt-comparar"></div>';
+  document.getElementById('rt-aeat').innerHTML = h;
+}
+
+async function rtAplicarAeat() {
+  const est = document.getElementById('rt-estado');
+  est.textContent = 'Aplicando…';
+  try {
+    const r = await fetch(BRIDGE_URL_C + '/renta/aeat/aplicar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+      body: JSON.stringify({ anio: rtAnio() })
+    });
+    const d = await r.json();
+    if (!d || !d.ok) { est.textContent = '✗ ' + ((d && d.error) || 'error'); return; }
+    rtPerfil = d.perfil || rtPerfil;
+    rtPintarPreguntas();
+    est.textContent = '✓ ' + (d.aplicados || []).length + ' respuestas rellenadas';
+    rtCalcular();
+  } catch (e) { est.textContent = '✗ ' + e.message; }
+}
+
+async function rtComparar() {
+  const caja = document.getElementById('rt-comparar');
+  if (!caja) return;
+  caja.innerHTML = '<div style="font-size:13px;color:var(--texto-suave);padding:6px 2px">Comparando…</div>';
+  try {
+    const d = await fetch(BRIDGE_URL_C + '/renta/comparar?anio=' + rtAnio() + '&_=' + Date.now(), rtH).then(r => r.json());
+    if (!d || !d.ok) {
+      caja.innerHTML = '<div style="font-size:12.5px;color:#b45309;padding:6px 2px">' + rtEsc((d && d.error) || 'error') + '</div>';
+      return;
+    }
+    const todo = d.total && d.cuadran === d.total;
+    let h = '<div class="card" style="border-left:6px solid ' + (todo ? '#16a34a' : '#f59e0b') + '">' +
+      '<div class="card-title">⚖️ La AEAT contra mi estimación</div>' +
+      '<div style="font-size:12.5px;margin-bottom:9px;color:' + (todo ? '#166534' : '#92400e') + ';font-weight:600">' +
+      (todo ? '✓ Cuadran las ' + d.total + ' líneas: el panel reproduce esa declaración' :
+        'Cuadran ' + d.cuadran + ' de ' + d.total + ' líneas. Mira las marcadas en rojo: ahí falta algún dato en el cuestionario') +
+      '</div>' +
+      '<table style="width:100%;font-size:12.5px;border-collapse:collapse">' +
+      '<tr style="font-size:11px;color:var(--texto-suave);text-transform:uppercase;letter-spacing:.5px">' +
+      '<th style="text-align:left;padding:4px 5px">Concepto</th><th style="text-align:center;padding:4px 5px">Casilla</th>' +
+      '<th style="text-align:right;padding:4px 5px">AEAT</th><th style="text-align:right;padding:4px 5px">Panel</th>' +
+      '<th style="text-align:right;padding:4px 5px">Dif.</th></tr>';
+    (d.filas || []).forEach(f => {
+      const mal = !f.ok;
+      h += '<tr style="border-bottom:1px solid #eef1f7' + (mal ? ';background:#fef2f2' : '') + '">' +
+        '<td style="padding:6px 5px;line-height:1.4">' + (mal ? '⚠ ' : '✓ ') + rtEsc(f.concepto) + '</td>' +
+        '<td style="padding:6px 5px;text-align:center;color:var(--texto-suave);font-size:11px">' + rtEsc(f.casilla || '—') + '</td>' +
+        '<td style="padding:6px 5px;text-align:right;white-space:nowrap">' + (f.aeat == null ? '—' : rtEur(f.aeat)) + '</td>' +
+        '<td style="padding:6px 5px;text-align:right;white-space:nowrap">' + (f.panel == null ? '—' : rtEur(f.panel)) + '</td>' +
+        '<td style="padding:6px 5px;text-align:right;white-space:nowrap;font-weight:' + (mal ? '700;color:#b91c1c' : '400;color:var(--texto-suave)') + '">' +
+        (f.dif == null ? '—' : rtEur(f.dif)) + '</td></tr>';
+    });
+    h += '</table>';
+    if ((d.avisos || []).length)
+      h += '<div style="margin-top:10px;font-size:12px;line-height:1.55">' +
+        d.avisos.map(a => '<div style="margin-bottom:5px">⚠ ' + rtEsc(a) + '</div>').join('') + '</div>';
+    h += '<div style="font-size:11px;color:var(--texto-suave);margin-top:9px;line-height:1.5">' +
+      rtEsc(d.aviso_legal || '') + '</div></div>';
+    caja.innerHTML = h;
+  } catch (e) {
+    caja.innerHTML = '<div style="font-size:12.5px;color:#c00;padding:6px 2px">✗ ' + rtEsc(e.message) + '</div>';
+  }
 }
 
 // ===== PENDIENTE DE CONTABILIZAR (zona Raquel) =====

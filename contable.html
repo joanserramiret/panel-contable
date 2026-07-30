@@ -6437,7 +6437,14 @@ async function buzonDetectado(file, tipo, txt){
           try{ var jr=await fetch(BRIDGE_URL_C+'/remesa/guardar',{method:'POST',headers:HP,body:JSON.stringify({nombre:file.name, banco:'Bankinter', concluida:true, abonadas:dr.abonadas, devueltas:dr.devueltas, fecha:dr.fecha})}).then(function(r){return r.json();});
             document.getElementById('buzon-rc-done').innerHTML = jr.ok? ('<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Procesada: '+(jr.n_abonadas||dr.abonadas.length)+' cobradas · '+(jr.n_devueltas||dr.devueltas.length)+' devueltas a pendiente. Actualizando el panel…</div>') : '<div style="color:#dc2626;font-size:13px">'+(jr.error||'Error')+'</div>';
             b.textContent='✅ Procesada';
-            if(jr.ok){ try{ await refrescarTrasCuadre(); }catch(e){} document.getElementById('buzon-rc-done').innerHTML='<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Procesada y panel actualizado: '+(jr.n_abonadas||dr.abonadas.length)+' cobradas · '+(jr.n_devueltas||dr.devueltas.length)+' devueltas a pendiente.</div>'; }
+            if(jr.ok){ try{ await refrescarTrasCuadre(); }catch(e){}
+              // ⭐ [Joan 2026-07-30] El Excel de SITUACIÓN también DESGLOSA el abono del N43 que estaba pendiente:
+              //    el bridge solo lo hace si la suma casa al céntimo (si no, lo deja ⏳ y no inventa nada).
+              var _dg = jr.desglose;
+              var _txtDg = _dg
+                ? '<div style="margin-top:6px;color:#0F6E56;font-size:12.5px">🧾 Abono del banco <b>desglosado</b> con estas facturas: '+_dg.n_facturas+' fra. · '+eur(_dg.total)+(_dg.modo==='bruto'?' (el abono venía en bloque, con la devuelta incluida — el banco la carga aparte)':'')+'.</div>'
+                : '<div style="margin-top:6px;color:#b45309;font-size:12.5px">⏳ El abono del banco sigue <b>sin desglosar</b>: la suma de estas facturas no casa al céntimo con ningún abono pendiente de Bankinter (±15 días). No he inventado nada — mira si falta importar el N43 o si hay recibos de otra remesa.</div>';
+              document.getElementById('buzon-rc-done').innerHTML='<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Procesada y panel actualizado: '+(jr.n_abonadas||dr.abonadas.length)+' cobradas · '+(jr.n_devueltas||dr.devueltas.length)+' devueltas a pendiente.</div>'+_txtDg; }
           }catch(e){ document.getElementById('buzon-rc-done').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Procesar remesa concluida'; } };
         return;
       }
@@ -8237,16 +8244,21 @@ async function bkRemesas() {
           '<div style="text-align:right;margin-top:6px">' +
           (Math.abs(resto) >= 0.01 ? '<button onclick="remesaGastosDevolucion(' + m.id + ')" title="El cobro trae de más los gastos de devolución que repercutiste al cliente (recibo devuelto que se vuelve a girar + comisión del banco). Anota los ' + bkFmt(resto) + ' como línea de GASTOS y la remesa cuadra al céntimo — sin marcarlo como descuadre." style="padding:4px 10px;background:#fff8e1;border:1.5px solid #e8c97a;color:#7c5c10;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">💸 Gastos de devolución (' + bkFmt(resto) + ')</button>' : '') +
           (Math.abs(resto) >= 0.01 ? '<button onclick="remesaExplicarDescuadre(' + m.id + ')" title="Anotar el motivo de los ' + bkFmt(resto) + ' sin explicar (cliente desaparecido, error de tecleo, redondeo...): la remesa quedará cuadrada y el porqué escrito para la contable" style="padding:4px 10px;background:#fff3e0;border:1.5px solid #e8b27a;color:#b45309;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">⚖ Otro motivo</button>' : '') +
-          '<button onclick="remesaAsignarManual(' + m.id + ',-1)" title="Añadir factura(s) del listado a este desglose (una o varias a la vez, contra lo que quede sin explicar)" style="padding:4px 10px;background:#1a7a3f;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">➕ Añadir facturas</button>' +
+          // ⛔ [Joan 2026-07-30] «➕ Añadir facturas» RETIRADO de las remesas: elegir facturas a mano contra un
+          //    abono es inventar. Una remesa se desglosa con el DOCUMENTO del banco (.txt Norma19 de Sabadell o
+          //    el Excel de SITUACIÓN de Bankinter por el Buzón) y nada más. Para arreglar un recibo suelto siguen
+          //    estando ✎ Asignar (recibo REAL del fichero sin factura localizada), 🪄 Deducir y ✕ quitar.
           (facts.some(x => x.serie === '—') ? '<button onclick="remesaDeducir(' + m.id + ')" title="Deducir las facturas de los recibos sin localizar, por cliente e importes" style="padding:4px 10px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">🪄 Deducir facturas</button>' : '') +
           (esPropuesta ? '<button onclick="remesaEditarCuadre(' + m.id + ')" title="Editar el cuadre manual: añadir o quitar facturas" style="padding:4px 10px;background:#fff3e0;border:1px solid #e8b27a;color:#b45309;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-right:6px">✏ Editar cuadre</button>' : '') +
           '<button onclick="remesaDeshacer(' + m.id + ')" title="Deshacer este desglose: el movimiento vuelve a pendientes y las facturas quedan libres" style="padding:4px 10px;background:#fde8e8;border:1px solid #e0b0b0;color:#c0392b;border-radius:6px;font-size:11px;cursor:pointer">✕ Deshacer desglose</button></div>'
         : '<div style="font-size:12px;color:var(--texto-suave);margin-top:6px">Sin desglosar — súbeme el documento del banco con 📎 (PDF/TXT de Bankinter o Sabadell, o una foto/imagen del justificante: la leo con OCR). ' +
           '<button onclick="remesaCuadrarTxt(' + m.id + ')" title="Lee el fichero .txt REAL de la remesa y le asigna SUS facturas exactas (cruzando con el abono del N43, y marca devuelta la que botó). NO adivina por importe." style="margin-left:8px;padding:4px 10px;background:#1a2e6e;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer">🧾 Cuadrar por fichero (.txt)</button>' +
-          '<button onclick="remesaProponerCuadre(' + m.id + ')" title="⚠ Adivina por importe (suma de subconjuntos): puede colar facturas equivocadas cuando se repiten importes. Usa mejor «Cuadrar por fichero»." style="margin-left:6px;padding:4px 10px;background:#fff3e0;border:1.5px solid #e8b27a;color:#b45309;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🧮 Proponer cuadre (a ojo)</button>' +
-          '<button onclick="remesaAsignarManual(' + m.id + ',-1)" title="Añadir factura(s) a mano del listado, empezando el desglose" style="margin-left:6px;padding:4px 10px;background:#1a7a3f;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">➕ Añadir facturas</button>' +
+          // ⛔ [Joan 2026-07-30] «🧮 Proponer cuadre (a ojo)» y «➕ Añadir facturas» RETIRADOS: adivinaban por suma
+          //    de importes y colaban facturas equivocadas. Aquí no se inventa — el desglose sale del documento del
+          //    banco: .txt Norma19 (Sabadell) por «🧾 Cuadrar por fichero», o el Excel de SITUACIÓN (Bankinter)
+          //    por el 📎 Buzón, que ahora también desglosa el abono si la suma casa al céntimo.
           '<button onclick="remesaCerrarSinDesglose(' + m.id + ',' + m.importe + ')" style="margin-left:6px;padding:4px 10px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:6px;font-size:11px;cursor:pointer">✓ Cerrar sin desglose</button>' +
-          ' <span style="font-size:11px">(🧮 = facturas cobradas por Recibo Bancario en Ágora, fechas cercanas y suma exacta — tú confirmas viendo los nombres)</span></div>';
+          ' <span style="font-size:11px">(Bankinter: sube por 📎 el Excel «Adeudos JS TECHNOLOGY…» con la columna SITUACIÓN — marca abonado/devuelto por recibo y desglosa el abono)</span></div>';
       return '<details style="border:1px solid #e4e8f3;border-radius:8px;padding:8px 12px;margin-bottom:6px">' +
         '<summary style="cursor:pointer;display:flex;gap:10px;align-items:center;font-size:12.5px;flex-wrap:wrap">' +
         '<b>' + (m.fecha || '—') + '</b><span style="color:var(--texto-suave)">' + (m.banco || '') + '</span>' +

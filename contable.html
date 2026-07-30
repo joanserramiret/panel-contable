@@ -5799,7 +5799,25 @@ async function cargarCuentaSocio(){
     if(!j||!j.ok){ cont.innerHTML='<div style="color:#c0392b;font-size:13px">No se pudo cargar tu cuenta.</div>'; return; }
     const g=j.gastos_pagados_por_ti||{total:0,detalle:[]};
     const fila=(et,v,col)=>'<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f2f2f2;font-size:13px"><span>'+et+'</span><b style="color:'+(col||'#1a2e6e')+'">'+v+'</b></div>';
+    // ⭐ [Joan 2026-07-30] DOS CUENTAS SEPARADAS. Antes esto metía nómina + aportaciones + gastos en un solo
+    //    saco y arrancaba en enero desde CERO → decía «te has adelantado 4.580,47 €» cuando en realidad,
+    //    contando lo que ya se arrastraba de 2025, la empresa le debe dinero. Ahora:
+    //      465000000 NÓMINA        = saldo inicial + devengado − cobros   ← aquí muerden los adelantos
+    //      551000000 APORTACIONES  = saldo inicial + aportaciones + gastos que pagó él (los cobros NO la tocan)
+    const cn=j.cuenta_nomina||{inicial:0,devengado:j.devengado,meses:j.meses_devengados,cobrado:j.debe,saldo:0};
+    const ca=j.cuenta_aportaciones||{inicial:0,aportado:(j.aportaciones&&j.aportaciones.total)||0,gastos:g.total,saldo:0};
     const adel=j.saldo<0;
+    const nomNeg=(cn.saldo||0)<-0.005;
+    const bloque=(tit,cta,filas,etiq,val,neg)=>
+      '<div style="border:1px solid #e7ebf5;border-radius:10px;padding:10px 12px;margin-top:9px;background:#fbfcff">'+
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">'+
+          '<b style="font-size:12.5px;color:#1a2e6e">'+tit+'</b>'+
+          '<span style="font-size:10.5px;color:var(--texto-suave)">'+cta+'</span></div>'+
+        filas+
+        '<div style="display:flex;justify-content:space-between;padding-top:7px;font-size:13px">'+
+          '<b style="color:'+(neg?'#b45309':'#1b7a3d')+'">'+etiq+'</b>'+
+          '<b style="font-size:15px;color:'+(neg?'#b45309':'#1b7a3d')+'">'+val+'</b></div>'+
+      '</div>';
     // ⭐ [Joan 2026-07-08] Info PERSONAL → CONTRAÍDA por defecto (es violento que se vea al abrir el panel, sobre todo
     //    con Raquel delante). Solo el título; los números aparecen al pulsar. localStorage recuerda si Joan lo deja abierto.
     let _abierto=false; try{ _abierto=localStorage.getItem('cuentaSocioOpen')==='1'; }catch(e){}
@@ -5810,15 +5828,21 @@ async function cargarCuentaSocio(){
         '<span style="font-size:11px;color:var(--texto-suave);font-weight:400">🔒 privado · pulsa para ver</span></summary>'+
       '<div style="margin-top:10px">'+
         '<div style="text-align:right;font-size:11px;color:var(--texto-suave);margin-bottom:6px">Joan Serra Miret · nómina '+eur(j.config&&j.config.nomina_mensual)+'/mes</div>'+
-      fila('Nómina devengada ('+(j.meses_devengados||0)+' meses)','+ '+eur(j.devengado),'#1b7a3d')+
-      fila('Aportaciones tuyas (a devolver)','+ '+eur(j.aportaciones&&j.aportaciones.total),'#1b7a3d')+
-      fila('Gastos que pagaste tú (tarjeta personal/efectivo)'+(g.detalle&&g.detalle.length?' · '+g.detalle.length:''),'+ '+eur(g.total),'#1b7a3d')+
-      '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:2px solid #e7ebf5;font-size:13px"><b>La empresa te debe</b><b style="color:#1b7a3d">'+eur(j.haber)+'</b></div>'+
-      fila('Cobros + adelantos','− '+eur(j.debe),'#c0392b')+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;background:'+(adel?'#fff3e0':'#e8f7ef')+';border:1px solid '+(adel?'#e8b27a':'#a7d7b8')+';border-radius:9px;padding:10px 13px">'+
-        '<b style="font-size:13px;color:'+(adel?'#b45309':'#1b7a3d')+'">'+(adel?'⚠️ Te has adelantado':'✅ La empresa te debe')+'</b>'+
+      bloque('💼 Nómina','465000000',
+        fila('Venías de 2025 con','+ '+eur(cn.inicial),'#1b7a3d')+
+        fila('Nómina devengada ('+(cn.meses||0)+' meses)','+ '+eur(cn.devengado),'#1b7a3d')+
+        fila('Cobros y adelantos','− '+eur(cn.cobrado),'#c0392b'),
+        nomNeg?'⚠️ Te has adelantado':'Pendiente de cobrar',
+        eur(Math.abs(cn.saldo)), nomNeg)+
+      bloque('🏦 Aportaciones (dinero tuyo en la empresa)','551000000',
+        fila('Venías de 2025 con','+ '+eur(ca.inicial),'#1b7a3d')+
+        fila('Aportaciones de tu cuenta'+(j.aportaciones&&j.aportaciones.detalle&&j.aportaciones.detalle.length?' · '+j.aportaciones.detalle.length:''),'+ '+eur(ca.aportado),'#1b7a3d')+
+        fila('Gastos que pagaste tú (tarjeta personal/efectivo)'+(g.detalle&&g.detalle.length?' · '+g.detalle.length:''),'+ '+eur(ca.gastos),'#1b7a3d'),
+        'La empresa te lo debe devolver', eur(ca.saldo), false)+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:11px;background:'+(adel?'#fff3e0':'#e8f7ef')+';border:1px solid '+(adel?'#e8b27a':'#a7d7b8')+';border-radius:9px;padding:10px 13px">'+
+        '<b style="font-size:13px;color:'+(adel?'#b45309':'#1b7a3d')+'">'+(adel?'⚠️ Neto: has cobrado de más':'✅ Neto a tu favor')+'</b>'+
         '<b style="font-size:18px;color:'+(adel?'#b45309':'#1b7a3d')+'">'+eur(Math.abs(j.saldo))+'</b></div>'+
-      '<div style="font-size:11px;color:var(--texto-suave);margin-top:6px">Se calcula solo del banco: las facturas que marques 💳 «tarjeta personal»/«efectivo» suman a tu favor. '+(g.detalle&&g.detalle.length?'Gastos detectados: '+g.detalle.map(x=>(x.nombre||'').replace(/\.pdf$/i,'')+' '+eur(x.importe)).join(' · '):'')+'</div>'+
+      '<div style="font-size:11px;color:var(--texto-suave);margin-top:6px">Las dos cuentas son distintas: la <b>465</b> es tu sueldo (si se queda en negativo, has cobrado nómina por adelantado) y la <b>551</b> es dinero tuyo prestado a la empresa. Compensar una con otra hay que hacerlo con un apunte, no de cabeza. Los saldos de arranque salen de la apertura de SisConta a 01/01/2026. '+(g.detalle&&g.detalle.length?'Gastos detectados: '+g.detalle.map(x=>(x.nombre||'').replace(/\.pdf$/i,'')+' '+eur(x.importe)).join(' · '):'')+'</div>'+
       '</div></details>';
     const _det=document.getElementById('cs-det');
     if(_det) _det.addEventListener('toggle',function(){ try{ localStorage.setItem('cuentaSocioOpen',_det.open?'1':'0'); }catch(e){} });

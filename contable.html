@@ -4619,7 +4619,9 @@ function calVencNav(d) { _calVencMes += d; if (window._calVencRerender) window._
 function _calVencHoyISO() { const t = new Date(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }
 function _calVencItems(pagosArr) {
   const hoy = _calVencHoyISO();
-  return (pagosArr || []).filter(p => p.estado !== 'pagada' && p.estado !== 'externo' && p.vencimiento)
+  // 💳 Los proveedores de tarjeta (Visa MC ORO) no tienen giro ni vencimiento → fuera del calendario [2026-07-30].
+  return (pagosArr || []).filter(p => p.estado !== 'pagada' && p.estado !== 'externo' &&
+                                      p.estado !== 'tarjeta' && !p.tarjeta_prov && p.vencimiento)
     // ⭐ Los días YA VENCIDOS no salen en el calendario [Joan 2026-07-12]: el calendario es "lo que viene".
     //   (Lo atrasado sin pagar sigue en la pestaña Pagos como deuda; aquí solo se muestra de hoy en adelante.)
     .filter(p => (p.vencimiento || '').slice(0, 10) >= hoy)
@@ -4784,7 +4786,14 @@ function pmToggle(i) {
 function renderPagosManuales(todas) {
   const cont = document.getElementById('pagos-manuales');
   if (!cont) return;
+  // 💳⛔ FUERA los proveedores de TARJETA (Visa MC ORO): GM CASH/TRANSGOURMET, OLYMPIA, MUCHOCARTUCHO.
+  //    [Joan 2026-07-30: «esto siempre esta pagado, son proveedores que les pagamos con la visa mC ORO... SIEMPRE.
+  //     no les debemos... que no encontremos el cargo en los extratos de la visa es otra cosa...»]
+  //    Se pagan EN CAJA en el momento: no hay nada que transferir, así que NO pintan en «pagos manuales».
+  //    Se comprueban las DOS marcas (`estado==='tarjeta'` del bridge nuevo y `tarjeta_prov`) para que el panel
+  //    siga bien aunque el Bridge sea antiguo o esté sin reiniciar.
   const man = (todas || []).filter(p => p.estado !== 'pagada' && p.estado !== 'externo' &&
+                                        p.estado !== 'tarjeta' && !p.tarjeta_prov &&
                                         !p.domiciliado && (+p.pendiente || 0) > 0.5);
   const g = {};
   man.forEach(p => {
@@ -4853,10 +4862,12 @@ function renderPagos() {
   // Es un BADGE SUYO, no una categoría de deuda: se debe igual. Antes se restaba del total y escondía
   // 12.160,60 € (las facturas nuevas de IGT/DEPAU no salían ni en la deuda ni en el calendario).
   const _esClasif = p => !!p.clasificar;
-  let _tReal = 0, _nReal = 0, _tClas = 0, _nClas = 0, _tDom = 0, _tExt = 0, _nExt = 0;
+  let _tReal = 0, _nReal = 0, _tClas = 0, _nClas = 0, _tDom = 0, _tExt = 0, _nExt = 0, _tTar = 0, _nTar = 0;
   todas.forEach(p => {
     if (p.estado === 'pagada') return;
     if (p.estado === 'externo') { _tExt += (p.a_pagar || p.total || 0); _nExt++; return; }   // pagado fuera del banco: NO es deuda
+    // 💳 Visa MC ORO (GM CASH/TRANSGOURMET, OLYMPIA, MUCHOCARTUCHO): pagado en el acto → NO es deuda [Joan 2026-07-30]
+    if (p.estado === 'tarjeta' || p.tarjeta_prov) { _tTar += (p.a_pagar || p.total || 0); _nTar++; return; }
     _tReal += p.pendiente || 0; _nReal++;
     if (p.domiciliado) _tDom += p.pendiente || 0;
     if (_esClasif(p)) { _tClas += p.pendiente || 0; _nClas++; }   // solo para el badge de Raquel
@@ -4871,7 +4882,8 @@ function renderPagos() {
     ' · <span style="color:#0e7490">🔵 Programado <b>' + bkFmt(_prog) + '</b></span> <span style="color:var(--texto-suave);font-size:11px">(domiciliado, se gira solo en su fecha)</span>' +
     (_rev ? ' · <span style="color:#b45309">⚠️ Revisar <b>' + bkFmt(_rev) + '</b></span> <span style="color:var(--texto-suave);font-size:11px">(giro vencido sin cubrir)</span>' : '') +
     '<br><span style="color:var(--texto-suave);font-size:12px">💼 Deuda total a proveedor ' + bkFmt(_tReal) + ' en ' + _nReal + ' fac · de ellas ⏳ <b>' + _nClas + '</b> sin contabilizar (' + bkFmt(_tClas) + ') — Raquel aún no las ha puenteado a SisConta, <b>pero se deben igual</b>' +
-    (_nExt ? ' · 💳 Pagado fuera del banco: ' + bkFmt(_tExt) + ' en ' + _nExt : '') + '</span>';
+    (_nExt ? ' · 💳 Pagado fuera del banco: ' + bkFmt(_tExt) + ' en ' + _nExt : '') +
+    (_nTar ? ' · 💳 Visa MC ORO: ' + bkFmt(_tTar) + ' en ' + _nTar + ' fra. (pagadas en el acto, no es deuda)' : '') + '</span>';
   const chip = (k, lbl, col, bg, n) => { const on = _pagFiltro[k]; return '<button onclick="pagToggle(\'' + k + '\')" style="padding:4px 10px;border-radius:7px;border:1px solid ' + (on ? col : '#dde') + ';background:' + (on ? bg : '#fff') + ';color:' + (on ? col : '#999') + ';cursor:pointer;font-size:11.5px;font-weight:' + (on ? '700' : '500') + '">' + lbl + ' ' + n + '</button>'; };
   const barra = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">' +
     chip('pendiente', '🔴 Pendiente', '#a32d2d', '#fcebeb', c.pendiente || 0) +
@@ -4918,7 +4930,30 @@ function renderPagos() {
           '<button onclick="pagosExterno(\'' + re + '\')" title="Marcar como PAGADO FUERA del banco (efectivo / tarjeta personal / aplazada) → sale del rojo y se lista aparte" style="padding:2px 7px;background:#0e7490;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">💳</button> ' +
           '<button onclick="marcarNoFactura(\'' + re + '\',\'cargarPagos\')" title="No es una factura de proveedor (contrato, ticket, de otro titular…) → sale del cómputo. Te pregunto el motivo para entrenar el filtro." style="padding:2px 7px;background:#fde8e8;color:#c0392b;border:1px solid #e0b0b0;border-radius:5px;font-size:11px;cursor:pointer">🚫</button>' +
         '</td></tr>';
-    }).join('') + '</table>' + _extHtml(todas);
+    }).join('') + '</table>' + _extHtml(todas) + _tarjHtml(todas);
+}
+// 💳 PAGADAS CON LA VISA MC ORO — proveedores que se pagan EN CAJA, en el acto, SIEMPRE con la tarjeta de empresa
+//    [Joan 2026-07-30: «esto siempre esta pagado... no les debemos... que no encontremos el cargo en los extratos
+//     de la visa es otra cosa...»]. NO son deuda y NO tienen vencimiento: por eso salen aquí y no en rojo.
+//    ⚠️ Lo que sí queda pendiente es LOCALIZAR el cargo en el extracto de la Visa (pestaña Tarjeta). Eso es un
+//       trabajo de cuadre del extracto, no una deuda al proveedor: son dos cosas distintas y no se mezclan.
+function _tarjHtml(todas) {
+  const tar = (todas || []).filter(p => p.estado === 'tarjeta' || (p.tarjeta_prov && p.estado !== 'pagada' && p.estado !== 'externo'));
+  if (!tar.length) return '';
+  const g = {};
+  tar.forEach(p => { const k = (p.proveedor_nombre || p.proveedor || '—').trim(); (g[k] = g[k] || []).push(p); });
+  const tot = tar.reduce((s, p) => s + (+p.a_pagar || +p.total || 0), 0);
+  return '<div style="margin-top:14px;border-top:2px solid #e6d8f5;padding-top:8px">' +
+    '<div style="font-size:12.5px;font-weight:700;color:#6d28d9;margin-bottom:6px">💳 Pagadas con la Visa MC ORO — ' + bkFmt(tot) + ' · ' + tar.length + ' fra. <span style="font-weight:400;color:var(--texto-suave)">(se pagan en caja en el momento: <b>no es deuda</b>. Falta localizar el cargo en el extracto de la Visa)</span></div>' +
+    Object.keys(g).sort().map(k => {
+      const lst = g[k], st = lst.reduce((s, p) => s + (+p.a_pagar || +p.total || 0), 0);
+      return '<div style="padding:3px 0;font-size:12px;opacity:.9">' +
+        '<b>' + esc(k) + '</b> <span style="color:var(--texto-suave)">· ' + lst.length + ' fra.</span> <b style="color:#6d28d9">' + bkFmt(st) + '</b>' +
+        '<div style="padding-left:12px;color:var(--texto-suave);font-size:11px">' +
+        lst.map(p => { const re = encodeURIComponent(p.ruta || ''); return '<span style="display:inline-block;margin-right:10px">' +
+          '<a href="#" onclick="provVerDoc(\'' + re + '\');return false" style="color:#475569">' + esc(p.nombre || '(sin nombre)') + '</a> ' + bkFmt(p.a_pagar || p.total || 0) + '</span>'; }).join('') +
+        '</div></div>';
+    }).join('') + '</div>';
 }
 function _extHtml(todas) {
   const exts = (todas || []).filter(p => p.estado === 'externo');

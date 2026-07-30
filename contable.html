@@ -5805,7 +5805,8 @@ async function cargarCuentaSocio(){
     //      465000000 NÓMINA        = saldo inicial + devengado − cobros   ← aquí muerden los adelantos
     //      551000000 APORTACIONES  = saldo inicial + aportaciones + gastos que pagó él (los cobros NO la tocan)
     const cn=j.cuenta_nomina||{inicial:0,devengado:j.devengado,meses:j.meses_devengados,cobrado:j.debe,saldo:0};
-    const ca=j.cuenta_aportaciones||{inicial:0,aportado:(j.aportaciones&&j.aportaciones.total)||0,gastos:g.total,saldo:0};
+    const ca=j.cuenta_aportaciones||{inicial:0,aportado:(j.aportaciones&&j.aportaciones.total)||0,gastos:g.total,devuelto:0,saldo:0};
+    const dv=j.devoluciones_aportacion||{total:0,detalle:[]};
     const adel=j.saldo<0;
     const nomNeg=(cn.saldo||0)<-0.005;
     const bloque=(tit,cta,filas,etiq,val,neg)=>
@@ -5837,7 +5838,8 @@ async function cargarCuentaSocio(){
       bloque('🏦 Aportaciones (dinero tuyo en la empresa)','551000000',
         fila('Venías de 2025 con','+ '+eur(ca.inicial),'#1b7a3d')+
         fila('Aportaciones de tu cuenta'+(j.aportaciones&&j.aportaciones.detalle&&j.aportaciones.detalle.length?' · '+j.aportaciones.detalle.length:''),'+ '+eur(ca.aportado),'#1b7a3d')+
-        fila('Gastos que pagaste tú (tarjeta personal/efectivo)'+(g.detalle&&g.detalle.length?' · '+g.detalle.length:''),'+ '+eur(ca.gastos),'#1b7a3d'),
+        fila('Facturas pagadas con tu visa personal/efectivo'+(g.detalle&&g.detalle.length?' · '+g.detalle.length:''),'+ '+eur(ca.gastos),'#1b7a3d')+
+        ((ca.devuelto||dv.total)?fila('Devoluciones que ya te has hecho'+(dv.detalle&&dv.detalle.length?' · '+dv.detalle.length:''),'− '+eur(ca.devuelto||dv.total),'#c0392b'):''),
         'La empresa te lo debe devolver', eur(ca.saldo), false)+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:11px;background:'+(adel?'#fff3e0':'#e8f7ef')+';border:1px solid '+(adel?'#e8b27a':'#a7d7b8')+';border-radius:9px;padding:10px 13px">'+
         '<b style="font-size:13px;color:'+(adel?'#b45309':'#1b7a3d')+'">'+(adel?'⚠️ Neto: has cobrado de más':'✅ Neto a tu favor')+'</b>'+

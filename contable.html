@@ -5832,8 +5832,8 @@ async function cargarCuentaSocio(){
       bloque('💼 Nómina','465000000',
         fila('Venías de 2025 con','+ '+eur(cn.inicial),'#1b7a3d')+
         fila('Nómina devengada ('+(cn.meses||0)+' meses)','+ '+eur(cn.devengado),'#1b7a3d')+
-        fila('Cobros y adelantos','− '+eur(cn.cobrado),'#c0392b'),
-        nomNeg?'⚠️ Te has adelantado':'Pendiente de cobrar',
+        fila('Nóminas cobradas','− '+eur(cn.cobrado),'#c0392b'),
+        nomNeg?'⚠️ Te has adelantado':(Math.abs(cn.saldo)<0.005?'✅ Al día':'Pendiente de cobrar'),
         eur(Math.abs(cn.saldo)), nomNeg)+
       bloque('🏦 Aportaciones (dinero tuyo en la empresa)','551000000',
         fila('Venías de 2025 con','+ '+eur(ca.inicial),'#1b7a3d')+
@@ -5844,6 +5844,7 @@ async function cargarCuentaSocio(){
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:11px;background:'+(adel?'#fff3e0':'#e8f7ef')+';border:1px solid '+(adel?'#e8b27a':'#a7d7b8')+';border-radius:9px;padding:10px 13px">'+
         '<b style="font-size:13px;color:'+(adel?'#b45309':'#1b7a3d')+'">'+(adel?'⚠️ Neto: has cobrado de más':'✅ Neto a tu favor')+'</b>'+
         '<b style="font-size:18px;color:'+(adel?'#b45309':'#1b7a3d')+'">'+eur(Math.abs(j.saldo))+'</b></div>'+
+      ((j.exceso_regularizado||0)>0.005?'<div style="font-size:11px;color:#7a5c1e;background:#fffbf0;border:1px solid #f0dfae;border-radius:8px;padding:7px 10px;margin-top:7px">↔️ <b>'+eur(j.exceso_regularizado)+'</b> de las transferencias a tu nombre superaban la nómina devengada, así que no cuentan como adelanto de sueldo: se han imputado a devolución de aportación (551). Se reparten de la transferencia más reciente hacia atrás'+(dv.detalle&&dv.detalle.filter(x=>x.auto).length?': '+dv.detalle.filter(x=>x.auto).map(x=>(x.fecha||'').slice(8,10)+'/'+(x.fecha||'').slice(5,7)+' '+eur(x.importe)).join(' · '):'')+'.</div>':'')+
       '<div style="font-size:11px;color:var(--texto-suave);margin-top:6px">Las dos cuentas son distintas: la <b>465</b> es tu sueldo (si se queda en negativo, has cobrado nómina por adelantado) y la <b>551</b> es dinero tuyo prestado a la empresa. Compensar una con otra hay que hacerlo con un apunte, no de cabeza. Los saldos de arranque salen de la apertura de SisConta a 01/01/2026. '+(g.detalle&&g.detalle.length?'Gastos detectados: '+g.detalle.map(x=>(x.nombre||'').replace(/\.pdf$/i,'')+' '+eur(x.importe)).join(' · '):'')+'</div>'+
       '</div></details>';
     const _det=document.getElementById('cs-det');

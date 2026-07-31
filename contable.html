@@ -7387,10 +7387,16 @@ function bkCandidatos(mov) {
         importe: n.liquido,
         cliente: n.trabajador || ''
       }));
+    // 🧾 total !== 0 → TAMBIÉN LAS NOTAS DE ABONO (total<0) [Joan 2026-07-30: «no me sale el abono de 625,22»].
+    //    Con `total>0` el abono NO SE PODÍA MARCAR al conciliar, y por eso el recibo de DEPAU de 729,04 € no
+    //    cuadraba nunca: son 703,25 + 616,98 + 34,03 = 1.354,26 MENOS el abono de 625,22. Al marcarlo, su importe
+    //    entra NEGATIVO en la suma y el movimiento cuadra exacto. (El buscador de combinaciones automático
+    //    `bkBuscarDesglose` ya descarta los importes <= 0, así que no puede inventar sumas con abonos.)
     return noms.concat(Object.values(pvDatos)
-      .filter(f => f.total > 0 && ['ok','corregido','ocr'].includes(f.estado))
+      .filter(f => (+f.total || 0) !== 0 && ['ok','corregido','ocr'].includes(f.estado))
       .map(f => ({
         clave: 'PROV:' + f.ruta,
+        abono: (+f.total || 0) < 0,
         // el nº que se guarda al conciliar es el del OCR [Joan 2026-07-27]; si la factura aún no
         // está escaneada no hay nº y se cae al nombre del fichero, como toda la vida.
         serie: 'PROV', numero: f.numero || f.nombre, numero_ocr: f.numero || '', nombre: f.nombre,
@@ -7629,7 +7635,9 @@ function bkModalRender() {
   cands = cands.slice().sort((a, b) => {
     const ea = Math.abs((a._restante || a.importe) - objetivoOrd) < 0.005 ? 0 : 1;
     const eb = Math.abs((b._restante || b.importe) - objetivoOrd) < 0.005 ? 0 : 1;
-    return ea - eb;
+    // 🧾 Las notas de abono suben arriba: son pocas y casi siempre son la pieza que falta para cuadrar
+    //    un recibo que viene NETO (DEPAU: 1.354,26 − 625,22 = 729,04) [2026-07-30].
+    return (ea - eb) || ((a.abono ? 0 : 1) - (b.abono ? 0 : 1));
   });
   bkCandsVisibles = cands.slice(0, 200);
   document.getElementById('bk-modal-lista').innerHTML = banner + bkCandsVisibles.map((c, ci) => {
@@ -7643,10 +7651,11 @@ function bkModalRender() {
     return '<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid #f3f3f3;cursor:pointer;background:' + (sel ? '#eef4ff' : '#fff') + (sel ? ';border-left:4px solid #1a2e6e' : ';border-left:4px solid transparent') + '">' +
       '<input type="checkbox" ' + (sel ? 'checked' : '') + ' onchange="bkToggle(\'' + c.clave + '\')" style="width:auto"/>' +
       '<span style="flex:1;font-size:12.5px"><b>' + c.clave + '</b> · ' + c.fecha +
+      (c.abono ? ' <span title="Nota de ABONO: al marcarla RESTA de la suma. Es lo que hace que un recibo neto cuadre." style="color:#1b7a3d;font-size:10.5px;font-weight:800;background:#e8f7ef;padding:1px 5px;border-radius:4px">🧾 ABONO · resta</span>' : '') +
       (c._restante ? ' <span style="color:#b45309;font-size:10.5px;font-weight:700">💳 a cuenta: pagados ' + bkFmt(c.importe - c._restante) + ', quedan ' + bkFmt(c._restante) + '</span>' : '') +
       '<br><span style="color:#888">' + c.cliente + '</span></span>' +
       herr +
-      '<span style="font-weight:800;font-size:12.5px">' + bkFmt(c._restante || c.importe) + '</span></label>';
+      '<span style="font-weight:800;font-size:12.5px' + (c.abono ? ';color:#1b7a3d' : '') + '">' + bkFmt(c._restante || c.importe) + '</span></label>';
   }).join('');
   bkSuma();
 }

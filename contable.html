@@ -4621,7 +4621,8 @@ function _calVencItems(pagosArr) {
   const hoy = _calVencHoyISO();
   // 💳 Los proveedores de tarjeta (Visa MC ORO) no tienen giro ni vencimiento → fuera del calendario [2026-07-30].
   return (pagosArr || []).filter(p => p.estado !== 'pagada' && p.estado !== 'externo' &&
-                                      p.estado !== 'tarjeta' && !p.tarjeta_prov && p.vencimiento)
+                                      p.estado !== 'tarjeta' && !p.tarjeta_prov &&
+                                      p.estado !== 'abono' && !p.abono && p.vencimiento)
     // ⭐ Los días YA VENCIDOS no salen en el calendario [Joan 2026-07-12]: el calendario es "lo que viene".
     //   (Lo atrasado sin pagar sigue en la pestaña Pagos como deuda; aquí solo se muestra de hoy en adelante.)
     .filter(p => (p.vencimiento || '').slice(0, 10) >= hoy)
@@ -4794,6 +4795,7 @@ function renderPagosManuales(todas) {
   //    siga bien aunque el Bridge sea antiguo o esté sin reiniciar.
   const man = (todas || []).filter(p => p.estado !== 'pagada' && p.estado !== 'externo' &&
                                         p.estado !== 'tarjeta' && !p.tarjeta_prov &&
+                                        p.estado !== 'abono' && !p.abono &&
                                         !p.domiciliado && (+p.pendiente || 0) > 0.5);
   const g = {};
   man.forEach(p => {
@@ -4862,9 +4864,12 @@ function renderPagos() {
   // Es un BADGE SUYO, no una categoría de deuda: se debe igual. Antes se restaba del total y escondía
   // 12.160,60 € (las facturas nuevas de IGT/DEPAU no salían ni en la deuda ni en el calendario).
   const _esClasif = p => !!p.clasificar;
-  let _tReal = 0, _nReal = 0, _tClas = 0, _nClas = 0, _tDom = 0, _tExt = 0, _nExt = 0, _tTar = 0, _nTar = 0;
+  let _tReal = 0, _nReal = 0, _tClas = 0, _nClas = 0, _tDom = 0, _tExt = 0, _nExt = 0, _tTar = 0, _nTar = 0, _tAbo = 0, _nAbo = 0;
   todas.forEach(p => {
     if (p.estado === 'pagada') return;
+    // 🧾 NOTA DE ABONO (total<0): no es deuda, es dinero a NUESTRO favor. Se lista aparte y NO entra en _tReal
+    //    [Joan 2026-07-30: «no me sale el abono de 625,22 en el listado»].
+    if (p.estado === 'abono' || p.abono) { _tAbo += Math.abs(+p.total || 0); _nAbo++; return; }
     if (p.estado === 'externo') { _tExt += (p.a_pagar || p.total || 0); _nExt++; return; }   // pagado fuera del banco: NO es deuda
     // 💳 Visa MC ORO (GM CASH/TRANSGOURMET, OLYMPIA, MUCHOCARTUCHO): pagado en el acto → NO es deuda [Joan 2026-07-30]
     if (p.estado === 'tarjeta' || p.tarjeta_prov) { _tTar += (p.a_pagar || p.total || 0); _nTar++; return; }
@@ -4883,7 +4888,8 @@ function renderPagos() {
     (_rev ? ' · <span style="color:#b45309">⚠️ Revisar <b>' + bkFmt(_rev) + '</b></span> <span style="color:var(--texto-suave);font-size:11px">(giro vencido sin cubrir)</span>' : '') +
     '<br><span style="color:var(--texto-suave);font-size:12px">💼 Deuda total a proveedor ' + bkFmt(_tReal) + ' en ' + _nReal + ' fac · de ellas ⏳ <b>' + _nClas + '</b> sin contabilizar (' + bkFmt(_tClas) + ') — Raquel aún no las ha puenteado a SisConta, <b>pero se deben igual</b>' +
     (_nExt ? ' · 💳 Pagado fuera del banco: ' + bkFmt(_tExt) + ' en ' + _nExt : '') +
-    (_nTar ? ' · 💳 Visa MC ORO: ' + bkFmt(_tTar) + ' en ' + _nTar + ' fra. (pagadas en el acto, no es deuda)' : '') + '</span>';
+    (_nTar ? ' · 💳 Visa MC ORO: ' + bkFmt(_tTar) + ' en ' + _nTar + ' fra. (pagadas en el acto, no es deuda)' : '') +
+    (_nAbo ? ' · 🧾 Abonos a nuestro favor: <b style="color:#1b7a3d">−' + bkFmt(_tAbo) + '</b> en ' + _nAbo + ' (ya descontados de la deuda)' : '') + '</span>';
   const chip = (k, lbl, col, bg, n) => { const on = _pagFiltro[k]; return '<button onclick="pagToggle(\'' + k + '\')" style="padding:4px 10px;border-radius:7px;border:1px solid ' + (on ? col : '#dde') + ';background:' + (on ? bg : '#fff') + ';color:' + (on ? col : '#999') + ';cursor:pointer;font-size:11.5px;font-weight:' + (on ? '700' : '500') + '">' + lbl + ' ' + n + '</button>'; };
   const barra = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">' +
     chip('pendiente', '🔴 Pendiente', '#a32d2d', '#fcebeb', c.pendiente || 0) +
@@ -4930,7 +4936,24 @@ function renderPagos() {
           '<button onclick="pagosExterno(\'' + re + '\')" title="Marcar como PAGADO FUERA del banco (efectivo / tarjeta personal / aplazada) → sale del rojo y se lista aparte" style="padding:2px 7px;background:#0e7490;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">💳</button> ' +
           '<button onclick="marcarNoFactura(\'' + re + '\',\'cargarPagos\')" title="No es una factura de proveedor (contrato, ticket, de otro titular…) → sale del cómputo. Te pregunto el motivo para entrenar el filtro." style="padding:2px 7px;background:#fde8e8;color:#c0392b;border:1px solid #e0b0b0;border-radius:5px;font-size:11px;cursor:pointer">🚫</button>' +
         '</td></tr>';
-    }).join('') + '</table>' + _extHtml(todas) + _tarjHtml(todas);
+    }).join('') + '</table>' + _extHtml(todas) + _tarjHtml(todas) + _aboHtml(todas);
+}
+// 🧾 NOTAS DE ABONO (facturas con total NEGATIVO) — dinero que el proveedor nos devuelve o descuenta.
+//    [Joan 2026-07-30: «no me sale el abono de 625,22 en el listado»]. Antes el bridge filtraba `total>0` y el
+//    abono sencillamente NO EXISTÍA para el panel: el recibo de DEPAU de 729,04 € (facturas 1.354,26 − abono
+//    625,22) no cuadraba con nada. No son deuda ni tienen vencimiento: se listan aquí y su importe ya va
+//    descontado del saldo del proveedor (cubre facturas por FIFO igual que un pago).
+function _aboHtml(todas) {
+  const abo = (todas || []).filter(p => p.estado === 'abono' || p.abono);
+  if (!abo.length) return '';
+  const tot = abo.reduce((s, p) => s + Math.abs(+p.total || 0), 0);
+  return '<div style="margin-top:14px;border-top:2px solid #cfe9d8;padding-top:8px">' +
+    '<div style="font-size:12.5px;font-weight:700;color:#1b7a3d;margin-bottom:6px">🧾 Notas de abono — −' + bkFmt(tot) + ' · ' + abo.length + ' <span style="font-weight:400;color:var(--texto-suave)">(a nuestro favor: ya descontadas del saldo del proveedor)</span></div>' +
+    abo.map(p => { const re = encodeURIComponent(p.ruta || ''); return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f3f3f3;font-size:12px">' +
+      '<span style="flex:1"><b>' + esc(p.proveedor_nombre || p.proveedor || '—') + '</b> <span style="color:var(--texto-suave)">' + esc(p.nombre || '') + '</span> <span style="color:var(--texto-suave);font-size:10.5px">· ' + (p.fecha || '') + '</span></span>' +
+      '<b style="color:#1b7a3d">−' + bkFmt(Math.abs(+p.total || 0)) + '</b>' +
+      '<button onclick="provVerDoc(\'' + re + '\')" title="Ver el abono" style="padding:1px 6px;background:#475569;color:#fff;border:none;border-radius:5px;font-size:10.5px;cursor:pointer">👁</button></div>'; }).join('') +
+    '</div>';
 }
 // 💳 PAGADAS CON LA VISA MC ORO — proveedores que se pagan EN CAJA, en el acto, SIEMPRE con la tarjeta de empresa
 //    [Joan 2026-07-30: «esto siempre esta pagado... no les debemos... que no encontremos el cargo en los extratos

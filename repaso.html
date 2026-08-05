@@ -129,7 +129,8 @@ async function cargarNuevasApariciones(){
       +'<div class="muted" style="margin-bottom:12px">Están archivadas en la carpeta de su proveedor, así que en <b>Recibidas</b> salen en verde, '
       +'<b>pero su importe no aparece en el diario</b>. Es un detector, no una prueba: un importe repetido puede tapar un hueco, compruébalas. '
       +'Solo se miran las de fecha ≤ <b>'+esc(j.corte_diario)+'</b>, hasta donde llega la copia del diario.'
-      +(j.n_marcadas?' · <b>'+j.n_marcadas+'</b> ya marcadas por ti':'')+'</div>';
+      +(j.n_marcadas?' · <b>'+j.n_marcadas+'</b> ya marcadas por ti':'')
+      +(j.n_no_deducible?' · <b>'+j.n_no_deducible+'</b> apartadas por ti como <b>NO DEDUCIBLE</b> (no se cuentan aquí)':'')+'</div>';
     if(!_NUEV.length){ h+='<div style="background:#e7f7ec;border-radius:8px;padding:12px 14px;color:#1f6f43;font-weight:700">✅ Nada pendiente. Todo lo archivado está en el diario.</div>'; }
     else{
       h+='<table style="width:100%;border-collapse:collapse;font-size:13px">'
@@ -145,7 +146,7 @@ async function cargarNuevasApariciones(){
         +'<span class="act" style="background:#e0f2fe" title="Corregir el nº de factura" onclick="nuevaAct(\'corregirNumero\','+i+')">🔢</span>'
         +'<span class="act" style="background:#e0e7ff" title="Corregir el nombre del proveedor" onclick="nuevaAct(\'corregirNombre\','+i+')">✏️</span>'
         +'<span class="act ok" title="Ya la he contabilizado en SisConta → sale de esta lista" onclick="nuevaHecha('+i+')">✓</span>'
-        +'<span class="act" style="background:#fde68a;color:#92400e;font-size:10px;font-weight:700" title="No deducible → a la carpeta NO DEDUCIBLE del mes" onclick="nuevaAct(\'marcarNoDeducible\','+i+')">no&nbsp;ded</span>'
+        +'<span class="act" style="background:#fde68a;color:#92400e;font-size:10px;font-weight:700" title="No deducible → se mueve a la carpeta NO DEDUCIBLE de su mes y sale de esta lista" onclick="nuevaAct(\'marcarNoDeducible\','+i+')">no&nbsp;ded</span>'
         +'<span class="act no" title="No es una factura (mover a PARA BORRAR)" onclick="nuevaAct(\'noFactura\','+i+')">🚫</span>'
         +'</div></td></tr>'; });
       h+='</table>';

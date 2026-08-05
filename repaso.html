@@ -75,9 +75,11 @@
     <button id="tRec" onclick="switchVista('rec')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:var(--azul);color:#fff">📥 Recibidas</button>
     <button id="tIva" onclick="switchVista('iva')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:#fff;color:#334155">🧾 IVA · 303</button>
     <button id="tCon" onclick="switchVista('con')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:#fff;color:#334155">🔗 Conector SisConta</button>
+    <button id="tNue" onclick="switchVista('nue')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid #d9a441;background:#fff;color:#92591b">🆕 Nuevas apariciones</button>
     <button id="tTar" onclick="switchVista('tar')" style="font-weight:700;font-size:15px;padding:9px 14px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:#fff;color:#334155">💳 Extracto tarjeta</button>
   </div>
   <div id="vConector" style="display:none"><div class="muted">Cargando asientos…</div></div>
+  <div id="vNuevas" style="display:none"><div class="muted">Cargando…</div></div>
   <div id="vTarjeta" style="display:none"><div class="muted">Cargando extracto…</div></div>
   <div id="vEmitidas" style="display:none">
     <div class="bar">
@@ -99,8 +101,6 @@
   </div>
   <div id="lista"><div class="muted">Cargando…</div></div>
 
-  <!-- 🆕 [2026-08-05] NUEVAS APARICIONES · sección AÑADIDA, no toca nada de lo anterior -->
-  <div id="nuevas-apariciones" style="margin-top:26px"></div>
   </div>
   <div id="vIva" style="display:none"><div class="muted">Cargando IVA…</div></div>
 </div>
@@ -112,40 +112,66 @@ let DATA=[], MES='', ORD='prov';
 function esc(s){ return (s==null?'':''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function eur(n){ return (Number(n)||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
 
-// 🆕 [2026-08-05] NUEVAS APARICIONES — facturas BIEN ARCHIVADAS (verdes en el repaso, porque el verde
-//    lo decide la CARPETA) cuyo importe NO está en el diario de SisConta. Son las que se cuelan sin que
-//    nadie las contabilice. Lo destapó un barrido de intracomunitarias: 6 facturas, 1.949,74 €, fuera del
-//    303 y del 349. La lista se limpia SOLA: al contabilizarlas, su importe aparece en el diario y salen.
+// 🆕 [2026-08-05] NUEVAS APARICIONES — facturas BIEN ARCHIVADAS (verdes en Recibidas, porque el verde lo
+//    decide la CARPETA) cuyo importe NO está en el diario de SisConta: las que se cuelan sin contabilizar.
+//    Accionables como el resto del panel: al marcarlas salen de la lista. Lo destapó un barrido de
+//    intracomunitarias — 6 facturas, 1.949,74 €, fuera del 303 y del 349.
+let _NUEV=[];
 async function cargarNuevasApariciones(){
-  const box = document.getElementById('nuevas-apariciones');
-  if(!box) return;
+  const box=document.getElementById('vNuevas'); if(!box) return;
+  box.innerHTML='<div class="muted">Cargando…</div>';
   try{
-    const j = await fetch(API+'/contabilidad/nuevas_apariciones?anio=2026&nc='+Date.now()).then(r=>r.json());
-    if(!j.ok || !(j.facturas||[]).length){ box.innerHTML=''; return; }
-    const f = j.facturas;
-    let h = '<div style="background:#fff;border:2px solid #d9a441;border-radius:12px;padding:16px 18px">'
-      + '<h2 style="margin:0 0 4px;color:#92591b">🆕 Nuevas apariciones · '+f.length+' facturas · '+eur(j.total)+'</h2>'
-      + '<div class="muted" style="margin-bottom:12px">Están archivadas en la carpeta de su proveedor, así que arriba salen en verde, '
-      + '<b>pero su importe no aparece en el diario</b>. Es un detector, no una prueba: compruébalas antes de dar nada por hecho. '
-      + 'Solo se miran las de fecha anterior o igual al <b>'+esc(j.corte_diario)+'</b>, que es hasta donde llega la copia del diario. '
-      + 'Al contabilizar una, desaparece de esta lista sola.</div>'
-      + '<table style="width:100%;border-collapse:collapse;font-size:13px">'
-      + '<tr style="text-align:left;color:#64748b;font-size:11.5px"><th>Fecha</th><th>Proveedor</th><th>Fichero</th><th style="text-align:right">Importe</th></tr>';
-    f.forEach(x=>{ h += '<tr style="border-top:1px solid var(--line)">'
-      + '<td style="padding:5px 0;white-space:nowrap">'+esc(x.fecha)+'</td>'
-      + '<td><b>'+esc(x.proveedor)+'</b><div class="muted" style="font-size:11px">'+esc(x.mes_carpeta)+' / '+esc(x.carpeta)+'</div></td>'
-      + '<td class="muted" style="font-size:11.5px">'+esc((x.ruta||'').split('/').pop())+'</td>'
-      + '<td style="text-align:right;font-weight:700;white-space:nowrap">'+eur(x.total)+'</td></tr>'; });
-    h += '</table></div>';
-    box.innerHTML = h;
-  }catch(e){ box.innerHTML=''; }
+    const j=await fetch(API+'/contabilidad/nuevas_apariciones?anio=2026&nc='+Date.now()).then(r=>r.json());
+    if(!j.ok){ box.innerHTML='<div class="muted">No se pudo cargar: '+esc(j.error||'')+'</div>'; return; }
+    _NUEV=j.facturas||[];
+    let h='<div style="background:#fff;border:2px solid #d9a441;border-radius:12px;padding:16px 18px">'
+      +'<h2 style="margin:0 0 4px;color:#92591b">🆕 Nuevas apariciones · '+_NUEV.length+' · '+eur(j.total)+'</h2>'
+      +'<div class="muted" style="margin-bottom:12px">Están archivadas en la carpeta de su proveedor, así que en <b>Recibidas</b> salen en verde, '
+      +'<b>pero su importe no aparece en el diario</b>. Es un detector, no una prueba: un importe repetido puede tapar un hueco, compruébalas. '
+      +'Solo se miran las de fecha ≤ <b>'+esc(j.corte_diario)+'</b>, hasta donde llega la copia del diario.'
+      +(j.n_marcadas?' · <b>'+j.n_marcadas+'</b> ya marcadas por ti':'')+'</div>';
+    if(!_NUEV.length){ h+='<div style="background:#e7f7ec;border-radius:8px;padding:12px 14px;color:#1f6f43;font-weight:700">✅ Nada pendiente. Todo lo archivado está en el diario.</div>'; }
+    else{
+      h+='<table style="width:100%;border-collapse:collapse;font-size:13px">'
+        +'<tr style="text-align:left;color:#64748b;font-size:11.5px"><th>Fecha</th><th>Proveedor</th><th>Fichero</th><th style="text-align:right">Importe</th><th></th></tr>';
+      _NUEV.forEach((x,i)=>{ h+='<tr style="border-top:1px solid var(--line)">'
+        +'<td style="padding:6px 0;white-space:nowrap">'+esc(x.fecha)+'</td>'
+        +'<td><b>'+esc(x.proveedor)+'</b><div class="muted" style="font-size:11px">'+esc(x.mes_carpeta)+' / '+esc(x.carpeta)+'</div></td>'
+        +'<td class="muted" style="font-size:11.5px">'+esc((x.ruta||'').split('/').pop())+'</td>'
+        +'<td style="text-align:right;font-weight:700;white-space:nowrap">'+eur(x.total)+'</td>'
+        +'<td style="text-align:right;white-space:nowrap">'
+        +'<button onclick="nuevaHecha('+i+')" style="font-size:12px;font-weight:700;padding:5px 10px;border-radius:7px;border:1px solid #1f9d55;background:#e7f7ec;color:#1f6f43;cursor:pointer">✓ Ya contabilizada</button> '
+        +'<button onclick="nuevaNoFactura('+i+')" style="font-size:12px;padding:5px 10px;border-radius:7px;border:1px solid var(--line);background:#fff;color:#64748b;cursor:pointer">🚫 No es factura</button>'
+        +'</td></tr>'; });
+      h+='</table>';
+    }
+    h+='</div>'; box.innerHTML=h;
+  }catch(e){ box.innerHTML='<div class="muted">Error: '+esc(e.message)+'</div>'; }
+}
+async function nuevaHecha(i){
+  const x=_NUEV[i]; if(!x) return;
+  if(!confirm('✓ Confirmas que YA has contabilizado esta factura en SisConta?\n\n'+x.proveedor+' · '+eur(x.total)+' · '+x.fecha+'\n\nSaldrá de la lista. (Cuando subáis una copia nueva del diario se comprobará sola.)')) return;
+  try{
+    const r=await fetch(API+'/contabilidad/marcar_en_diario',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ruta:x.ruta, nota:'contabilizada · '+x.proveedor+' · '+x.total})}).then(r=>r.json());
+    if(r.ok) cargarNuevasApariciones(); else alert('Error: '+(r.error||''));
+  }catch(e){ alert('Error: '+e.message); }
+}
+async function nuevaNoFactura(i){
+  const x=_NUEV[i]; if(!x) return;
+  const mot=prompt('🚫 Esto NO es una factura → se mueve a PARA BORRAR y el panel lo recordará.\n\n¿Por qué no es factura? (motivo):','');
+  if(mot===null) return;
+  try{
+    const r=await fetch(API+'/contabilidad/no_es_factura',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ruta:x.ruta, motivo:(mot||'').trim()})}).then(r=>r.json());
+    if(r.ok){ cargarNuevasApariciones(); try{cargar();}catch(e){} } else alert('Error: '+(r.error||''));
+  }catch(e){ alert('Error: '+e.message); }
 }
 
 async function cargar(){
   try{
     const j = await fetch(API+'/contabilidad/repaso_contable?anio=2026&nc='+Date.now()).then(r=>r.json());
     DATA = j.facturas||[];
-    try{ cargarNuevasApariciones(); }catch(e){}   // 🆕 [2026-08-05] sección aparte, si falla no rompe el repaso
     const sel=$('#selMes'); const meses=j.meses||[];
     sel.innerHTML = meses.map(m=>'<option value="'+esc(m)+'">'+esc(m)+'</option>').join('');
     // mes por defecto = el mes ACTUAL si existe; si no, el último mes real (no "AMAZON TARJETA" ni sueltos)
@@ -175,11 +201,13 @@ function switchVista(v){
   $('#vIva').style.display      = v==='iva'?'':'none';
   $('#vConector').style.display = v==='con'?'':'none';
   $('#vTarjeta').style.display  = v==='tar'?'':'none';
-  _tabBtn('#tEmi', v==='emi'); _tabBtn('#tRec', v==='rec'); _tabBtn('#tIva', v==='iva'); _tabBtn('#tCon', v==='con'); _tabBtn('#tTar', v==='tar');
+  $('#vNuevas').style.display   = v==='nue'?'':'none';
+  _tabBtn('#tEmi', v==='emi'); _tabBtn('#tRec', v==='rec'); _tabBtn('#tIva', v==='iva'); _tabBtn('#tCon', v==='con'); _tabBtn('#tTar', v==='tar'); _tabBtn('#tNue', v==='nue');
   if(v==='emi' && !_emiCargado){ _emiCargado=true; cargarEmi(); }
   if(v==='iva' && !_ivaCargado){ _ivaCargado=true; cargarIVA(); }
   if(v==='con' && !_conCargado){ _conCargado=true; cargarConector(); }
   if(v==='tar' && !_tarCargado){ _tarCargado=true; cargarTarjeta(); }
+  if(v==='nue'){ cargarNuevasApariciones(); }   // 🆕 siempre, para que al accionar se refresque
 }
 // ── EXTRACTO TARJETA DE EMPRESA (MC Sabadell) ──
 async function cargarTarjeta(){

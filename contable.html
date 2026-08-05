@@ -6044,27 +6044,35 @@ async function cargarPulso(){
       '<div style="margin-top:8px;font-size:11.5px;color:var(--texto-suave)">Lo que más envejece es lo que hay que perseguir primero.</div>';
     // TENDENCIA PLURIANUAL (facturación ene–jun de cada año = comparable; 2026 en curso)
     const A=jt.anios||{};
-    const mm=['01','02','03','04','05','06'];
-    const anys=['2024','2025','2026'];   // 2023 fuera: no es referencial para la facturación mensual
+    // ⏱️ [2026-08-05] VENTANA MÓVIL [Joan: "el interanual no se mueve y pone que llega solo hasta junio"].
+    //    Estaba CLAVADO a ene–jun desde el día que se escribió: el % nunca avanzaba y la etiqueta mentía, aunque
+    //    fact_dia sí estaba al día. Ahora llega hasta el último mes CERRADO — el mes en curso NO entra, porque
+    //    comparar 5 días contra un mes entero hunde el dato. Los años también salen de la fecha, no a mano.
+    const _hoy=new Date(), _mAct=_hoy.getMonth(), _nM=Math.max(_mAct,1);   // 0..11; nº de meses cerrados
+    const mm=Array.from({length:_nM},(_,i)=>String(i+1).padStart(2,'0'));
+    const _MES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    const _rot=(_nM>1?'ene–':'')+_MES[_nM-1];
+    const _yA=_hoy.getFullYear();
+    const anys=[String(_yA-2),String(_yA-1),String(_yA)];   // dos años atrás de referencia + el año en curso
     const ytd={}; anys.forEach(y=>{ const m=(A[y]||{}).meses||{}; ytd[y]=mm.reduce((a,x)=>a+(m[y+'-'+x]||0),0); });
-    const s25=ytd['2025']||0, s26=ytd['2026']||0;
+    const s25=ytd[String(_yA-1)]||0, s26=ytd[String(_yA)]||0;
     const pct=s25?Math.round((s26/s25-1)*1000)/10:0;
     S('pl-inter-pct',(pct>=0?'+':'')+pct+'%');
     const maxY=Math.max.apply(null,anys.map(y=>ytd[y]).concat([1]));
-    let ih='<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px"><span style="font-size:24px;font-weight:800;color:'+(pct>=0?'#16a34a':'#dc2626')+'">'+(pct>=0?'+':'')+pct+'%</span><span style="font-size:12px;color:var(--texto-suave)">2026 vs 2025 · ene–jun</span></div>';
-    anys.forEach(y=>{ const v=ytd[y]||0, act=(y==='2026');
+    let ih='<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px"><span style="font-size:24px;font-weight:800;color:'+(pct>=0?'#16a34a':'#dc2626')+'">'+(pct>=0?'+':'')+pct+'%</span><span style="font-size:12px;color:var(--texto-suave)">'+_yA+' vs '+(_yA-1)+' · '+_rot+'</span></div>';
+    anys.forEach(y=>{ const v=ytd[y]||0, act=(y===String(_yA));
       ih+='<div style="display:flex;align-items:center;gap:8px;margin:6px 0"><span style="width:38px;font-size:12px;font-weight:'+(act?'800':'600')+';color:'+(act?'#534AB7':'#666')+'">'+y+'</span>'+
         '<div style="flex:1;background:#eee;border-radius:5px;height:16px;overflow:hidden"><div style="width:'+Math.round(v/maxY*100)+'%;height:100%;background:'+(act?'#534AB7':'#b4b2a9')+';border-radius:5px"></div></div>'+
         '<span style="width:72px;text-align:right;font-size:12px;font-weight:'+(act?'800':'600')+'">'+eur(v)+'</span></div>';
     });
-    ih+='<div style="margin-top:8px;font-size:11px;color:var(--texto-suave)">Facturación <b>ene–jun</b> de cada año (comparable). 2026 en curso.</div>';
+    ih+='<div style="margin-top:8px;font-size:11px;color:var(--texto-suave)">Facturación <b>'+_rot+'</b> de cada año (mismos meses = comparable). El mes en curso no cuenta.</div>';
     // 📅 TOTAL POR AÑO COMPLETO (años cerrados) + lo que va del año en curso a fecha de hoy
-    const anysF=['2024','2025','2026'];   // visión de negocio: partimos de 2024 (2023 oculto)
+    const anysF=[String(_yA-2),String(_yA-1),String(_yA)];   // visión de negocio: 3 años, calculados de la fecha
     const totY={}; anysF.forEach(y=>{ const m=(A[y]||{}).meses||{}; totY[y]=Object.values(m).reduce((a,v)=>a+(v||0),0); });
     const maxF=Math.max.apply(null,anysF.map(y=>totY[y]).concat([1]));
     const mesAct=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][new Date().getMonth()];
     ih+='<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e8e8e8"><div style="font-size:12px;font-weight:800;color:#534AB7;margin-bottom:8px">📅 Facturación por año completo</div>';
-    anysF.forEach(y=>{ const v=totY[y]||0, act=(y==='2026');
+    anysF.forEach(y=>{ const v=totY[y]||0, act=(y===String(_yA));
       ih+='<div style="display:flex;align-items:center;gap:8px;margin:6px 0"><span style="width:38px;font-size:12px;font-weight:'+(act?'800':'600')+';color:'+(act?'#534AB7':'#666')+'">'+y+'</span>'+
         '<div style="flex:1;background:#eee;border-radius:5px;height:16px;overflow:hidden"><div style="width:'+Math.round(v/maxF*100)+'%;height:100%;background:'+(act?'#534AB7':'#b4b2a9')+';border-radius:5px"></div></div>'+
         '<span style="width:78px;text-align:right;font-size:12px;font-weight:'+(act?'800':'600')+'">'+eur(v)+'</span>'+

@@ -723,7 +723,7 @@
         <div style="background:#e1f5ee;border:1px solid #bfe8d8;border-radius:12px;padding:14px 18px">
           <div style="font-size:12px;color:#0F6E56">📈 Interanual</div>
           <div style="font-size:22px;font-weight:800;margin-top:4px;color:#0F6E56" id="pl-inter-pct">—</div>
-          <div style="font-size:11px;color:#0F6E56">ene–jun vs 2025</div>
+          <div style="font-size:11px;color:#0F6E56" id="pl-inter-lbl">—</div>
         </div>
       </div>
 
@@ -6058,6 +6058,9 @@ async function cargarPulso(){
     const s25=ytd[String(_yA-1)]||0, s26=ytd[String(_yA)]||0;
     const pct=s25?Math.round((s26/s25-1)*1000)/10:0;
     S('pl-inter-pct',(pct>=0?'+':'')+pct+'%');
+    // 🏷️ [2026-08-05] La etiqueta de la tarjeta pequeña estaba escrita A MANO en el HTML ("ene–jun vs 2025"),
+    //    así que el % avanzaba con la ventana móvil pero el texto seguía diciendo junio. Ahora se escribe sola.
+    S('pl-inter-lbl', _rot+' vs '+(_yA-1));
     const maxY=Math.max.apply(null,anys.map(y=>ytd[y]).concat([1]));
     let ih='<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px"><span style="font-size:24px;font-weight:800;color:'+(pct>=0?'#16a34a':'#dc2626')+'">'+(pct>=0?'+':'')+pct+'%</span><span style="font-size:12px;color:var(--texto-suave)">'+_yA+' vs '+(_yA-1)+' · '+_rot+'</span></div>';
     anys.forEach(y=>{ const v=ytd[y]||0, act=(y===String(_yA));

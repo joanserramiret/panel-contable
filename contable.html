@@ -1672,6 +1672,7 @@ async function refrescarTrasCuadre() {
 async function abrirCobros() {
   try {
     window._enRemesa = undefined;      // 📤 en proceso (facturas ya en una remesa girada)
+    window._regiradas = undefined;     // 🔄 devueltas ya RE-GIRADAS en una remesa posterior al bote
     window._aplazadosSet = undefined;  // ⏸ giros aguantados unos días
     window._cobGuard = undefined;      // 🛡️ guardarraíl (verde/regirar/ámbar/rojo)
     carteraDestinos = null;            // ajustes manuales girar↔perseguir
@@ -3023,9 +3024,14 @@ function actualizarCobros() {
     //   3) en_remesa / aplazada → girada / en proceso → 📤 PROCESO (manda sobre cualquier ajuste manual).
     //   4) ajuste manual (girar/perseguir) → solo si el banco no dice nada de esta factura.
     //   5) defecto: recibo→girar, transferencia→perseguir.
+    // ⏱️ [2026-08-05] EL ULTIMO DOCUMENTO MANDA [Joan]: una devuelta que YA se volvio a meter en una remesa
+    //   POSTERIOR al bote esta EN PROCESO, no "para girar" — el fichero de esa remesa es documento del banco igual
+    //   que el bote, y es el ultimo. Ofrecerla otra vez seria el DOBLE GIRO. Si NO consta re-girada, manda el bote
+    //   y vuelve al juego, exactamente como hasta ahora.
+    const regirada = !!(window._regiradas && window._regiradas.has(clave));
     let destino;
-    if (devuelta)       destino = carteraDestinos[clave] || (recibo ? 'girar' : 'perseguir');  // botó → re-girar (recibo) o perseguir (transfer)
-    else if (enRem)     destino = 'proceso';
+    if (devuelta && !regirada)  destino = carteraDestinos[clave] || (recibo ? 'girar' : 'perseguir');  // botó → re-girar (recibo) o perseguir (transfer)
+    else if (enRem || regirada) destino = 'proceso';
     else if (aplazada)  destino = 'proceso';
     else                destino = carteraDestinos[clave] || (recibo ? 'girar' : 'perseguir');
     if (destino === 'esperando') destino = 'proceso';   // 'esperando' (girada, espera remesa) = 📤 en proceso
@@ -3125,6 +3131,7 @@ async function cargarCobGuard() {
     const m = {};
     const put = (arr, est) => (arr || []).forEach(x => { const k = (x.fact || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (k) m[k] = est; });
     put(g.verde, 'verde'); put(g.regirar, 'regirar'); put(g.ambar, 'ambar'); put(g.rojo, 'rojo');
+    put(g.sin_mandato, 'sinmandato');   // 🪪 [2026-08-05] sin IBAN en ningún sitio → no se puede girar
     window._cobGuard = m;
   } catch (e) { window._cobGuard = {}; }
 }
@@ -3132,10 +3139,11 @@ const _GUARD_STYLE = {
   verde:   { c: '#1a7a3f', b: '#e8f7ef', t: '🟢 girar' },
   regirar: { c: '#1d63c9', b: '#e7f0fd', t: '🔵 re-girar' },
   ambar:   { c: '#b8860b', b: '#fdf3da', t: '🟡 revisar' },
-  rojo:    { c: '#c0392b', b: '#fbeaea', t: '🔴 no girar' }
+  rojo:    { c: '#c0392b', b: '#fbeaea', t: '🔴 no girar' },
+  sinmandato: { c: '#475569', b: '#f1f5f9', t: '🪪 sin IBAN' }
 };
 function _guardEstado(num) { const m = window._cobGuard || {}; return m[(num || '').toUpperCase().replace(/[^A-Z0-9]/g, '')] || null; }
-function _guardRank(num) { const e = _guardEstado(num); return e === 'rojo' ? 2 : e === 'ambar' ? 1 : 0; }  // rojo y ámbar al fondo
+function _guardRank(num) { const e = _guardEstado(num); return (e === 'rojo' || e === 'sinmandato') ? 2 : e === 'ambar' ? 1 : 0; }  // rojo, sin-IBAN y ámbar al fondo
 // 🚦 Filtro de antigüedad de Cobros — MULTI-TOGGLE (como el semáforo de Pagos): cada bucket on/off independiente.
 function cobAgingToggle(b) {
   if (!window._cobAging) window._cobAging = {};
@@ -3163,11 +3171,22 @@ async function cargarEnRemesa() {
     (g.facturas || []).forEach(n => s.add(bkNormClave('F-' + n)));
   } catch(e) {}
   // + compat: el en_remesa de clientes_pendientes (Sabadell conciliado)
+  // ⏱️ [2026-08-05] …y el set de RE-GIRADAS: devueltas que DESPUES del bote volvieron a entrar en una remesa
+  //    POSTERIOR (el bridge lo marca comparando fechas). Sin esto la columna las pintaba en PARA GIRAR para siempre
+  //    —la rama `devuelta` se evalua ANTES que `enRem`— y se podian girar dos veces. Caso F-8038 Rest Longa: boto el
+  //    29/07 y se re-giro en la remesa del 05/08. [Joan]
+  const rg = new Set(), notas = {};
   try {
     const j = await fetch(`${BRIDGE_URL_C}/contabilidad/clientes_pendientes?anio=2026&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
-    (j.facturas || []).forEach(f => { if (f.en_remesa) s.add(bkNormClave((f.serie || 'F') + '-' + f.numero)); });
+    (j.facturas || []).forEach(f => {
+      const k = bkNormClave((f.serie || 'F') + '-' + f.numero);
+      if (f.en_remesa) s.add(k);
+      if (f.regirada) { rg.add(k); if (f.nota_remesa) notas[k] = f.nota_remesa; }
+    });
   } catch(e) {}
   window._enRemesa = s;
+  window._regiradas = rg;
+  window._notaRegiro = notas;
 }
 
 async function carteraMover(claves, destino) {
@@ -6784,6 +6803,10 @@ async function remesisarAbrir(banco){
     // 🟡 REVISAR: mismo cliente+importe+MISMO MES (posible doble facturación). NO se giran solas (_sel:false);
     //    Joan las marca a mano si NO son duplicado (p.ej. dos centros con el mismo pedido). [Binifadet 2026-07-22]
     var revisar=(g.ambar||[]).filter(function(v){return !yaRem[norm(v.fact)];}).map(function(v){var r=mk(v,'ambar'); r._sel=false; return r;});
+    // 🪪 [2026-08-05] SIN MANDATO [Joan]: el metodo de pago de Agora NO decide — decide el IBAN. Estas NO entran en
+    //    _consRecibos (ni marcadas ni sumando): no se pueden girar. Se pintan igual para que no desaparezca dinero
+    //    de la vista y sepas a quien pedirle el IBAN en sepas.js-tech.es o a quien cambiarle el metodo en Agora.
+    var sinMand=(g.sin_mandato||[]);
     // 🆕 facturas que Ágora marca TRANSFERENCIA pero cuyo cliente YA tiene mandato (historial de recibo /
     //    C192 / SEPA firmado / manual) → ya son girables. Endpoint unificado /remesa/girables_transferencia.
     var conMandato=[];
@@ -6808,13 +6831,16 @@ async function remesisarAbrir(banco){
     var nRem=Object.keys(yaRem).length;
     var row=function(r,i,col){return '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:4px 2px;border-bottom:1px solid #f4f4f4;cursor:pointer"><input type="checkbox" '+(r._sel?'checked':'')+' onchange="window._consRecibos['+i+']._sel=this.checked;consTotal()"><span style="width:70px;color:'+col+';font-weight:600">'+r.fact+'</span><span style="flex:1">'+(r.cliente||'(sin nombre)')+(r.gastos>0?' <span style="color:#185FA5;font-size:11px">+ '+eur(r.gastos)+' gastos dev'+(r.bancoDev?' '+r.bancoDev:'')+'</span>':'')+(r.devuelta?' <span style="background:#fdecec;color:#c0392b;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700">🔄 botó · re-giro</span>':'')+(r.nota?' <span style="background:#eef4ff;color:#2b4b8f;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700" title="centro/local (nota de la factura)">🏬 '+r.nota+'</span>':'')+(r.nif?'':' <span style=\'color:#c00\'>⚠ sin NIF</span>')+'</span><span style="font-weight:600">'+eur(r.importe)+'</span></label>';};
     var html='';
-    if(!window._consRecibos.length){ html='<div style="background:#f3f6fb;border-radius:9px;padding:14px;color:#555;font-size:13px">No hay nada que girar ahora mismo. Cuando emitas facturas domiciliadas o haya devoluciones, aparecerán aquí.'+(nRem?' ('+nRem+' ya en remesa esperando cobro.)':'')+'</div>'; }
+    if(!window._consRecibos.length && !sinMand.length){ html='<div style="background:#f3f6fb;border-radius:9px;padding:14px;color:#555;font-size:13px">No hay nada que girar ahora mismo. Cuando emitas facturas domiciliadas o haya devoluciones, aparecerán aquí.'+(nRem?' ('+nRem+' ya en remesa esperando cobro.)':'')+'</div>'; }
     else{
       var idx=0;
       if(regir.length){ html+='<div style="font-size:13px;font-weight:800;color:#185FA5;margin:6px 0 2px">🔄 Re-girar (devueltas) · '+regir.length+'</div><div style="border:1px solid #d6e6f6;border-radius:8px;padding:4px 10px;background:#f5faff">'; regir.forEach(function(r){html+=row(r,idx,'#185FA5');idx++;}); html+='</div>'; }
       if(conMandato.length){ html+='<div style="font-size:13px;font-weight:800;color:#6b21a8;margin:12px 0 2px">🆕 Con mandato nuevo (antes transferencia) · '+conMandato.length+'</div><div style="border:1px solid #e6d6f6;border-radius:8px;padding:4px 10px;background:#faf5ff">'; conMandato.forEach(function(r){html+=row(r,idx,'#6b21a8');idx++;}); html+='</div>'; }
       if(nuevas.length){ html+='<div style="font-size:13px;font-weight:800;color:#0F6E56;margin:12px 0 2px">🆕 Nuevas a girar · '+nuevas.length+'</div><div style="border:1px solid #cdeadd;border-radius:8px;padding:4px 10px;background:#f4fbf7">'; nuevas.forEach(function(r){html+=row(r,idx,'#0F6E56');idx++;}); html+='</div>'; }
       if(revisar.length){ html+='<div style="font-size:13px;font-weight:800;color:#b8860b;margin:12px 0 2px">🟡 Revisar · '+revisar.length+' <span style="font-weight:500;font-size:11px;color:#999">— mismo cliente, importe y MISMO MES, y el centro 🏬 NO las distingue (falta la nota, o es el mismo centro dos veces). Márcala SOLO si compruebas que no es duplicado.</span></div><div style="border:1px solid #f0e2bf;border-radius:8px;padding:4px 10px;background:#fdf9ef">'; revisar.forEach(function(r){html+=row(r,idx,'#b8860b');idx++;}); html+='</div>'; }
+      if(sinMand.length){ html+='<div style="font-size:13px;font-weight:800;color:#475569;margin:12px 0 2px">🪪 Sin mandato SEPA · '+sinMand.length+' <span style="font-weight:500;font-size:11px;color:#999">— Ágora las marca "Recibo Bancario" pero el cliente NO tiene IBAN en ningún sitio (ni C192 previo, ni mandato manual, ni portal). <b>No se giran.</b> Dale de alta el IBAN en <b>sepas.js-tech.es</b> o cámbiale el método de pago en Ágora.</span></div><div style="border:1px solid #e2e8f0;border-radius:8px;padding:4px 10px;background:#f8fafc">';
+        sinMand.forEach(function(v){ html+='<div style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:4px 2px;border-bottom:1px solid #f4f4f4"><span style="width:70px;color:#475569;font-weight:600">'+v.fact+'</span><span style="flex:1;color:#555">'+(v.cliente||'(sin nombre)')+' <span style="background:#e2e8f0;color:#334155;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700">🪪 sin IBAN</span></span><span style="font-weight:600;color:#475569">'+eur(v.importe)+'</span></div>'; });
+        html+='</div>'; }
       html+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">'+
         '<div style="font-size:12px;color:#666">Seleccionado: <b id="cons-tot">—</b>'+(nRem?' · <span style="color:#999">'+nRem+' ya en remesa (ocultas)</span>':'')+'</div>'+
         '<div style="display:flex;gap:8px"><button onclick="consToggleAll(true)" style="padding:5px 10px;border:1px solid #ccc;border-radius:7px;background:#fff;cursor:pointer;font-size:11.5px">Todas</button><button onclick="consToggleAll(false)" style="padding:5px 10px;border:1px solid #ccc;border-radius:7px;background:#fff;cursor:pointer;font-size:11.5px">Ninguna</button>'+

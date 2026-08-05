@@ -8275,11 +8275,17 @@ async function bkRemesas() {
   // 🚨 Chivato: una misma factura COBRADA (abonada) en varias remesas = error.
   // NO cuentan: los recibos '—' sin factura (no son la misma factura), ni los RE-GIROS
   // legítimos (↩ devuelta en una remesa y abonada en otra posterior = ciclo normal).
-  const vecesClave = {};
+  const vecesClave = {}, parciales = {};
   remesas.forEach(m => bkClavesDeConciliado(m.conciliado).forEach(([k, f]) => {
     const s = (f.serie || '').toUpperCase();
     if (s === 'REF' || s === 'GASTOS' || s === 'DESCUADRE' || f.serie === '—' || s === '—') return;
     if (!String(f.numero == null ? '' : f.numero).trim()) return;  // sin número no es una factura identificable
+    // 🧾 [2026-08-05] FACTURA FRACCIONADA [caso SA TINTINA F-6891]: una factura se puede cobrar EN VARIAS
+    //    REMESAS a plazos, y eso NO es doble cobro. Lo dice el propio fichero del banco: el concepto del
+    //    registro 03 pone «COBRO MEDIA F-006891» en las dos remesas (856,68 € = 428,34 + 428,34). El chivato
+    //    solo contaba apariciones y no contemplaba este caso, así que la marcaba en rojo y los dos botones que
+    //    ofrecía habrían hecho daño (darla por devuelta, o deshacer el desglose bueno). Marca: parcial:true.
+    if (f.parcial) { (parciales[k] = parciales[k] || []).push(m.fecha || '¿?'); return; }
     (vecesClave[k] = vecesClave[k] || []).push({ fecha: m.fecha || '¿?', dev: (f.situacion || 'abonado') === 'devuelto' });
   }));
   const dupsAll = Object.entries(vecesClave).filter(([, v]) => v.filter(x => !x.dev).length > 1);
@@ -8289,6 +8295,12 @@ async function bkRemesas() {
     html += '<div style="background:#eefaf1;border:1.5px solid #a7d7b8;border-radius:10px;padding:8px 14px;margin-bottom:10px;font-size:12.5px;color:#1b6b39">' +
       '✅ <b>' + dupsResueltas.length + ' factura(s) abonadas en 2 remesas pero YA RESUELTAS</b> (la devolución/compensación está hecha, el auditor de doble cobro las da a 0 € a devolver). No hay que tocar nada: ' +
       dupsResueltas.map(([k]) => '<b>' + k + '</b>').join(', ') + '.</div>';
+  }
+  const _parcK = Object.keys(parciales).filter(k => parciales[k].length > 1);
+  if (_parcK.length) {
+    html += '<div style="background:#f2f6fc;border:1.5px solid #c3d4ec;border-radius:10px;padding:8px 14px;margin-bottom:10px;font-size:12.5px;color:#26467f">' +
+      '🧾 <b>' + _parcK.length + ' factura(s) cobradas A PLAZOS</b> en varias remesas — no es doble cobro: el concepto del fichero del banco lo dice (p.ej. «COBRO MEDIA»). ' +
+      _parcK.map(k => '<b>' + k + '</b> (' + parciales[k].sort().join(' + ') + ')').join(', ') + '.</div>';
   }
   if (dupsRem.length) {
     html += '<div style="background:#fdf3f3;border:1.5px solid #e0b0b0;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:12.5px">' +

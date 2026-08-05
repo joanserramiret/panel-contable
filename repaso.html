@@ -98,6 +98,9 @@
     <span class="cont"><span class="chip v" id="cV">🟢 0</span><span class="chip r" id="cR">🔴 0</span></span>
   </div>
   <div id="lista"><div class="muted">Cargando…</div></div>
+
+  <!-- 🆕 [2026-08-05] NUEVAS APARICIONES · sección AÑADIDA, no toca nada de lo anterior -->
+  <div id="nuevas-apariciones" style="margin-top:26px"></div>
   </div>
   <div id="vIva" style="display:none"><div class="muted">Cargando IVA…</div></div>
 </div>
@@ -109,10 +112,40 @@ let DATA=[], MES='', ORD='prov';
 function esc(s){ return (s==null?'':''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function eur(n){ return (Number(n)||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
 
+// 🆕 [2026-08-05] NUEVAS APARICIONES — facturas BIEN ARCHIVADAS (verdes en el repaso, porque el verde
+//    lo decide la CARPETA) cuyo importe NO está en el diario de SisConta. Son las que se cuelan sin que
+//    nadie las contabilice. Lo destapó un barrido de intracomunitarias: 6 facturas, 1.949,74 €, fuera del
+//    303 y del 349. La lista se limpia SOLA: al contabilizarlas, su importe aparece en el diario y salen.
+async function cargarNuevasApariciones(){
+  const box = document.getElementById('nuevas-apariciones');
+  if(!box) return;
+  try{
+    const j = await fetch(API+'/contabilidad/nuevas_apariciones?anio=2026&nc='+Date.now()).then(r=>r.json());
+    if(!j.ok || !(j.facturas||[]).length){ box.innerHTML=''; return; }
+    const f = j.facturas;
+    let h = '<div style="background:#fff;border:2px solid #d9a441;border-radius:12px;padding:16px 18px">'
+      + '<h2 style="margin:0 0 4px;color:#92591b">🆕 Nuevas apariciones · '+f.length+' facturas · '+eur(j.total)+'</h2>'
+      + '<div class="muted" style="margin-bottom:12px">Están archivadas en la carpeta de su proveedor, así que arriba salen en verde, '
+      + '<b>pero su importe no aparece en el diario</b>. Es un detector, no una prueba: compruébalas antes de dar nada por hecho. '
+      + 'Solo se miran las de fecha anterior o igual al <b>'+esc(j.corte_diario)+'</b>, que es hasta donde llega la copia del diario. '
+      + 'Al contabilizar una, desaparece de esta lista sola.</div>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:13px">'
+      + '<tr style="text-align:left;color:#64748b;font-size:11.5px"><th>Fecha</th><th>Proveedor</th><th>Fichero</th><th style="text-align:right">Importe</th></tr>';
+    f.forEach(x=>{ h += '<tr style="border-top:1px solid var(--line)">'
+      + '<td style="padding:5px 0;white-space:nowrap">'+esc(x.fecha)+'</td>'
+      + '<td><b>'+esc(x.proveedor)+'</b><div class="muted" style="font-size:11px">'+esc(x.mes_carpeta)+' / '+esc(x.carpeta)+'</div></td>'
+      + '<td class="muted" style="font-size:11.5px">'+esc((x.ruta||'').split('/').pop())+'</td>'
+      + '<td style="text-align:right;font-weight:700;white-space:nowrap">'+eur(x.total)+'</td></tr>'; });
+    h += '</table></div>';
+    box.innerHTML = h;
+  }catch(e){ box.innerHTML=''; }
+}
+
 async function cargar(){
   try{
     const j = await fetch(API+'/contabilidad/repaso_contable?anio=2026&nc='+Date.now()).then(r=>r.json());
     DATA = j.facturas||[];
+    try{ cargarNuevasApariciones(); }catch(e){}   // 🆕 [2026-08-05] sección aparte, si falla no rompe el repaso
     const sel=$('#selMes'); const meses=j.meses||[];
     sel.innerHTML = meses.map(m=>'<option value="'+esc(m)+'">'+esc(m)+'</option>').join('');
     // mes por defecto = el mes ACTUAL si existe; si no, el último mes real (no "AMAZON TARJETA" ni sueltos)

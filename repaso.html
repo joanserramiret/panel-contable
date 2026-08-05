@@ -20,8 +20,8 @@
   .chip{ padding:4px 10px; border-radius:20px; margin-left:6px; }
   .chip.v{ background:var(--verde); color:#146c43; border:1px solid var(--verde-bd); }
   .chip.r{ background:var(--rojo); color:#b91c1c; border:1px solid var(--rojo-bd); }
-  .row{ display:grid; grid-template-columns:1fr 96px 92px 172px; gap:8px; align-items:center; padding:11px 12px; border-radius:10px; margin-bottom:6px; border-left:6px solid transparent; }
-  .acc{ display:flex; gap:2px; justify-content:flex-end; align-items:center; flex-wrap:nowrap; white-space:nowrap; }
+  .row{ display:grid; grid-template-columns:minmax(0,1fr) 96px 92px 216px; gap:8px; align-items:center; padding:11px 12px; border-radius:10px; margin-bottom:6px; border-left:6px solid transparent; }
+  .acc{ display:flex; gap:2px; justify-content:flex-end; align-items:center; flex-wrap:wrap; white-space:nowrap; min-width:0; }
   .act{ cursor:pointer; font-size:15px; padding:2px 4px; border-radius:6px; user-select:none; line-height:1; }
   .act.ok{ background:#c9f2d5; } .act.ok:hover{ background:#a7e8bb; }
   .act.no{ background:#fbd5d5; } .act.no:hover{ background:#f5b5b5; }
@@ -33,11 +33,11 @@
   .facnum{ font-weight:700; }
   .facarch{ color:#94a3b8; }
   .fecha{ font-size:13px; color:#334155; }
-  .imp{ font-weight:700; text-align:right; }
+  .imp{ font-weight:700; text-align:right; white-space:nowrap; }
   .ver{ text-align:center; cursor:pointer; font-size:18px; text-decoration:none; }
   .provgrp{ font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#64748b; margin:14px 0 4px; font-weight:700; }
   .muted{ color:#94a3b8; padding:20px; text-align:center; }
-  @media(max-width:620px){ .row{ grid-template-columns:1fr 84px 168px; } .fecha{ display:none; } .act{ padding:2px 3px; } }
+  @media(max-width:620px){ .row{ grid-template-columns:minmax(0,1fr) 84px 200px; } .fecha{ display:none; } .act{ padding:2px 3px; } }
   /* login */
   #lg{ position:fixed; inset:0; background:linear-gradient(135deg,#0f1f5c,#1a2e6e); display:flex; align-items:center; justify-content:center; z-index:100; }
   #lg .card{ background:#fff; border-radius:18px; padding:36px; width:360px; max-width:92%; text-align:center; }
@@ -139,14 +139,28 @@ async function cargarNuevasApariciones(){
         +'<td><b>'+esc(x.proveedor)+'</b><div class="muted" style="font-size:11px">'+esc(x.mes_carpeta)+' / '+esc(x.carpeta)+'</div></td>'
         +'<td class="muted" style="font-size:11.5px">'+esc((x.ruta||'').split('/').pop())+'</td>'
         +'<td style="text-align:right;font-weight:700;white-space:nowrap">'+eur(x.total)+'</td>'
-        +'<td style="text-align:right;white-space:nowrap">'
-        +'<button onclick="nuevaHecha('+i+')" style="font-size:12px;font-weight:700;padding:5px 10px;border-radius:7px;border:1px solid #1f9d55;background:#e7f7ec;color:#1f6f43;cursor:pointer">✓ Ya contabilizada</button> '
-        +'<button onclick="nuevaNoFactura('+i+')" style="font-size:12px;padding:5px 10px;border-radius:7px;border:1px solid var(--line);background:#fff;color:#64748b;cursor:pointer">🚫 No es factura</button>'
-        +'</td></tr>'; });
+        +'<td><div class="acc" style="justify-content:flex-end">'
+        +'<a class="ver" href="'+API+'/proveedores/abrir?anio='+encodeURIComponent((x.ruta||'').split('/')[0])+'&ruta='+encodeURIComponent((x.ruta||'').split('/').slice(1).join('/'))+'" target="_blank" title="Ver factura">👁</a>'
+        +'<span class="act" style="background:#fef3c7" title="Corregir el importe (si el OCR lo cogió mal, por eso no casa con el diario)" onclick="nuevaAct(\'corregirImporte\','+i+')">💶</span>'
+        +'<span class="act" style="background:#e0f2fe" title="Corregir el nº de factura" onclick="nuevaAct(\'corregirNumero\','+i+')">🔢</span>'
+        +'<span class="act" style="background:#e0e7ff" title="Corregir el nombre del proveedor" onclick="nuevaAct(\'corregirNombre\','+i+')">✏️</span>'
+        +'<span class="act ok" title="Ya la he contabilizado en SisConta → sale de esta lista" onclick="nuevaHecha('+i+')">✓</span>'
+        +'<span class="act" style="background:#fde68a;color:#92400e;font-size:10px;font-weight:700" title="No deducible → a la carpeta NO DEDUCIBLE del mes" onclick="nuevaAct(\'marcarNoDeducible\','+i+')">no&nbsp;ded</span>'
+        +'<span class="act no" title="No es una factura (mover a PARA BORRAR)" onclick="nuevaAct(\'noFactura\','+i+')">🚫</span>'
+        +'</div></td></tr>'; });
       h+='</table>';
     }
     h+='</div>'; box.innerHTML=h;
   }catch(e){ box.innerHTML='<div class="muted">Error: '+esc(e.message)+'</div>'; }
+}
+// 🔁 [2026-08-05] Reutiliza las acciones de Recibidas sin duplicarlas: apunta `_fsActual` a esta lista,
+//    delega en la función de siempre y refresca esta pestaña al volver. Así ✏️ 💶 🔢 no-ded y 🚫 se comportan
+//    EXACTAMENTE igual aquí que allí, y no hay dos implementaciones que se puedan separar con el tiempo.
+async function nuevaAct(fn,i){
+  const x=_NUEV[i]; if(!x) return;
+  window._fsActual=_NUEV;
+  try{ await window[fn](i); }catch(e){ alert('Error: '+e.message); }
+  cargarNuevasApariciones();
 }
 async function nuevaHecha(i){
   const x=_NUEV[i]; if(!x) return;
@@ -157,17 +171,6 @@ async function nuevaHecha(i){
     if(r.ok) cargarNuevasApariciones(); else alert('Error: '+(r.error||''));
   }catch(e){ alert('Error: '+e.message); }
 }
-async function nuevaNoFactura(i){
-  const x=_NUEV[i]; if(!x) return;
-  const mot=prompt('🚫 Esto NO es una factura → se mueve a PARA BORRAR y el panel lo recordará.\n\n¿Por qué no es factura? (motivo):','');
-  if(mot===null) return;
-  try{
-    const r=await fetch(API+'/contabilidad/no_es_factura',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ruta:x.ruta, motivo:(mot||'').trim()})}).then(r=>r.json());
-    if(r.ok){ cargarNuevasApariciones(); try{cargar();}catch(e){} } else alert('Error: '+(r.error||''));
-  }catch(e){ alert('Error: '+e.message); }
-}
-
 async function cargar(){
   try{
     const j = await fetch(API+'/contabilidad/repaso_contable?anio=2026&nc='+Date.now()).then(r=>r.json());

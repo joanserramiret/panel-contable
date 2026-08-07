@@ -4436,7 +4436,12 @@ async function cargarTarjeta() {
 let _tarjD = null;
 function renderTarjeta(d) {
   _tarjD = d;
-  let html = '<div style="margin-bottom:10px;font-size:13px">🟢 <b>' + (d.n_ok||0) + '</b> con factura &nbsp;·&nbsp; 🟡 <b>' + (d.n_pendiente||0) + '</b> pendientes &nbsp;·&nbsp; 🚫 <b>' + (d.n_gasto||0) + '</b> no deducibles &nbsp;·&nbsp; total <b>€' + (d.total||0).toFixed(2) + '</b></div>';
+  const _nRoto = (d.items||[]).filter(x => x.enlace === 'roto').length;
+  const _nMov  = (d.items||[]).filter(x => x.enlace === 'movida').length;
+  let html = '<div style="margin-bottom:10px;font-size:13px">🟢 <b>' + (d.n_ok||0) + '</b> con factura &nbsp;·&nbsp; 🟡 <b>' + (d.n_pendiente||0) + '</b> pendientes &nbsp;·&nbsp; 🚫 <b>' + (d.n_gasto||0) + '</b> no deducibles'
+     + (_nRoto ? ' &nbsp;·&nbsp; <span style="color:#a05000;font-weight:700">🟠 ' + _nRoto + ' con el enlace roto</span>' : '')
+     + (_nMov  ? ' &nbsp;·&nbsp; <span style="color:#666" title="El fichero se movió o lo renombraron; se ha encontrado por su hash">🔗 ' + _nMov + ' reencontradas</span>' : '')
+     + ' &nbsp;·&nbsp; total <b>€' + (d.total||0).toFixed(2) + '</b></div>';
   html += '<input id="tarj-buscar" oninput="tarjRender()" placeholder="🔎 Filtrar por comercio, importe, fecha o factura…" style="width:100%;max-width:440px;padding:8px 11px;margin-bottom:10px;border:1.5px solid #c0cbea;border-radius:8px;font-size:13px;font-family:inherit"/>';
   html += ' <button onclick="tarjBuscarTodos()" style="padding:8px 14px;margin:0 0 10px 6px;border:none;border-radius:8px;background:#0a7d34;color:#fff;cursor:pointer;font-size:13px;font-weight:600;vertical-align:top">🔎 Buscar todos (visibles)</button>';
   html += '<div id="tarj-tabla"></div>';
@@ -4449,6 +4454,15 @@ function renderTarjeta(d) {
 // fichero: lo importante es poder abrirla de un clic. El nombre completo va en el `title`.
 function tarjCeldaFactura(it) {
   if (!it.factura) return '<span style="color:#c00">— sin factura —</span>';
+  // 🟠 [2026-08-07] ENLACE ROTO: hay factura asignada pero el fichero no aparece ni por ruta ni por hash.
+  //    Antes esto salía en VERDE y al pulsar no abría nada. Un verde que no abre es peor que un rojo.
+  if (it.enlace === 'roto') {
+    return '<span title="' + rtEsc('El enlace apunta a ' + (it.factura_guardada || it.factura) +
+           ' y ahí no hay nada. Vuelve a asignarle la factura.') + '" ' +
+           'style="background:#ffe0b2;color:#a05000;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700">' +
+           '🟠 enlace roto</span><br><span style="color:#999;font-size:10px">' +
+           rtEsc((it.factura_guardada || it.factura).split('/').pop()) + '</span>';
+  }
   // el `ngrok-skip-browser-warning` va como PARÁMETRO, no como cabecera: al abrir en otra pestaña
   // es el navegador quien navega y no puede añadir cabeceras (mismo truco que en Proveedores).
   const url = BRIDGE_URL_C + (it.factura_url || ('/proveedores/abrir?ruta=' + encodeURIComponent(it.factura)))

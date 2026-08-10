@@ -4915,10 +4915,14 @@ function renderPagos() {
   const _acc = (pagosDatos.tot_accionable != null ? pagosDatos.tot_accionable : _tReal);
   const _prog = (pagosDatos.tot_programado != null ? pagosDatos.tot_programado : 0);
   const _rev = (pagosDatos.tot_revisar != null ? pagosDatos.tot_revisar : 0);
+  const _det = (pagosDatos.tot_determinar != null ? pagosDatos.tot_determinar : 0);
   if (res) res.innerHTML =
     '<b>🔴 A pagar (acción tuya): <span style="color:#c0392b">' + bkFmt(_acc) + '</span></b>' +
     ' · <span style="color:#0e7490">🔵 Programado <b>' + bkFmt(_prog) + '</b></span> <span style="color:var(--texto-suave);font-size:11px">(domiciliado, se gira solo en su fecha)</span>' +
     (_rev ? ' · <span style="color:#b45309">⚠️ Revisar <b>' + bkFmt(_rev) + '</b></span> <span style="color:var(--texto-suave);font-size:11px">(giro vencido sin cubrir)</span>' : '') +
+    // ⬜ [2026-08-07] Ni domiciliado ni sabemos que sea transferencia. NO es rojo: no sabemos que haya que hacer
+    //    nada, solo que no sabemos cómo se paga. Antes iba dentro de «acción tuya» y acusaba en falso.
+    (_det ? ' · <span style="color:#64748b">⬜ Por determinar <b>' + bkFmt(_det) + '</b></span> <span style="color:var(--texto-suave);font-size:11px">(no sabemos si se gira o se paga a mano)</span>' : '') +
     '<br><span style="color:var(--texto-suave);font-size:12px">💼 Deuda total a proveedor ' + bkFmt(_tReal) + ' en ' + _nReal + ' fac · de ellas ⏳ <b>' + _nClas + '</b> sin contabilizar (' + bkFmt(_tClas) + ') — Raquel aún no las ha puenteado a SisConta, <b>pero se deben igual</b>' +
     (_nExt ? ' · 💳 Pagado fuera del banco: ' + bkFmt(_tExt) + ' en ' + _nExt : '') +
     (_nTar ? ' · 💳 Visa MC ORO: ' + bkFmt(_tTar) + ' en ' + _nTar + ' fra. (pagadas en el acto, no es deuda)' : '') +
@@ -4943,6 +4947,7 @@ function renderPagos() {
     pagada:     { ic: '🟢', lbl: 'pagada',     t: 'Pagada',                                                          col: '#1b7a3d' },
     programada: { ic: '🔵', lbl: 'programado', t: 'Programado · domiciliado, se gira solo en su fecha (controlado)', col: '#0e7490' },
     a_pagar:    { ic: '🔴', lbl: 'a pagar',    t: 'A pagar · pago manual, requiere acción tuya',                     col: '#a32d2d' },
+    por_determinar: { ic: '⬜', lbl: 'por determinar', t: 'No sabemos cómo se paga: ni consta domiciliada ni es proveedor de transferencia. No es que la debas pagar tú — es que falta el dato.', col: '#64748b' },
     revisar:    { ic: '⚠️', lbl: 'revisar',    t: 'Revisar · domiciliado con giro vencido sin cubrir (posible devolución/bote)', col: '#b45309' }
   };
   cont.innerHTML = barra + '<table style="width:100%;font-size:12.5px;border-collapse:collapse">' +

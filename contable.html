@@ -4625,6 +4625,60 @@ async function tarjBuscarTodos() {
   cargarTarjeta();
 }
 
+// ===== 🚨 TESORERÍA [2026-08-11] =====
+// Nace del 11/08: IGT presentó 7.200,71 € y Joan se enteró por el SMS del banco. El saldo estaba leído a las
+// 07:29 y los avisos de pago de IGT tenían los vencimientos; nadie los cruzaba. Y el fichero de avisos llevaba
+// 25 días parado mientras el panel seguía diciendo «Programado, se gira solo en su fecha».
+// ⛔ REGLA: una FUENTE SECA se pinta ANTES que los números, porque un 0,00 € con la fuente muerta no significa
+//    «no debes nada» — significa «no lo sé». Nunca se enseña el resultado sin decir de qué está hecho.
+async function cargarTesoreria() {
+  const host = document.getElementById('pagos-calendario');
+  if (!host) return;
+  let box = document.getElementById('tesoreria-barra');
+  if (!box) { box = document.createElement('div'); box.id = 'tesoreria-barra'; host.prepend(box); }
+  try {
+    const d = await fetch(`${BRIDGE_URL_C}/alertas/tesoreria?dias=7&nc=${Date.now()}`,
+                          { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
+    if (!d || !d.ok) { box.innerHTML = ''; return; }
+    const malas = (d.fuentes || []).filter(f => f.estado !== 'OK');
+    let h = '';
+    if (malas.length) {
+      h += '<div style="background:#fdecea;border:2px solid #c0392b;border-radius:10px;padding:11px 14px;margin-bottom:10px">'
+         + '<b style="color:#c0392b;font-size:14px">🔴 ' + malas.length + ' fuente' + (malas.length > 1 ? 's' : '')
+         + ' sin actualizar — lo de abajo puede estar INCOMPLETO</b><div style="font-size:12px;margin-top:6px">';
+      malas.forEach(f => { h += '· <b>' + rtEsc(f.fuente) + '</b>: último ' + rtEsc(f.ultimo || '—')
+                              + ' (' + (f.dias != null ? f.dias + ' días' : '?') + ') — ' + rtEsc(f.detalle || '') + '<br>'; });
+      h += '</div></div>';
+    }
+    // ⛔ [2026-08-11] El veredicto es POR CUENTA, no en total: el dinero no salta solo de un banco a otro.
+    //    Con 569,64 € en Sabadell y 6.374,25 € en Bankinter, un cargo de 5.302,22 € en Sabadell se DEVUELVE
+    //    aunque la suma de los dos «cubra». Eso es lo que pasó el 11/08.
+    const desc = d.descubierto_en_alguna_cuenta != null ? d.descubierto_en_alguna_cuenta : d.descubierto;
+    h += '<div style="background:' + (desc ? '#fdecea' : '#eef7f0') + ';border:1px solid '
+       + (desc ? '#e0a0a0' : '#b7ddc4') + ';border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px">'
+       + (desc ? '⚠️ <b style="color:#c0392b">Descubierto previsto — faltan ' + bkFmt(d.falta_en_esa_cuenta)
+                 + ' en la cuenta donde te giran</b>'
+               : '✅ <b style="color:#1b7a3d">Cubierto en cada cuenta</b>');
+    (d.por_cuenta || []).forEach(c => {
+      h += '<div style="margin-top:5px;font-size:12.5px">· <b>' + rtEsc(c.banco) + '</b> ' + rtEsc(c.iban)
+         + ' &nbsp; saldo <b>' + bkFmt(c.saldo) + '</b> − cargos <b>' + bkFmt(c.cargos) + '</b> = '
+         + '<b style="color:' + (c.descubierto ? '#c0392b' : '#1b7a3d') + '">' + bkFmt(c.resultado) + '</b>'
+         + (c.descubierto ? ' &nbsp;<span style="color:#c0392b;font-weight:700">← aquí falta dinero</span>' : '')
+         + '</div>';
+    });
+    if (d.cargos_sin_cuenta_conocida) h += '<div style="margin-top:5px;font-size:11.5px;color:#b45309">⚠️ '
+       + d.cargos_sin_cuenta_conocida + ' cargo(s) sin saber en qué cuenta los giran: no están repartidos arriba.</div>';
+    if ((d.cargos_previstos || []).length) {
+      h += '<div style="margin-top:7px;font-size:12px">';
+      d.cargos_previstos.forEach(c => { h += '· ' + rtEsc(c.fecha) + ' &nbsp;<b>' + bkFmt(c.importe) + '</b> &nbsp;'
+                                          + rtEsc(c.proveedor || '') + '<br>'; });
+      h += '</div>';
+    }
+    h += '</div>';
+    box.innerHTML = h;
+  } catch (e) { box.innerHTML = ''; }
+}
+
 // ===== 📅 PAGOS (calendario de pagos a proveedores) =====
 let pagosDatos = { pagos: [] };
 function fechaES2(iso) { if (!iso) return '—'; const p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '-' + p[1] + '-' + p[0] : iso; }
@@ -4916,6 +4970,7 @@ function renderPagos() {
   const _prog = (pagosDatos.tot_programado != null ? pagosDatos.tot_programado : 0);
   const _rev = (pagosDatos.tot_revisar != null ? pagosDatos.tot_revisar : 0);
   const _det = (pagosDatos.tot_determinar != null ? pagosDatos.tot_determinar : 0);
+  cargarTesoreria();   // 🚨 [2026-08-11] la barra de descubierto + fuentes secas, arriba del todo
   if (res) res.innerHTML =
     '<b>🔴 A pagar (acción tuya): <span style="color:#c0392b">' + bkFmt(_acc) + '</span></b>' +
     ' · <span style="color:#0e7490">🔵 Programado <b>' + bkFmt(_prog) + '</b></span> <span style="color:var(--texto-suave);font-size:11px">(domiciliado, se gira solo en su fecha)</span>' +

@@ -5805,12 +5805,102 @@ async function pedirCerebro(){
   }catch(e){ if(out)out.innerHTML='<div style="margin-top:12px;color:#dc2626;font-size:13px">Error: '+e.message+'</div>'; }
   finally{ if(btn){ btn.disabled=false; btn.textContent='🧠 Parte del día'; } }
 }
+// ══════════════════════════════════════════════════════════════════════════════════════════════════
+//  🔊 ALTAVOZ DE FINA — que te lea el parte mientras trabajas  [Joan 2026-08-12]
+//  «mientras nosotros estamos utilizando el panel le podríamos dar al botoncito del altavoz y oír
+//   lo que nos tiene que contar ese día»
+//  Usa la voz del PROPIO NAVEGADOR (Web Speech API): gratis, sin claves, sin internet y sin enviar
+//  nada a ningún sitio — el texto no sale del ordenador. Si algún día quieres voz de estudio, se
+//  cambia solo `vozLeer` por una llamada a un TTS de pago; el resto sigue igual.
+// ══════════════════════════════════════════════════════════════════════════════════════════════════
+var _vozOn=false;
+try{ if(window.speechSynthesis) speechSynthesis.getVoices(); }catch(e){}   // calienta la lista (carga asíncrona)
+
+function _vozVoz(){
+  var vs=[]; try{ vs=speechSynthesis.getVoices()||[]; }catch(e){}
+  var es=vs.filter(function(v){ return /^es[-_]/i.test(v.lang||''); });
+  return es.filter(function(v){ return /google|natural|neural|premium/i.test(v.name||''); })[0]
+      || es.filter(function(v){ return /es[-_]ES/i.test(v.lang||''); })[0]
+      || es[0] || null;
+}
+// El parte viene escrito para LEERSE, no para oírse: emojis, HTML, «1.452,00 €», «F-8139»…
+// Si se lo das crudo al sintetizador suelta «punto», «guion» y cifras absurdas.
+function _vozLimpia(s){
+  return (s||'')
+    .replace(/<br\s*\/?>/gi,'. ').replace(/<[^>]*>/g,' ')          // HTML fuera
+    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g,' ')                // emojis (pares subrogados)
+    .replace(/[←-➿⬀-⯿️‍•]/g,' ')
+    .replace(/\bFD?-?0*(\d{3,7})\b/g,'factura $1')                 // F-8139 → «factura 8139»
+    .replace(/(\d)\.(?=\d{3}(\D|$))/g,'$1')                        // 1.452 → 1452 (dos pasadas: 1.234.567)
+    .replace(/(\d)\.(?=\d{3}(\D|$))/g,'$1')
+    .replace(/,00\b/g,'')                                          // 1452,00 € → «1452 euros»
+    .replace(/\s*€/g,' euros')
+    .replace(/\bIVA\b/g,'I.V.A.').replace(/\bN43\b/g,'ene cuarenta y tres')
+    .replace(/\bSEPA\b/g,'sepa').replace(/\bIRPF\b/g,'I.R.P.F.')
+    .replace(/\s{2,}/g,' ').trim();
+}
+// Chrome corta las locuciones largas (~15 s): se trocea por frases y se encadena con onend.
+function _vozTrozos(s){
+  var fr=s.match(/[^.!?;:]+[.!?;:]?/g)||[s], out=[], cur='';
+  fr.forEach(function(f){
+    if((cur+' '+f).length>180){ if(cur.trim()) out.push(cur.trim()); cur=f; }
+    else cur+=(cur?' ':'')+f;
+  });
+  if(cur.trim()) out.push(cur.trim());
+  return out;
+}
+function _vozBoton(on){
+  ['voz-btn','voz-btn-ag'].forEach(function(id){
+    var b=document.getElementById(id); if(b) b.innerHTML = on ? '⏹ Parar' : '🔊 Escuchar';
+  });
+}
+function vozParar(){ _vozOn=false; try{ speechSynthesis.cancel(); }catch(e){} _vozBoton(false); }
+function vozLeer(txt){
+  if(!window.speechSynthesis){ alert('Este navegador no puede hablar. Prueba con Chrome.'); return; }
+  var t=_vozLimpia(txt);
+  if(!t){ alert('Todavía no hay parte que leer. Pídeselo a FINA primero.'); return; }
+  // ⚠️ iOS: `cancel()` justo antes de `speak()` deja el sintetizador mudo. Solo se cancela si está hablando.
+  try{ if(speechSynthesis.speaking||speechSynthesis.pending) speechSynthesis.cancel(); }catch(e){}
+  _vozOn=true; _vozBoton(true);
+  // ⚠️ MÓVIL: en iOS `getVoices()` suele venir VACÍO hasta la primera locución. Si no hay voz, NO se aborta:
+  //    se habla con lang='es-ES' y que elija el sistema. Y la primera utterance se crea DENTRO del gesto
+  //    del dedo (este onclick), que es lo que iOS exige para dejar sonar audio.
+  var voz=_vozVoz(), trozos=_vozTrozos(t), i=0;
+  (function siguiente(){
+    if(!_vozOn || i>=trozos.length){ _vozOn=false; _vozBoton(false); return; }
+    var u=new SpeechSynthesisUtterance(trozos[i++]);
+    if(voz) u.voice=voz;
+    u.lang=(voz&&voz.lang)||'es-ES'; u.rate=0.98; u.pitch=1.02;
+    u.onend=siguiente;
+    u.onerror=function(){ _vozOn=false; _vozBoton(false); };
+    speechSynthesis.speak(u);
+  })();
+  // 🩹 Chrome (escritorio y Android) se queda en pausa a los ~14 s si la pestaña pierde el foco.
+  //    Un `resume()` periódico lo mantiene hablando; se apaga solo al terminar.
+  if(window._vozLatido) clearInterval(window._vozLatido);
+  window._vozLatido=setInterval(function(){
+    if(!_vozOn){ clearInterval(window._vozLatido); window._vozLatido=null; return; }
+    try{ if(speechSynthesis.paused) speechSynthesis.resume(); }catch(e){}
+  },7000);
+}
+function vozToggle(){ if(_vozOn){ vozParar(); return; } vozLeer(window._vozParte||''); }
+function vozToggleAgentes(){ if(_vozOn){ vozParar(); return; } vozLeer(window._vozAgentes||''); }
+var _VOZ_CSS='padding:5px 11px;border:1px solid #c7c0ea;border-radius:8px;background:#f6f4fc;color:#534AB7;cursor:pointer;font-size:11.5px;font-weight:700';
+
 function renderCerebro(j, elId){
   var out=document.getElementById(elId||'cerebro-out'); if(!out) return;
   var sevCol={alta:'#dc2626',media:'#d97706',baja:'#0F6E56'};
   var sevBg={alta:'#fdeaea',media:'#fdf4e6',baja:'#e8f7ef'};
   var actMap={reclamar:["cobros","✉️ Ir a Cobros"],girar:["cobros","🏦 Ir a remesa"],pagar:["pagos","📅 Ir a Pagos"],conciliar:["cuadrar","🔗 Ir a Cuadrar"],revisar:["pagos","🔎 Revisar"]};
+  // 🔊 el mismo parte, en texto plano y en orden, listo para que FINA te lo lea
+  var _hab=[];
+  if(j.parte) _hab.push(j.parte);
+  (j.prioridades||[]).forEach(function(p){ _hab.push('Prioridad: '+(p.titulo||'')+'. '+(p.detalle||'')); });
+  (j.riesgos||[]).forEach(function(r){ _hab.push('Riesgo: '+r); });
+  (j.oportunidades||[]).forEach(function(o){ _hab.push('Oportunidad: '+o); });
+  window._vozParte=_hab.join('. ');
   var h='<div style="margin-top:14px">';
+  h+='<div style="text-align:right;margin-bottom:6px"><button id="voz-btn" onclick="vozToggle()" title="Que FINA te lea el parte en voz alta" style="'+_VOZ_CSS+'">🔊 Escuchar</button></div>';
   if(j.parte) h+='<div style="background:#fff;border:1px solid #e7e3f7;border-radius:10px;padding:13px 15px;font-size:13.5px;line-height:1.5;color:#1e1b3a">'+(j.parte||'').replace(/\n/g,'<br>')+'</div>';
   if((j.prioridades||[]).length){
     h+='<div style="font-size:12px;font-weight:800;color:#534AB7;margin:14px 0 6px">🎯 Prioridades</div>';
@@ -6011,7 +6101,12 @@ async function cargarAgentes(){
     const j=await fetch(BRIDGE_URL_C+'/agentes?_='+Date.now(),{headers:{'ngrok-skip-browser-warning':'true'}}).then(r=>r.json());
     const ags=(j&&j.agentes)||[];
     let h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title" style="margin:0">🤖 Centro de agentes</div>'+
-      '<span style="font-size:11px;color:var(--texto-suave)">Auditores que razonan con FINA · avisan por ntfy al móvil</span></div>';
+      '<button id="voz-btn-ag" onclick="vozToggleAgentes()" title="Leer en voz alta el último parte de cada agente" style="'+_VOZ_CSS+'">🔊 Escuchar</button>'+
+      '<span style="font-size:11px;color:var(--texto-suave);margin-left:8px">Auditores que razonan con FINA · avisan por ntfy al móvil</span></div>';
+    // 🔊 el parte hablado de los agentes = lo último que dijo cada uno, con su nombre delante
+    window._vozAgentes=ags.filter(function(a){ return a.ultimo; })
+      .map(function(a){ return (a.nombre||'')+': '+String(a.ultimo).replace(/\n/g,'. '); }).join('. ')
+      || 'Hoy los agentes no han dicho nada.';
     h+=ags.map(function(a){
       const cronTxt={diario:'cada día',semanal:'cada lunes',mensual:'día 1'}[a.cron]||(a.cron&&a.cron.replace('dia_','día '))||a.cron;
       const on=a.enabled!==false;

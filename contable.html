@@ -8527,10 +8527,21 @@ async function bkRemesas() {
       const resto = m.importe - sumF;
       // Gastos bancarios ligados a esta remesa (comparten su número en el concepto, p.ej. GTO GC DEVOL.:2026...)
       const numRem = (m.concepto || '').match(/\d{10,}/);
-      const gastos = numRem ? movs.filter(g => g.importe < 0 && g.id !== m.id && (g.concepto || '').includes(numRem[0])) : [];
-      const gastosTxt = gastos.length
-        ? ' <span style="color:#c0392b;font-size:11px" title="' + gastos.map(g => (g.fecha || '') + ' ' + (g.concepto || '')).join(' | ').replace(/"/g, '&quot;') + '">· gastos: ' + bkFmt(gastos.reduce((s, g) => s + g.importe, 0)) + '</span>'
-        : '';
+      const ligados = numRem ? movs.filter(g => g.importe < 0 && g.id !== m.id && (g.concepto || '').includes(numRem[0])) : [];
+      // ⛔ [Joan 2026-08-13] ANTES esto sumaba TODO lo negativo con el nº de la remesa y lo llamaba «gastos»:
+      //    «parece que todos son gastos derivados de esa remesa cuando no es así». Y tenía razón — en la remesa
+      //    Bankinter del 03/08 salía «gastos: −1.714,27 €» cuando de gastos reales solo había 94,96 €; el resto
+      //    eran los RECIBOS DEVUELTOS (−1.190,97 DEV GC RECHAZ y −428,34 DEV GC DEVOL), que no son un gasto:
+      //    es dinero del cliente que no ha entrado y que hay que volver a cobrar. Mezclarlos daba una sensación
+      //    de coste desastrosa y falsa. Ahora van SEPARADOS, cada uno con su nombre.
+      const RE_GASTO_BCO = /GTO\s+GC|COMIS|IMP\s+COMISION|GASTOS?\s+(DEVOL|RECHAZ)/i;
+      const devs  = ligados.filter(g => !RE_GASTO_BCO.test(g.concepto || ''));
+      const gastos = ligados.filter(g =>  RE_GASTO_BCO.test(g.concepto || ''));
+      const _tit = a => a.map(g => (g.fecha || '') + ' ' + (g.concepto || '')).join(' | ').replace(/"/g, '&quot;');
+      const _sum = a => a.reduce((s, g) => s + g.importe, 0);
+      const gastosTxt =
+        (devs.length ? ' <span style="color:#c0392b;font-size:11px" title="Recibos DEVUELTOS de esta remesa — no es un gasto: es dinero que no ha entrado y hay que volver a cobrar.&#10;' + _tit(devs) + '">· devoluciones: ' + bkFmt(_sum(devs)) + '</span>' : '') +
+        (gastos.length ? ' <span style="color:#b45309;font-size:11px" title="Comisiones y gastos que el banco NOS cobra por esta remesa (comisión de remesa, gasto por recibo devuelto).&#10;' + _tit(gastos) + '">· gastos banco: ' + bkFmt(_sum(gastos)) + '</span>' : '');
       const esPropuesta = facts.some(f => f.origen === 'propuesta');
       const estado = facts.length
         ? (Math.abs(resto) < 0.01

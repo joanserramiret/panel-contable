@@ -1,0 +1,78 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Remesas — qué lleva cada una · JS Technology</title>
+<style>
+ :root{--tinta:#1e293b;--suave:#64748b;--linea:#e5e7eb;--ok:#0F6E56;--mal:#c0392b;--ambar:#b45309}
+ *{box-sizing:border-box} body{margin:0;padding:18px;background:#f6f7fb;color:var(--tinta);
+   font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif}
+ h1{font-size:19px;margin:0 0 4px} .sub{color:var(--suave);font-size:13px;margin-bottom:16px}
+ .barra{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+ select,button{padding:7px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font-size:13px;cursor:pointer}
+ .r{background:#fff;border:1px solid var(--linea);border-radius:12px;margin-bottom:12px;overflow:hidden}
+ .cab{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 15px;cursor:pointer}
+ .cab:hover{background:#fafbff}
+ .fecha{font-weight:700;font-variant-numeric:tabular-nums} .banco{color:var(--suave);font-size:12.5px}
+ .imp{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums;font-size:15px}
+ .chip{font-size:11.5px;font-weight:700;border-radius:999px;padding:3px 10px;white-space:nowrap}
+ .c-ok{background:#e8f7ef;color:var(--ok)} .c-mal{background:#fdeaea;color:var(--mal)}
+ .c-gris{background:#f1f5f9;color:var(--suave)} .c-amb{background:#fef3c7;color:var(--ambar)}
+ .det{display:none;padding:0 15px 14px;border-top:1px dashed var(--linea)}
+ .r.abierta .det{display:block}
+ table{width:100%;border-collapse:collapse;margin-top:10px} th{text-align:left;font-size:11.5px;color:var(--suave);
+   font-weight:700;padding:5px 6px;border-bottom:1px solid var(--linea)}
+ td{padding:5px 6px;border-bottom:1px solid #f4f4f6;font-size:13px}
+ td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+ .aviso{background:#fffbeb;border-left:3px solid #fcd34d;border-radius:8px;padding:9px 12px;margin-top:10px;
+   font-size:12.5px;color:#7c5c10}
+ .nota{background:#f8fafc;border-left:3px solid #cbd5e1;border-radius:8px;padding:9px 12px;margin-top:10px;font-size:12.5px;color:var(--suave)}
+ .car{color:var(--mal)} .abo{color:var(--ok)}
+</style></head><body>
+<h1>🏦 Remesas — qué lleva cada una</h1>
+<div class="sub">Para cada remesa: las facturas que se cobraron, las que se devolvieron, y lo que el banco descontó aparte. Solo lectura.</div>
+<div class="barra">
+  <label>Año <select id="anio"></select></label>
+  <button onclick="cargar()">Actualizar</button>
+  <span id="resumen" class="banco"></span>
+</div>
+<div id="lista"></div>
+<script>
+var BR = location.origin;
+var eur = function(x){ return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(x||0)+' €'; };
+var esc = function(s){ return (s==null?'':(''+s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+(function(){ var y=new Date().getFullYear(), sel=document.getElementById('anio');
+  for(var a=y; a>=y-2; a--){ var o=document.createElement('option'); o.value=a; o.textContent=a; sel.appendChild(o); } })();
+function toggle(i){ var e=document.getElementById('r'+i); if(e) e.classList.toggle('abierta'); }
+async function cargar(){
+  var L=document.getElementById('lista'); L.innerHTML='<div class="banco">Cargando…</div>';
+  var j;
+  try { j = await fetch(BR+'/remesas/desglose?anio='+document.getElementById('anio').value+'&_='+Date.now()).then(function(r){return r.json();}); }
+  catch(e){ L.innerHTML='<div class="car">No se pudo cargar: '+esc(e.message)+'</div>'; return; }
+  if(!j || !j.ok){ L.innerHTML='<div class="car">No se pudo cargar.</div>'; return; }
+  document.getElementById('resumen').textContent = j.n+' remesas · '+j.n_sin_registrar+' sin situación registrada';
+  L.innerHTML = (j.remesas||[]).map(function(r,i){
+    var chips = '<span class="chip c-ok">'+r.abonadas.n+' cobradas · '+eur(r.abonadas.importe)+'</span>' +
+      (r.devueltas.n ? ' <span class="chip c-mal">'+r.devueltas.n+' devueltas · '+eur(r.devueltas.importe)+'</span>' : '') +
+      (r.sin_registrar ? ' <span class="chip c-gris">'+r.sin_registrar+' sin registrar</span>' : '') +
+      (r.gastos_banco.n ? ' <span class="chip c-amb">gastos banco '+eur(r.gastos_banco.importe)+'</span>' : '');
+    var filas = (r.facturas||[]).map(function(f){
+      var col = f.situacion==='devuelto' ? 'car' : (f.situacion==='abonado' ? 'abo' : '');
+      var txt = f.situacion==='devuelto' ? '❌ devuelta' : (f.situacion==='abonado' ? '✅ cobrada' : '· sin registrar');
+      return '<tr><td>'+esc(f.factura)+'</td><td>'+esc(f.cliente)+'</td><td class="n">'+eur(f.importe)+
+             '</td><td class="'+col+'">'+txt+'</td></tr>'; }).join('');
+    var extra = '';
+    if((r.gastos_en_el_abono||[]).length) extra += '<div class="nota"><b>Dentro de este abono hay '+r.gastos_en_el_abono.length+
+      ' línea(s) de gastos</b> ('+eur(r.gastos_en_el_abono.reduce(function(a,b){return a+b.importe;},0))+
+      '). Son gastos de devoluciones <b>anteriores</b> que se recuperaron re-girando en esta remesa — no significa que aquí haya botado nada.</div>';
+    if(r.devoluciones_aparte.n) extra += '<div class="nota"><b>El banco descontó aparte '+eur(r.devoluciones_aparte.importe)+
+      ' de recibos devueltos.</b> No es un gasto: es dinero que no ha entrado y hay que volver a cobrar.</div>';
+    if(r.gastos_banco.n) extra += '<div class="nota"><b>Gastos y comisiones del banco: '+eur(r.gastos_banco.importe)+'.</b> Esto sí es coste.</div>';
+    if(r.nota) extra += '<div class="aviso">⚠️ '+esc(r.nota)+'</div>';
+    return '<div class="r" id="r'+i+'"><div class="cab" onclick="toggle('+i+')">'+
+      '<span class="fecha">'+esc(r.fecha)+'</span><span class="banco">'+esc(r.banco)+'</span>'+chips+
+      '<span class="imp">'+eur(r.importe)+'</span></div>'+
+      '<div class="det"><table><tr><th>Factura</th><th>Cliente</th><th class="n">Importe</th><th>Situación</th></tr>'+
+      filas+'</table>'+extra+'</div></div>';
+  }).join('') || '<div class="banco">No hay remesas con facturas en este año.</div>';
+}
+cargar();
+</script></body></html>

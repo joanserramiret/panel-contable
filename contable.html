@@ -5758,22 +5758,51 @@ async function finaGatherDatos(){
     g('/contabilidad/pagos?anio=2026'),
     g('/agora/totales_mensuales?anios=2025,2026'),
     g('/remesa/verificar?anio=2026'),
-    g('/remesa/girables_transferencia?anio=2026')
+    g('/remesa/girables_transferencia?anio=2026'),
+    // ⛔⛔ [Joan 2026-08-12] FINA respondía «Saldo de tesorería NO FACILITADO — falta 'saldo_bancos' en el JSON,
+    //   sin ese dato no puedo juzgar si la caja aprieta». Y era verdad: este recolector NUNCA pedía el saldo.
+    //   Le preguntábamos si la caja aguanta sin decirle cuánto hay en el banco.
+    g('/banco/eb/saldos'),
+    g('/contabilidad/pagos_fijos')
   ]);
-  var cli=res[0]||{}, pag=res[1]||{}, tot=res[2]||{}, ver=res[3]||{}, gir=res[4]||{};
+  var cli=res[0]||{}, pag=res[1]||{}, tot=res[2]||{}, ver=res[3]||{}, gir=res[4]||{}, sal=res[5]||{}, fij=res[6]||{};
   var facsC=cli.facturas||[]; var porCli={};
   facsC.forEach(function(f){ if((+f.importe)<=0) return; var k=f.cliente||'?'; if(!porCli[k])porCli[k]={cliente:k,importe:0,fecha:f.fecha||''}; porCli[k].importe+=(+f.importe||0); if((f.fecha||'')<porCli[k].fecha||!porCli[k].fecha)porCli[k].fecha=f.fecha||porCli[k].fecha; });
   var hoy=new Date(); var dias=function(d){ if(!d)return null; var t=new Date(d); return isNaN(t)?null:Math.round((hoy-t)/86400000); };
   var deudores=Object.values(porCli).sort(function(a,b){return b.importe-a.importe;}).slice(0,6).map(function(d){return {cliente:d.cliente,importe:Math.round(d.importe),dias:dias(d.fecha)};});
   var nosDeben=Object.values(porCli).reduce(function(a,d){return a+d.importe;},0);
   var lim=new Date(); lim.setDate(lim.getDate()+14); var venc=[];
-  (pag.facturas||[]).forEach(function(f){ if(f.estado_pago==='pagada'||f.pagada||f.externo)return; var v=f.vencimiento||f.venc; if(!v)return; var t=new Date(v); if(isNaN(t)||t>lim)return; venc.push({proveedor:f.proveedor_nombre||f.proveedor||f.entidad||'?',fecha:v,importe:Math.round(+f.importe||0),domiciliado:!!(f.domiciliado||f.cal==='programada')}); });
+  // ⛔⛔ [Joan 2026-08-12: «ningún vencimiento de proveedor en los próximos 14 días»] MENTIRA, y la culpa era de
+  //   esta línea: la lista se pedía como `pag.facturas` y /contabilidad/pagos la devuelve en **`pagos`**. Clave
+  //   inexistente → array vacío → FINA concluía «no hay vencimientos, hay margen» con 3.512 € a punto de salir.
+  //   Además el filtro miraba `estado_pago`/`pagada`/`externo` (no existen; el campo es `estado`) y el importe
+  //   salía de `importe`, que aquí es `a_pagar` (o `pendiente` si va a medias). El mismo fallo estaba en el
+  //   recolector del servidor (`_fina_gather_servidor`), arreglado hoy: eran DOS copias del mismo error.
+  var FUERA=['pagada','externo','tarjeta','abono'];
+  (pag.pagos||pag.facturas||[]).forEach(function(f){
+    if(FUERA.indexOf(f.estado||'')>=0) return;
+    var v=f.vencimiento||f.venc; if(!v) return;
+    var t=new Date(v); if(isNaN(t)||t>lim) return;
+    var imp=(f.pendiente!=null?f.pendiente:(f.a_pagar!=null?f.a_pagar:f.importe));
+    imp=Math.round(+imp||0); if(imp<=0) return;
+    venc.push({proveedor:f.proveedor_nombre||f.proveedor||f.entidad||'?',fecha:v,importe:imp,domiciliado:!!(f.domiciliado||f.cal==='programada')});
+  });
+  // 🏛️ y los pagos fijos recurrentes (SS, AEAT, seguro, gestoría, nómina) que caen dentro de esos 14 días
+  (fij.pagos_fijos||[]).forEach(function(f){
+    var v=f.proxima; if(!v) return; var t=new Date(v); if(isNaN(t)||t>lim) return;
+    venc.push({proveedor:f.nombre,fecha:v,importe:Math.round(+f.importe||0),domiciliado:true,fijo:true});
+  });
   venc.sort(function(a,b){return (a.fecha||'').localeCompare(b.fecha||'');});
   var pct=null, m25=0, m26=0;
   if(tot.meses||tot.series){ try{ var s25=(tot.series&&tot.series['2025'])||[], s26=(tot.series&&tot.series['2026'])||[]; m25=s25.reduce(function(a,b){return a+(+b||0);},0); m26=s26.reduce(function(a,b){return a+(+b||0);},0); if(m25>0)pct=Math.round((m26-m25)/m25*1000)/10; }catch(e){} }
   var datos={
     fecha:new Date().toISOString().slice(0,10),
     tesoreria:{nos_deben:Math.round(nosDeben), debemos:Math.round(pag.tot_deuda_real||0), accionable_proveedores:Math.round(pag.tot_accionable||0)},
+    saldo_bancos:(function(){
+      var ss=(sal.saldos||[]).filter(function(x){return x.saldo!=null;})
+        .map(function(x){return {banco:x.banco,saldo:x.saldo,fuente:x.fuente,fecha:x.actualizado};});
+      return ss.length?{total:Math.round(ss.reduce(function(a,b){return a+(+b.saldo||0);},0)*100)/100, por_banco:ss}:null;
+    })(),
     deudores_top:deudores,
     vencimientos_14d:venc.slice(0,12),
     girables_transferencia:(gir.girables||[]).map(function(x){return {cliente:x.cliente,factura:'F-'+x.numero,importe:x.importe};}),

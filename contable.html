@@ -489,7 +489,6 @@
 
   <nav id="cnav" class="modo-simple">
     <a href="/app/sisconta.html" target="_blank" class="nav-tab" title="Contabilidad OFICIAL de SisConta (solo lectura): diario, mayor, sumas y saldos, balance, PyG, libros de IVA, 347, terceros y cruzador panel↔SisConta" style="text-decoration:none;background:#fbbf24;color:#1a2e6e;font-weight:800;flex:0 0 auto">📚 PANEL SISCONTA</a>
-    <a href="/app/raquel.html" target="_blank" class="nav-tab" title="Panel de Raquel (Contable Oficial): entrada de facturas, clasificar, remesas y cobros" style="text-decoration:none;background:#0ea5e9;color:#06283d;font-weight:800;flex:0 0 auto">📚 CONTABLE OFICIAL</a>
     <div class="nav-tab active tab-simple" onclick="switchTabC('dashboard')" id="ctab-dashboard">📊 Resumen</div>
     <div class="nav-tab tab-simple" onclick="switchTabC('pulso')" id="ctab-pulso" style="background:#1e1b4b;color:#fff;font-weight:700">🩺 Pulso</div>
     <div class="nav-tab tab-simple" onclick="switchTabC('cobros')" id="ctab-cobros">💶 Cobros</div>
@@ -6522,6 +6521,7 @@ function buzonFile(file){
       // "adeudos/listado/impagados/remesa" = listado de remesa → flujo de remesa. Lo demás = factura → cajón.
       if(/aviso.?de.?pago|aviso_de_pago|aviso.*pago/i.test(file.name)) tipo='aviso';
       else if(/liquidaci|liquidacion.*recibo|recibos.*liquidaci/i.test(file.name)) tipo='liquidacion';  // Liquidación de recibos Bankinter (detalle por remesa)
+      else if(/tjliquidation|liquidaci[oó]n.*tarjeta|tarjeta.*liquidaci[oó]n/i.test(file.name)) tipo='tarjeta_pdf';  // 💳 liquidación de la tarjeta de crédito (Sabadell, TJLiquidationsQuery*.pdf)
       else if(/devuelt|devoluci[oó]n|avance.*extracto|r\.?d\.?\s*sepa/i.test(file.name)) tipo='devolucion';
       else if(/adeudo|listado de adeudos|cumovements|remesa|impagad/i.test(file.name)) tipo='remesa';
       else tipo='pdf';
@@ -6746,6 +6746,10 @@ async function buzonDetectado(file, tipo, txt){
       var b64probe=await buzonB64(file);
       var lj=await fetch(BRIDGE_URL_C+'/banco/liquidacion_pdf',{method:'POST',headers:HP,body:JSON.stringify({pdf_base64:b64probe})}).then(function(r){return r.json();});
       if(lj && lj.es_liquidacion){ buzonDetectado(file,'liquidacion',''); return; }
+      // 💳 ¿liquidación de la TARJETA? El PDF de Sabadell se llama 'TJLiquidationsQuery' (inglés),
+      // así que por nombre no se pilla: se pregunta al backend, que lo lee con pypdf.
+      var tjp=await fetch(BRIDGE_URL_C+'/banco/tarjeta_pdf',{method:'POST',headers:HP,body:JSON.stringify({pdf_base64:b64probe,nombre:file.name})}).then(function(r){return r.json();});
+      if(tjp && tjp.es_tarjeta){ window._buzonTJ=tjp; buzonDetectado(file,'tarjeta_pdf',''); return; }
     }catch(e){}
     res.innerHTML=badge('📄 Factura (PDF) detectada','#faeeda')+'<div style="margin:12px 0;font-size:13px">La guardo en el <b>cajón</b> y se clasificará sola al ordenar el cajón.</div><button id="buzon-pdf" style="padding:8px 18px;border:none;border-radius:8px;background:#854F0B;color:#fff;cursor:pointer;font-weight:700">Guardar en el cajón</button><div id="buzon-pdfres" style="margin-top:8px"></div>';
     document.getElementById('buzon-pdf').onclick=async function(){ var b=document.getElementById('buzon-pdf'); b.disabled=true; b.textContent='Guardando…';
@@ -6753,6 +6757,54 @@ async function buzonDetectado(file, tipo, txt){
         var j=await fetch(BRIDGE_URL_C+'/proveedores/subir_doc',{method:'POST',headers:HP,body:JSON.stringify({nombre:file.name, archivo_base64:b64})}).then(function(r){return r.json();});
         document.getElementById('buzon-pdfres').innerHTML = j.ok? '<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Guardada en el cajón. Ve a 📥 Facturas recibidas → ordenar el cajón cuando quieras.</div>' : '<div style="color:#dc2626;font-size:13px">'+(j.error||'Error')+'</div>';
       }catch(e){ document.getElementById('buzon-pdfres').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; } };
+  } else if(tipo==='tarjeta_pdf'){
+    // 💳 LIQUIDACIÓN DE TARJETA (PDF de Sabadell). El .xls solo trae las compras; este PDF trae
+    // además el cargo real, los INTERESES y la deuda aplazada que queda. Al registrarlo se encadena
+    // el desglose del cargo del banco -> las compras salen en 💳 Compras tarjeta. [Joan 2026-08-18]
+    res.innerHTML=badge('💳 Liquidación de tarjeta (PDF)','#ede9fe')+'<div style="margin:12px 0 6px;font-size:13px">Leyendo el PDF…</div><div id="buzon-tjp"></div>';
+    var cp=document.getElementById('buzon-tjp');
+    var eur2=function(v){return v==null?'—':new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v)+' €';};
+    try{
+      var d=window._buzonTJ; window._buzonTJ=null;
+      if(!d || !d.es_tarjeta){
+        var b64t=await buzonB64(file);
+        d=await fetch(BRIDGE_URL_C+'/banco/tarjeta_pdf',{method:'POST',headers:HP,body:JSON.stringify({pdf_base64:b64t,nombre:file.name})}).then(function(r){return r.json();});
+      }
+      if(!d || !d.es_tarjeta){ cp.innerHTML='<div style="color:#dc2626;font-size:13px">'+((d&&d.error)||'No es una liquidación de tarjeta.')+'</div>'; return; }
+      var h='<div style="font-size:13px;margin-bottom:8px">💳 Tarjeta <b>'+(d.tarjeta||'?')+'</b>'+(d.titular?' · '+d.titular:'')+' · periodo <b>'+(d.periodo||'?').replace('/',' → ')+'</b></div>';
+      if((d.movimientos||[]).length){ h+='<div style="border:1px solid #eee;border-radius:8px;overflow:auto;max-height:190px;margin-bottom:8px">';
+        d.movimientos.forEach(function(mv){ h+='<div style="display:flex;gap:8px;padding:5px 10px;border-bottom:1px solid #f4f4f4;font-size:12.5px"><span style="color:#888;width:42px">'+mv.fecha+'</span><span style="flex:1">'+(mv.concepto||'')+'</span><span style="color:#aaa;font-size:11px">'+(mv.localidad||'')+'</span><span style="font-weight:600">'+eur2(mv.importe)+'</span></div>'; });
+        h+='</div>'; }
+      h+='<div style="font-size:12.5px;color:#444;margin-bottom:6px">Compras del periodo: <b>'+eur2(d.suma_movimientos)+'</b> '+(d.cuadra?'<span style="color:#0F6E56;font-weight:700">✓ cuadra con el total impreso</span>':'<span style="color:#a05000;font-weight:700">⚠️ no he podido cotejarlo con el total impreso</span>')+'</div>';
+      h+='<div style="background:#f6f4ff;border-left:3px solid #6d28d9;border-radius:7px;padding:9px 11px;font-size:12.5px;color:#3b2a6d;margin-bottom:8px">'+
+         'Cargo en cuenta el <b>'+(d.fecha_corte||'?')+'</b>: <b>'+eur2(d.importe_liquidar)+'</b>'+
+         (d.intereses?' · intereses <b>'+eur2(d.intereses)+'</b>':'')+
+         (d.aplazado_siguiente?' · aplazado que queda <b>'+eur2(d.aplazado_siguiente)+'</b>':'')+
+         (d.modalidad?'<div style="margin-top:3px;color:#6b5ea8">Modalidad: '+d.modalidad+'</div>':'')+'</div>';
+      if(d.limite&&d.saldo_total&&(d.saldo_total/d.limite)>0.9) h+='<div style="margin-bottom:8px;background:#fdeaea;border-left:3px solid #dc2626;border-radius:7px;padding:8px 11px;font-size:12px;color:#991b1b">⚠️ Tarjeta al '+Math.round(d.saldo_total/d.limite*100)+'% del límite ('+eur2(d.saldo_total)+' de '+eur2(d.limite)+'). El aplazado es deuda cara.</div>';
+      if(d.ya_registrado) h+='<div style="margin-bottom:8px;font-size:12px;color:#a05000">ℹ️ Esta liquidación ya estaba registrada: al registrarla otra vez se sobrescribe con lo que diga el PDF.</div>';
+      if((d.solapan||[]).length) h+='<div style="margin-bottom:8px;font-size:12px;color:#666">Hay '+d.solapan.length+' extracto(s) del mismo periodo (los .xls bajados a media\u00a0mes): quedarán marcados como <b>sustituidos</b> por este PDF, que es el documento oficial. No se borra nada.</div>';
+      if(d.cargo) h+='<div style="margin-bottom:8px;font-size:12.5px;color:#1e3a5f;background:#e7f0fd;border-left:3px solid #185FA5;border-radius:7px;padding:8px 11px">🏦 Su cargo en el banco: <b>'+eur2(d.cargo.importe)+'</b> el <b>'+d.cargo.fecha+'</b>'+(d.cargo.desglosado?' · <span style="color:#0F6E56;font-weight:700">ya desglosado ('+d.cargo.desglosado+' compras)</span>':' · <b>sin desglosar</b> → lo desgloso al registrar')+'</div>';
+      else h+='<div style="margin-bottom:8px;font-size:12px;color:#a05000">⚠️ No encuentro en el banco el cargo de '+eur2(d.importe_liquidar)+'. Registro la liquidación igual; el desglose se hará cuando importes el N43 de ese mes.</div>';
+      h+='<button id="buzon-tjp-reg" style="padding:8px 18px;border:none;border-radius:8px;background:#6d28d9;color:#fff;cursor:pointer;font-weight:700">Registrar liquidación</button><div id="buzon-tjp-done" style="margin-top:8px"></div>';
+      cp.innerHTML=h;
+      document.getElementById('buzon-tjp-reg').onclick=async function(){ var b=this; b.disabled=true; b.textContent='Registrando…';
+        var fin=document.getElementById('buzon-tjp-done');
+        try{
+          var b64i=await buzonB64(file);
+          var jr=await fetch(BRIDGE_URL_C+'/banco/tarjeta_pdf',{method:'POST',headers:HP,body:JSON.stringify({pdf_base64:b64i,nombre:file.name,importar:1})}).then(function(r){return r.json();});
+          if(!jr.ok){ fin.innerHTML='<div style="color:#dc2626;font-size:13px">'+(jr.error||'Error')+'</div>'; b.disabled=false; b.textContent='Registrar liquidación'; return; }
+          var msg='<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Liquidación registrada: '+(jr.movimientos||[]).length+' compras, '+eur2(jr.suma_movimientos)+'.</div>';
+          // encadena el desglose del cargo del banco -> 💳 Compras tarjeta
+          if(jr.cargo && !jr.cargo.desglosado){
+            var jd=await fetch(BRIDGE_URL_C+'/banco/tarjeta_desglosar?mov='+jr.cargo.mov+'&clave='+encodeURIComponent(jr.clave),{headers:{'ngrok-skip-browser-warning':'true'}}).then(function(r){return r.json();});
+            msg += jd.ok ? '<div style="color:#0F6E56;font-weight:700;font-size:13px;margin-top:4px">✅ Cargo del '+jd.fecha_cargo+' desglosado: '+jd.n_compras+' compras ya salen en 💳 Compras tarjeta (pendientes de factura).</div>'
+                         : '<div style="color:#a05000;font-size:12.5px;margin-top:4px">⚠️ Registrada, pero el desglose no se pudo hacer: '+(jd.error||'?')+'</div>';
+          } else if(jr.cargo){ msg+='<div style="font-size:12.5px;color:#666;margin-top:4px">El cargo ya estaba desglosado; no lo toco.</div>'; }
+          fin.innerHTML=msg; b.textContent='✅ Registrada';
+          try{ if(typeof cargarTarjeta==='function' && document.getElementById('ctc-tarjeta') && document.getElementById('ctc-tarjeta').classList.contains('active')) cargarTarjeta(); }catch(e){}
+        }catch(e){ fin.innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Registrar liquidación'; } };
+    }catch(e){ cp.innerHTML='<div style="color:#dc2626;font-size:13px">No pude leer el PDF: '+e.message+'</div>'; }
   } else if(tipo==='aviso'){
     res.innerHTML=badge('📅 Aviso de pago detectado','#e7f0fd')+
       '<div style="margin:12px 0;font-size:13px">Leo la fecha de cargo y las facturas que cargarán ese día (IGT y similares)…</div><div id="buzon-avres"></div>';

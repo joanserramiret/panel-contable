@@ -3030,8 +3030,14 @@ function actualizarCobros() {
     //   que el bote, y es el ultimo. Ofrecerla otra vez seria el DOBLE GIRO. Si NO consta re-girada, manda el bote
     //   y vuelve al juego, exactamente como hasta ahora.
     const regirada = !!(window._regiradas && window._regiradas.has(clave));
+    // \u26d4 0) INCOBRABLE — manda sobre TODO lo de abajo, incluido el ajuste manual. Cliente dado de
+    //    baja/cerrado (clientes_baja.json): girarle un recibo es devoluci\u00f3n segura + 8,08 \u20ac de gastos.
+    //    Se queda en «a perseguir» para que se vea que ese dinero NO ha entrado, pero nunca en PARA GIRAR.
+    //    [Joan 2026-08-18, caso SDAD COOP MENORCA GLOBAL, cerrada el 24/06: F-7584 y F-7651]
+    const incobrable = !!(window._incobrables && window._incobrables.has(clave));
     let destino;
-    if (devuelta && !regirada)  destino = carteraDestinos[clave] || (recibo ? 'girar' : 'perseguir');  // botó → re-girar (recibo) o perseguir (transfer)
+    if (incobrable)             destino = 'perseguir';
+    else if (devuelta && !regirada)  destino = carteraDestinos[clave] || (recibo ? 'girar' : 'perseguir');  // botó → re-girar (recibo) o perseguir (transfer)
     else if (enRem || regirada) destino = 'proceso';
     else if (aplazada)  destino = 'proceso';
     else                destino = carteraDestinos[clave] || (recibo ? 'girar' : 'perseguir');
@@ -3176,16 +3182,18 @@ async function cargarEnRemesa() {
   //    POSTERIOR (el bridge lo marca comparando fechas). Sin esto la columna las pintaba en PARA GIRAR para siempre
   //    —la rama `devuelta` se evalua ANTES que `enRem`— y se podian girar dos veces. Caso F-8038 Rest Longa: boto el
   //    29/07 y se re-giro en la remesa del 05/08. [Joan]
-  const rg = new Set(), notas = {};
+  const rg = new Set(), inc = new Set(), notas = {};
   try {
     const j = await fetch(`${BRIDGE_URL_C}/contabilidad/clientes_pendientes?anio=2026&nocache=${Date.now()}`, { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
     (j.facturas || []).forEach(f => {
       const k = bkNormClave((f.serie || 'F') + '-' + f.numero);
       if (f.en_remesa) s.add(k);
+      if (f.incobrable) inc.add(k);          // cliente de baja/cerrado → NUNCA girar
       if (f.regirada) { rg.add(k); if (f.nota_remesa) notas[k] = f.nota_remesa; }
     });
   } catch(e) {}
   window._enRemesa = s;
+  window._incobrables = inc;
   window._regiradas = rg;
   window._notaRegiro = notas;
 }

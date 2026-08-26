@@ -1620,7 +1620,7 @@ async function cargarCobradasBanco() {
   try {
     const r = await fetch(BRIDGE_URL_C + '/banco/movimientos?estado=conciliado', { headers: { 'ngrok-skip-browser-warning': 'true' } });
     const movs = (await r.json()).movimientos || [];
-    const cobradas = new Set(), devueltas = new Set(), detalle = {};
+    const cobradas = new Set(), devueltas = new Set(), detalle = {}, ultSit = {};
     movs.forEach(m => {
       const ents = bkClavesDeConciliado(m.conciliado);
       // ¿Es una COMPENSACIÓN? (abono FD + F nueva en el MISMO movimiento, p.ej. devolución por transferencia
@@ -1630,11 +1630,25 @@ async function cargarCobradasBanco() {
         // Trazabilidad: en qué movimiento(s) está imputada cada factura
         (detalle[k] = detalle[k] || []).push({ id: m.id, fecha: m.fecha, banco: m.banco,
           concepto: m.concepto, importe: m.importe, situacion: f.situacion || 'abonado' });
+        // \u23f1\ufe0f Se anota la situaci\u00f3n del \u00daLTIMO documento del banco para esta factura (ver abajo).
+        const _sit = (f.situacion === 'devuelto') ? 'devuelto' : 'abonado';
+        const _fe = m.fecha || '';
+        if (!ultSit[k] || _fe > ultSit[k][0] || (_fe === ultSit[k][0] && _sit === 'devuelto')) ultSit[k] = [_fe, _sit];
         if (f.situacion === 'devuelto') devueltas.add(k);
         else if (m.importe > 0) cobradas.add(k);  // cobro válido = en un ABONO y no marcado devuelto
         else if (hayAbonoFD && (f.importe || 0) > 0) cobradas.add(k);  // F saldada por compensación FD+F (devolución por transferencia)
       });
     });
+    // \u26d4\u26d4 LA \u00daLTIMA SITUACI\u00d3N MANDA [Joan 2026-08-26, caso BOLSOS MARISA F-7953]
+    //  `cobradas` y `devueltas` se van LLENANDO movimiento a movimiento, pero el filtro de la cartera solo
+    //  pregunta por `cobradas`. Una factura cobrada en la remesa y DEVUELTA despu\u00e9s se quedaba en `cobradas`
+    //  para siempre: F-7953 se abon\u00f3 el 10/07 (mov 1238) y bot\u00f3 el 14/07 (mov 1244), y desaparec\u00eda de la
+    //  cartera entera \u2014 ni en \uD83E\uDDF2 a girar, ni en \uD83C\uDFC3 a perseguir, ni en el panel de Cobros.
+    //  Sal\u00eda en el Constructor de remesa (que usa /remesa/verificar, otro camino) y en ning\u00fan sitio m\u00e1s:
+    //  dinero pendiente invisible. Afectaba tambi\u00e9n a F-7584 y F-7651 (SDAD COOP, incobrables).
+    //  El backend ya aplicaba esta regla en /contabilidad/clientes_pendientes; aqu\u00ed hab\u00eda quedado la vieja.
+    //  Un empate de fecha lo gana `devuelto`: si el mismo d\u00eda hay abono y bote, el bote es el desenlace.
+    Object.keys(ultSit).forEach(k => { if (ultSit[k][1] === 'devuelto') cobradas.delete(k); });
     // Ciclo del recibo devuelto: la devolución deja la factura pendiente HASTA que un nuevo
     // cobro válido (transferencia o nueva remesa) la "mata" → entonces cuenta como cobrada.
     // ➕ Cobros RESUELTOS A MANO (cobro fuera del extracto, p.ej. remesa de enero anterior a los datos N43):

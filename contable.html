@@ -7068,7 +7068,10 @@ async function remesisarAbrir(banco){
     var mk=function(v,tipo){var m=byFac[norm(v.fact)]||{};var gas=+(v.gastos||0);
       var imp=(tipo==='regirar'&&gas>0)?(+(v.total_regirar||((+v.importe)+gas))):(+v.importe);
       var con='COBRO '+v.fact+((tipo==='regirar'&&gas>0)?(' + gastos dev '+gas.toFixed(2)):'');
-      return {cliente:m.cliente||v.cliente,nif:m.nif||'',importe:imp,facturas:[v.fact],concepto:con,fact:v.fact,tipo:tipo,gastos:gas,base:+v.importe,bancoDev:v.banco_dev||'',nota:v.nota||'',motivo:v.motivo||'',_sel:true};};
+      // \uD83E\uDD1D [2026-08-26, Joan] `_gas` = \u00bfse le cobran los gastos de devoluci\u00f3n? Nace en true (los paga
+      //    quien los genera), pero hay clientes que discuten que la culpa no es suya y eso se negocia. La
+      //    casilla lo decide CADA VEZ: no se recuerda por cliente, para no dejar de cobrar sin enterarse.
+      return {cliente:m.cliente||v.cliente,nif:m.nif||'',importe:imp,facturas:[v.fact],concepto:con,fact:v.fact,tipo:tipo,gastos:gas,base:+v.importe,bancoDev:v.banco_dev||'',nota:v.nota||'',motivo:v.motivo||'',_sel:true,_gas:true};};
     var nuevas=(g.verde||[]).filter(function(v){return !yaRem[norm(v.fact)];}).map(function(v){return mk(v,'nueva');});
     var regir=(g.regirar||[]).map(function(v){return mk(v,'regirar');});
     // 🟡 REVISAR: mismo cliente+importe+MISMO MES (posible doble facturación). NO se giran solas (_sel:false);
@@ -7100,7 +7103,7 @@ async function remesisarAbrir(banco){
     var _ibanFac={'F-7943':'ES9321000055560201215544'};
     window._consRecibos.forEach(function(r){ var ib=_ibanFac[(r.fact||'').toUpperCase()]; if(ib){ r.iban=ib; r.ref_mandato=(r.nif||'').replace(/[^A-Za-z0-9]/g,'').toUpperCase(); } });
     var nRem=Object.keys(yaRem).length;
-    var row=function(r,i,col){return '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:4px 2px;border-bottom:1px solid #f4f4f4;cursor:pointer"><input type="checkbox" '+(r._sel?'checked':'')+' onchange="window._consRecibos['+i+']._sel=this.checked;consTotal()"><span style="width:70px;color:'+col+';font-weight:600">'+r.fact+'</span><span style="flex:1">'+(r.cliente||'(sin nombre)')+(r.gastos>0?' <span style="color:#185FA5;font-size:11px">+ '+eur(r.gastos)+' gastos dev'+(r.bancoDev?' '+r.bancoDev:'')+'</span>':'')+(r.devuelta?' <span style="background:#fdecec;color:#c0392b;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700">🔄 botó · re-giro</span>':'')+(r.nota?' <span style="background:#eef4ff;color:#2b4b8f;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700" title="centro/local (nota de la factura)">🏬 '+r.nota+'</span>':'')+(r.nif?'':' <span style=\'color:#c00\'>⚠ sin NIF</span>')+'</span><span style="font-weight:600">'+eur(r.importe)+'</span></label>';};
+    var row=function(r,i,col){return '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:4px 2px;border-bottom:1px solid #f4f4f4;cursor:pointer"><input type="checkbox" '+(r._sel?'checked':'')+' onchange="window._consRecibos['+i+']._sel=this.checked;consTotal()"><span style="width:70px;color:'+col+';font-weight:600">'+r.fact+'</span><span style="flex:1">'+(r.cliente||'(sin nombre)')+(r.gastos>0?' <span id="gas-w-'+i+'" style="color:'+(r._gas!==false?'#185FA5':'#999')+';font-size:11px" title="Desmarca si al cliente no se le cobran los gastos de la devoluci\u00f3n. Queda anotado en gastos perdonados."><label style="cursor:pointer" onclick="event.preventDefault();event.stopPropagation();consGastos('+i+',!(window._consRecibos['+i+']._gas!==false))"><input type="checkbox" '+(r._gas!==false?'checked':'')+' style="vertical-align:-1px;margin:0 3px 0 0"><span id="gas-t-'+i+'">'+(r._gas!==false?'+ '+eur(r.gastos)+' gastos dev'+(r.bancoDev?' '+r.bancoDev:''):'gastos dev '+eur(r.gastos)+' PERDONADOS')+'</span></label></span>':'')+(r.devuelta?' <span style="background:#fdecec;color:#c0392b;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700">🔄 botó · re-giro</span>':'')+(r.nota?' <span style="background:#eef4ff;color:#2b4b8f;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700" title="centro/local (nota de la factura)">🏬 '+r.nota+'</span>':'')+(r.nif?'':' <span style=\'color:#c00\'>⚠ sin NIF</span>')+'</span><span id="gas-i-'+i+'" style="font-weight:600">'+eur(r.importe)+'</span></label>';};
     var html='';
     if(!window._consRecibos.length && !sinMand.length){ html='<div style="background:#f3f6fb;border-radius:9px;padding:14px;color:#555;font-size:13px">No hay nada que girar ahora mismo. Cuando emitas facturas domiciliadas o haya devoluciones, aparecerán aquí.'+(nRem?' ('+nRem+' ya en remesa esperando cobro.)':'')+'</div>'; }
     else{
@@ -7122,11 +7125,31 @@ async function remesisarAbrir(banco){
   }catch(e){ var b=document.getElementById('rem-body'); if(b) b.innerHTML='<div style="color:#dc2626">Error: '+e.message+'</div>'; }
 }
 function consTotal(){ var a=window._consRecibos||[]; var t=0,n=0; a.forEach(function(r){if(r._sel!==false){t+=+r.importe;n++;}}); var el=document.getElementById('cons-tot'); if(el) el.textContent=new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(t)+' € · '+n+' recibos'; }
+// \uD83E\uDD1D Marca/desmarca el cobro de los gastos de devoluci\u00f3n de UN recibo y recalcula importe y concepto.
+//    El concepto se rehace entero: si se perdonan, el texto NO puede seguir diciendo "+ gastos dev" \u2014 ese
+//    texto viaja al banco y acaba en el extracto del cliente.
+function consGastos(i,v){
+  var a=window._consRecibos||[]; var r=a[i]; if(!r) return;
+  r._gas=!!v;
+  var gas=+(r.gastos||0), base=+(r.base||0);
+  r.importe=+( (base + (r._gas?gas:0)).toFixed(2) );
+  r.concepto='COBRO '+r.fact+((r._gas&&gas>0)?(' + gastos dev '+gas.toFixed(2)):'');
+  var eur=function(x){return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(x||0)+' \u20ac';};
+  var w=document.getElementById('gas-w-'+i), t=document.getElementById('gas-t-'+i), im=document.getElementById('gas-i-'+i);
+  if(w){ w.style.color=r._gas?'#185FA5':'#999'; var cb=w.querySelector('input'); if(cb) cb.checked=r._gas; }
+  if(t) t.textContent=r._gas?('+ '+eur(gas)+' gastos dev'+(r.bancoDev?' '+r.bancoDev:'')):('gastos dev '+eur(gas)+' PERDONADOS');
+  if(im) im.textContent=eur(r.importe);
+  consTotal();
+}
 function consToggleAll(v){ (window._consRecibos||[]).forEach(function(r){r._sel=v;}); document.querySelectorAll('#rem-body input[type=checkbox]').forEach(function(c){c.checked=v;}); consTotal(); }
 async function remesisarGenerar(){
   var all=window._consRecibos||[];
   var recibos=all.filter(function(r){return r._sel!==false;});
   if(!recibos.length){ alert('No has marcado ningún recibo.'); return; }
+  // \uD83E\uDD1D Gastos que se ha decidido NO cobrar: van aparte para que queden ANOTADOS. Es dinero que nos
+  //    comemos nosotros; si no se escribe, desaparece sin rastro.
+  window._consPerdonados=recibos.filter(function(r){return (+(r.gastos||0))>0 && r._gas===false;})
+                                .map(function(r){return {fact:r.fact,cliente:r.cliente,importe:+(r.gastos||0)};});
   var _sinNif=recibos.filter(function(r){return !(((r.nif||'')+'').trim());});
   if(_sinNif.length){ alert('⚠️ '+_sinNif.length+' recibo(s) SIN NIF ('+_sinNif.slice(0,4).map(function(r){return r.fact;}).join(', ')+(_sinNif.length>4?'…':'')+').\n\nFaltan los datos de esas facturas (aún no descargadas de Ágora). Ve a 🧾 Facturas emitidas, pulsa 🔍 Cargar datos y vuelve a abrir el Constructor. No genero la remesa para no mandar recibos con datos incompletos.'); return; }
   var banco=window._remesisarBanco||'Sabadell';
@@ -7134,7 +7157,7 @@ async function remesisarGenerar(){
   var body=document.getElementById('rem-body');
   var norm=function(s){return (s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');};
   try{
-    var j=await fetch(BRIDGE_URL_C+'/remesa/generar',{method:'POST',headers:H,body:JSON.stringify({banco:banco,confirmar:1,recibos:recibos})}).then(function(r){return r.json();});
+    var j=await fetch(BRIDGE_URL_C+'/remesa/generar',{method:'POST',headers:H,body:JSON.stringify({banco:banco,confirmar:1,recibos:recibos,perdonados:(window._consPerdonados||[])})}).then(function(r){return r.json();});
     if(j.contenido_b64){
       var bin=atob(j.contenido_b64);var by=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)by[i]=bin.charCodeAt(i);
       var blob=new Blob([by],{type:'text/plain'});var url=URL.createObjectURL(blob);

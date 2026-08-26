@@ -2989,11 +2989,21 @@ function actualizarCobros() {
     });
   }
   const _totPend = pendientes.reduce((s,f) => s + (f.Totals ? f.Totals.GrossAmount : 0), 0);
+  // \u26d4 OJO AL ORDEN: este resumen se pinta ANTES del reparto por columnas de m\u00e1s abajo, as\u00ed que el total
+  //    de incobrables se calcula AQU\u00cd. Si se acumulara en el reparto, la chapa ense\u00f1ar\u00eda el dato del
+  //    refresco ANTERIOR (o nada la primera vez). Va sobre `pendientes`, la misma lista que suma `_totPend`.
+  let _incobTot = 0, _incobN = 0;
+  pendientes.forEach(f => {
+    if (window._incobrables && window._incobrables.has(bkNormClave(f.Serie + '-' + f.Number))) {
+      _incobTot += (f.Totals ? f.Totals.GrossAmount : 0); _incobN++;
+    }
+  });
   const _rb = document.getElementById('cob-resumen-banco');
   if (_rb) _rb.innerHTML = banco
     ? '<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:13px">' +
         '<span style="background:#e8f7ef;border:1px solid #a7d7b8;border-radius:8px;padding:6px 12px;font-weight:700;color:#1b7a3d">✓ Cobrado (banco + remesas): ' + bkFmt(_cobBanco) + ' <span style="font-weight:400;color:#6b8b76">· ' + _nCobBanco + ' fra.</span></span>' +
         '<span style="background:#fff3e0;border:1px solid #e8b27a;border-radius:8px;padding:6px 12px;font-weight:700;color:#b45309">⏳ Pendiente: ' + bkFmt(_totPend) + ' <span style="font-weight:400;color:#a07a4a">· ' + pendientes.length + ' fra.</span></span>' +
+        (_incobN ? '<span title="Clientes cerrados o dados de baja (clientes_baja.json). Ni se giran ni se persiguen: girarles un recibo es devoluci\u00f3n segura m\u00e1s gastos. Va incluido en el Pendiente de al lado; se separa para que se vea cu\u00e1nto de eso no va a entrar." style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:6px 12px;font-weight:700;color:#64748b">\u26b0\ufe0f De ello incobrable: ' + bkFmt(_incobTot) + ' <span style="font-weight:400;color:#94a3b8">\u00b7 ' + _incobN + ' fra.</span></span>' : '') +
       '</div>'
     : '';
 
@@ -3016,7 +3026,7 @@ function actualizarCobros() {
   // DOS CARTERAS por método de pago (el ajuste manual prevalece):
   // 🧲 GIRAR = cobradas "por Recibo" en Ágora que no se negociaron → montar SEPA
   // 🏃 PERSEGUIR = impagos (recibos devueltos) y transferencias que no llegan → reclamar
-  const cols = { girar: {}, proceso: {}, perseguir: {} };
+  const cols = { girar: {}, proceso: {}, perseguir: {}, incobrable: {} };
   carteraFacts = {};
   pendientes.forEach(f => {
     const t = f.Totals ? f.Totals.GrossAmount : 0;
@@ -3050,7 +3060,11 @@ function actualizarCobros() {
     //    [Joan 2026-08-18, caso SDAD COOP MENORCA GLOBAL, cerrada el 24/06: F-7584 y F-7651]
     const incobrable = !!(window._incobrables && window._incobrables.has(clave));
     let destino;
-    if (incobrable)             destino = 'perseguir';
+    // \u26b0\ufe0f [Joan 2026-08-26] "sdad si es incobrable no hace falta q salga". A un cliente cerrado no se
+    //    le persigue: ensuciaba la lista de trabajo con deuda que nadie va a cobrar. Va a su propio caj\u00f3n,
+    //    que NO se pinta como columna \u2014 pero su importe S\u00cd sale arriba, para que la p\u00e9rdida siga contada
+    //    y alg\u00fan d\u00eda se pueda dar de baja. No perseguirlo no es lo mismo que borrarlo de la vista.
+    if (incobrable)             destino = 'incobrable';
     else if (devuelta && !regirada)  destino = carteraDestinos[clave] || (recibo ? 'girar' : 'perseguir');  // botó → re-girar (recibo) o perseguir (transfer)
     else if (enRem || regirada) destino = 'proceso';
     else if (aplazada)  destino = 'proceso';

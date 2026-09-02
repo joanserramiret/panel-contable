@@ -6619,6 +6619,38 @@ async function buzonParseRemesaXls(file){
   var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
   var sh=wb.Sheets[wb.SheetNames[0]];
   var rows=XLSX.utils.sheet_to_json(sh,{header:1,raw:false,defval:''});
+  // ===== FORMATO C: SABADELL "Listado de órdenes de ficheros" =====
+  //  [Joan 2026-09-02] Es el fichero que demostró que F-7953 (BOLSOS MARISA) había sido DEVUELTA las
+  //  tres veces que se giró, cuando el panel lo estaba DEDUCIENDO por importe. Cabecera distinta a la
+  //  de Bankinter (Nombre Librado, no Nombre del Deudor) y otras palabras: dice "Compensado", no
+  //  "Abonado". Y NO trae el número de factura: la Referencia es sufijo+CIF ("1E72982812"). El cruce
+  //  con el C192 de esa misma remesa lo hace el bridge; aquí no se adivina nada.
+  var hdrC=-1;
+  for(var i3=0;i3<rows.length;i3++){ var j3=(rows[i3]||[]).join(' ').toUpperCase(); if(j3.indexOf('NOMBRE LIBRADO')>=0 && j3.indexOf('SITUAC')>=0){ hdrC=i3; break; } }
+  if(hdrC>=0){
+    var mt={banco:'Sabadell', tipo:'situacion', fecha_venc:null, total:null, n_ordenes:null, cuenta:'', recibos:[], n_abonadas:0, n_devueltas:0};
+    for(var i4=0;i4<hdrC;i4++){
+      var r4=(rows[i4]||[]).map(function(x){return (''+x).trim();});
+      var et=(r4[0]||'').toLowerCase(), val=r4[1]||'', lin=r4.join(' ');
+      if(et.indexOf('fecha venc')>=0){ var fm=(val||lin).match(/(\d{2})[\/.](\d{2})[\/.](\d{4})/); if(fm) mt.fecha_venc=fm[3]+'-'+fm[2]+'-'+fm[1]; }
+      else if(et.indexOf('importe')>=0 && mt.total==null){ mt.total=buzonNum(val); }
+      else if(et.indexOf('rdenes')>=0){ var nm=(val||'').match(/\d+/); if(nm) mt.n_ordenes=parseInt(nm[0],10); }
+      else if(et.indexOf('cuenta')>=0 && !mt.cuenta){ mt.cuenta=val; }
+      if(/0128|BANKINTER/i.test(lin)) mt.banco='Bankinter';
+    }
+    var HC=(rows[hdrC]||[]).map(function(x){return (''+x).trim().toUpperCase();});
+    var ixC=function(s){for(var z=0;z<HC.length;z++){if(HC[z].indexOf(s)>=0)return z;}return -1;};
+    var cRefC=ixC('REFERENCIA'), cNomC=ixC('LIBRADO'), cImpC=ixC('IMPORTE'), cCtaC=ixC('CUENTA'), cSitC=ixC('SITUAC');
+    for(var r5=hdrC+1;r5<rows.length;r5++){
+      var q=(rows[r5]||[]).map(function(x){return (''+x).trim();});
+      var sitC=(q[cSitC>=0?cSitC:4]||'').trim(), nomC=(q[cNomC>=0?cNomC:1]||'').trim();
+      if(!sitC||!nomC) continue;
+      mt.recibos.push({referencia:(q[cRefC>=0?cRefC:0]||'').trim(), nombre:nomC, importe:buzonNum(q[cImpC>=0?cImpC:2]),
+                       cuenta:(q[cCtaC>=0?cCtaC:3]||'').trim(), situacion:sitC});
+      if(/devuel|impag|rechaz/i.test(sitC)) mt.n_devueltas++; else mt.n_abonadas++;
+    }
+    if(mt.recibos.length) return mt;
+  }
   // ===== FORMATO B: CONCLUIDA (cabecera "NOMBRE DEL DEUDOR" + "SITUACIÓN") =====
   var hdrB=-1;
   for(var i=0;i<rows.length;i++){ var jj=(rows[i]||[]).join(' ').toUpperCase(); if(jj.indexOf('NOMBRE DEL DEUDOR')>=0 && jj.indexOf('SITUAC')>=0){ hdrB=i; break; } }
@@ -6728,6 +6760,26 @@ async function buzonDetectado(file, tipo, txt){
         return;
       }
       var dr=await buzonParseRemesaXls(file);
+      if(dr && dr.tipo==='situacion'){
+        // ===== SITUACIÓN REAL DE UNA REMESA, DICHA POR EL BANCO =====
+        var h3='<div style="font-size:13px;margin-bottom:8px">🏦 Situación de la remesa según <b>'+dr.banco+'</b>'+(dr.fecha_venc?' · cobro <b>'+dr.fecha_venc+'</b>':'')+(dr.total!=null?' · '+eur(dr.total):'')+'</div>';
+        h3+='<div style="display:flex;gap:8px;margin-bottom:8px">'+
+            '<div style="flex:1;background:#e8f7ef;border-radius:8px;padding:9px 11px;font-size:12.5px"><b style="color:#0F6E56">✅ Cobrados: '+dr.n_abonadas+'</b></div>'+
+            '<div style="flex:1;background:#fdeaea;border-radius:8px;padding:9px 11px;font-size:12.5px"><b style="color:#dc2626">❌ Devueltos: '+dr.n_devueltas+'</b></div></div>';
+        var devC=dr.recibos.filter(function(rc){return /devuel|impag|rechaz/i.test(rc.situacion);});
+        if(devC.length){ h3+='<div style="font-size:11.5px;font-weight:700;color:#dc2626;margin-bottom:4px">Botaron:</div><div style="border:1px solid #f5d5d5;border-radius:8px;overflow:auto;max-height:150px;margin-bottom:8px">';
+          devC.forEach(function(rc){ h3+='<div style="display:flex;gap:8px;padding:5px 10px;border-bottom:1px solid #fbeaea;font-size:12px"><span style="flex:1">'+(rc.nombre||'')+'</span><span style="font-weight:600">'+eur(rc.importe)+'</span></div>'; }); h3+='</div>'; }
+        h3+='<div style="margin-top:8px;background:#eef4ff;border-left:3px solid #185FA5;border-radius:7px;padding:8px 11px;font-size:12px;color:#22406e">Este listado <b>no trae el número de factura</b>: la referencia es sufijo+CIF. Al registrarlo, el bridge lo cruza con el <b>C192 de esa misma remesa</b> (por fecha de cobro, total y nº de recibos) para saber qué facturas son. Si no encuentra el C192, <b>no registra nada</b> y te dice por qué — no adivina.</div>';
+        h3+='<button id="buzon-sit-reg" style="margin-top:10px;padding:8px 18px;border:none;border-radius:8px;background:#0f766e;color:#fff;cursor:pointer;font-weight:700">Registrar situación del banco</button><div id="buzon-sit-done" style="margin-top:8px"></div>';
+        tj.innerHTML=h3;
+        document.getElementById('buzon-sit-reg').onclick=async function(){ var b=this; b.disabled=true; b.textContent='Registrando…';
+          try{ var jr=await fetch(BRIDGE_URL_C+'/remesa/importar_situacion?confirmar=1',{method:'POST',headers:HP,body:JSON.stringify({banco:dr.banco,cuenta:dr.cuenta,fecha_venc:dr.fecha_venc,total:dr.total,n_ordenes:dr.n_ordenes,recibos:dr.recibos,fichero:file.name})}).then(function(r){return r.json();});
+            var el=document.getElementById('buzon-sit-done');
+            if(jr.ok){ el.innerHTML='<div style="color:#0F6E56;font-weight:700;font-size:13px">✅ Registrado contra <b>'+jr.c192+'</b>: '+jr.n_casados+' recibo(s) casados'+(jr.n_sin_casar?', <span style="color:#b45309">'+jr.n_sin_casar+' sin casar</span>':'')+'.<br><span style="font-weight:500">Cobradas: F-'+(jr.abonadas||[]).join(', F-')+'<br>Devueltas: '+((jr.devueltas||[]).length?'F-'+jr.devueltas.join(', F-'):'ninguna')+'</span></div>'; b.textContent='✅ Registrado'; }
+            else { el.innerHTML='<div style="color:#dc2626;font-size:13px">'+(jr.error||'Error')+(jr.nota?'<br><span style="color:#888">'+jr.nota+'</span>':'')+'</div>'; b.disabled=false; b.textContent='Registrar situación del banco'; }
+          }catch(e){ document.getElementById('buzon-sit-done').innerHTML='<div style="color:#dc2626;font-size:13px">'+e.message+'</div>'; b.disabled=false; b.textContent='Registrar situación del banco'; } };
+        return;
+      }
       if(dr && dr.tipo==='en_proceso'){
         // ===== REMESA BANKINTER EN PROCESO =====
         var h='<div style="font-size:13px;margin-bottom:8px">🏦 Remesa <b>'+dr.banco+'</b>'+(dr.nombre_remesa?' · '+dr.nombre_remesa:'')+(dr.fecha?' · cobro '+dr.fecha:'')+'</div>';
@@ -8648,7 +8700,17 @@ async function bkRemesas() {
     if (f.parcial) { (parciales[k] = parciales[k] || []).push(m.fecha || '¿?'); return; }
     (vecesClave[k] = vecesClave[k] || []).push({ fecha: m.fecha || '¿?', dev: (f.situacion || 'abonado') === 'devuelto' });
   }));
-  const dupsAll = Object.entries(vecesClave).filter(([, v]) => v.filter(x => !x.dev).length > 1);
+  // ⛔ [2026-09-02, caso BOLSOS MARISA F-7953] Las devoluciones REALES llegan como apunte NEGATIVO
+  //    aparte, días después: el abono de la remesa viene POR EL BRUTO aunque un recibo bote luego.
+  //    El chivato solo miraba las marcas 'devuelto' que van DENTRO del movimiento de la remesa, así
+  //    que F-7953 salía en rojo como cobrada dos veces (10/07 y 27/08) cuando el banco la devolvió
+  //    las dos (14/07 y 31/08). Cada devolución real descuenta un cobro.
+  const devReales = {};
+  movs.filter(m => m.importe < 0).forEach(m => bkClavesDeConciliado(m.conciliado).forEach(([k, f]) => {
+    if ((f.situacion || '') !== 'devuelto') return;
+    devReales[k] = (devReales[k] || 0) + 1;
+  }));
+  const dupsAll = Object.entries(vecesClave).filter(([k, v]) => (v.filter(x => !x.dev).length - (devReales[k] || 0)) > 1);
   const dupsResueltas = dupsAll.filter(([k]) => dobleResueltos.has(_numClaveDup(k)));
   const dupsRem = dupsAll.filter(([k]) => !dobleResueltos.has(_numClaveDup(k)));
   if (dupsResueltas.length) {

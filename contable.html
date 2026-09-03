@@ -4668,6 +4668,49 @@ async function tarjBuscarTodos() {
 // 25 días parado mientras el panel seguía diciendo «Programado, se gira solo en su fecha».
 // ⛔ REGLA: una FUENTE SECA se pinta ANTES que los números, porque un 0,00 € con la fuente muerta no significa
 //    «no debes nada» — significa «no lo sé». Nunca se enseña el resultado sin decir de qué está hecho.
+// 🏦 SALDOS POR BANCO [Joan 2026-09-03, «que ayude a Raquel»]. El backend YA elige por cuenta el
+//    saldo mas reciente entre el N43 y Enable Banking (regla del 12/08: gana el mas nuevo, venga de
+//    donde venga) y dice en `fuente` cual ha ganado. Aqui solo se enseña, con tres pestañas.
+//    ⛔ LA HORA VA SIEMPRE AL LADO DE LA CIFRA, y en ambar si se pasa de un dia. Enable Banking se
+//    refresca a las 08:00 y a las 20:00 y el N43 vale lo que valga la ultima subida: un saldo grande
+//    sin fecha es exactamente lo que provoco lo de IGT del 11/08 — un numero que parecia bueno y
+//    llevaba dias parado. Mejor «1.703,93 € · Enable Banking de hoy a las 08:00» que un numero solo.
+window._saldoBanco = window._saldoBanco || 'TODOS';
+function tesSelBanco(b) { window._saldoBanco = b; tesPintaSaldos(); }
+function tesPintaSaldos() {
+  const cont = document.getElementById('tes-saldos');
+  const d = window._tesoreriaDatos;
+  if (!cont || !d) return;
+  const todos = d.saldos || [];
+  const sel = window._saldoBanco || 'TODOS';
+  const míos = sel === 'TODOS' ? todos : todos.filter(s => (s.banco || '') === sel);
+  const total = míos.reduce((a, s) => a + (+s.saldo || 0), 0);
+  const edadH = v => { const x = Date.parse((v || '').replace(' ', 'T')); return isNaN(x) ? null : (Date.now() - x) / 36e5; };
+  const peor = míos.reduce((a, s) => { const h = edadH(s.actualizado); return (h != null && (a == null || h > a)) ? h : a; }, null);
+  const viejo = peor != null && peor > 24;
+  const chip = (v, txt) => '<button onclick="tesSelBanco(\'' + v + '\')" style="padding:5px 14px;border-radius:9px;border:1.5px solid '
+    + (sel === v ? '#0f766e' : '#ccc') + ';background:' + (sel === v ? '#0f766e' : '#fff') + ';color:' + (sel === v ? '#fff' : '#555')
+    + ';font-weight:700;font-size:12px;cursor:pointer">' + txt + '</button>';
+  let h = '<div style="background:#fff;border:1px solid #e3e8ee;border-radius:12px;padding:12px 16px;margin-bottom:12px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+    + '<div style="font-size:12px;color:var(--texto-suave);font-weight:700">🏦 Saldo en el banco</div>'
+    + '<div style="display:flex;gap:6px">' + chip('TODOS', 'Los dos') + chip('Sabadell', 'Sabadell') + chip('Bankinter', 'Bankinter') + '</div></div>'
+    + '<div style="font-size:32px;font-weight:800;margin:4px 0;color:' + (total < 0 ? '#c0392b' : '#0f172a') + '">' + bkFmt(total) + '</div>';
+  if (!míos.length) h += '<div style="font-size:12px;color:#b45309">No hay saldo para ese banco.</div>';
+  míos.forEach(s => {
+    const hh = edadH(s.actualizado), v = hh != null && hh > 24;
+    h += '<div style="font-size:12.5px;margin-top:3px">· <b>' + rtEsc(s.banco || '?') + '</b> '
+      + rtEsc(s.iban || '') + ' &nbsp; <b>' + bkFmt(s.saldo) + '</b> '
+      + '<span style="color:' + (v ? '#b45309' : '#7a8794') + ';font-size:11.5px">según <b>' + rtEsc(s.fuente || '?')
+      + '</b> · ' + rtEsc((s.actualizado || '—').replace('T', ' ')) + (v ? ' ⚠️ sin refrescar' : '') + '</span></div>';
+  });
+  h += '<div style="font-size:11px;color:' + (viejo ? '#b45309' : '#98a3ad') + ';margin-top:7px">'
+    + (viejo ? '⚠️ Alguno de estos saldos lleva más de un día sin refrescarse: puede haber entrado o salido dinero después.'
+             : 'Por cada cuenta se coge el dato más reciente entre el extracto N43 y Enable Banking.')
+    + '</div></div>';
+  cont.innerHTML = h;
+}
+
 async function cargarTesoreria() {
   const host = document.getElementById('pagos-calendario');
   if (!host) return;
@@ -4677,8 +4720,9 @@ async function cargarTesoreria() {
     const d = await fetch(`${BRIDGE_URL_C}/alertas/tesoreria?dias=7&nc=${Date.now()}`,
                           { headers: { 'ngrok-skip-browser-warning': 'true' } }).then(r => r.json());
     if (!d || !d.ok) { box.innerHTML = ''; return; }
+    window._tesoreriaDatos = d;
     const malas = (d.fuentes || []).filter(f => f.estado !== 'OK');
-    let h = '';
+    let h = '<div id="tes-saldos"></div>';
     if (malas.length) {
       h += '<div style="background:#fdecea;border:2px solid #c0392b;border-radius:10px;padding:11px 14px;margin-bottom:10px">'
          + '<b style="color:#c0392b;font-size:14px">🔴 ' + malas.length + ' fuente' + (malas.length > 1 ? 's' : '')
@@ -4713,6 +4757,7 @@ async function cargarTesoreria() {
     }
     h += '</div>';
     box.innerHTML = h;
+    tesPintaSaldos();
   } catch (e) { box.innerHTML = ''; }
 }
 

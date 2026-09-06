@@ -889,9 +889,9 @@ async function generarPDFBlobC(f){
   const styleCss=(htmlDoc.match(/<style>([\s\S]*?)<\/style>/)||[])[1]||'';
   const bodyInner=(htmlDoc.match(/<body>([\s\S]*?)<\/body>/)||[])[1]||htmlDoc;
   const holder=document.createElement('div');
-  holder.style.position='fixed'; holder.style.left='-10000px'; holder.style.top='0'; holder.style.width='794px'; holder.style.background='#fff';
+  holder.style.position='fixed'; holder.style.left='-10000px'; holder.style.top='0'; holder.style.width='210mm'; holder.style.background='#fff';
   const styleEl=document.createElement('style'); styleEl.textContent=styleCss+' body{max-width:none !important;}'; holder.appendChild(styleEl);
-  const content=document.createElement('div'); content.style.width='794px'; content.style.padding='32px 38px'; content.style.background='#fff'; content.innerHTML=bodyInner; holder.appendChild(content);
+  const content=document.createElement('div'); content.style.width='210mm'; content.style.padding='0'; content.style.boxSizing='border-box'; /* [2026-09-05] la plantilla es .page{width:210mm;height:297mm} en position:absolute y mm: cualquier padding la saca por la derecha y anade una pagina en blanco */ content.style.background='#fff'; content.innerHTML=bodyInner; holder.appendChild(content);
   document.body.appendChild(holder);
   try{
     const imgs=holder.querySelectorAll('img');

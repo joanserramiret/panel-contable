@@ -859,117 +859,245 @@ function docPreviewHTML(titulo,cliente,desde,hasta,contenido){
 }
 
 // ---- PDF DE FACTURAS INDIVIDUALES ----
-function generarFacturaHTML(doc){
-  var c=doc.Customer||{};
-  var notas=doc.Notes||'';
-  var centroM=notas.match(/Centro: *([^|]+)/i);
-  var centro=centroM?centroM[1].trim():'';
-  var desc=notas.replace(/Centro: *[^|]+[|]?\s*/i,'').trim();
-  var obs=[centro?'Centro: '+centro:'',desc].filter(Boolean).join(' | ');
-  var lineas=[];
-  if(doc.InvoiceItems)doc.InvoiceItems.forEach(function(it){lineas=lineas.concat(it.Lines||[]);});
-  else lineas=doc.Lines||[];
-  var base=0,vatRate=0.21,lineasHTML='',hayDescuento=false;
+// ═══ PLANTILLA DE FACTURA — COPIA EXACTA DE contable.html [2026-09-05] ═══════════════════
+// La buena se hizo el 22/06/2026 (replica de como Agora pinta las facturas: cabecera_factura.png,
+// IVA agrupado, IBAN, LOPD) y se llevo a contable.html y facturacion.html. Este portal es del
+// 20/06 -DOS DIAS ANTES- y se quedo con la vieja (generarFacturaHTML, logos sueltos). No se
+// machaco: nunca llego. Dos meses y medio mandando la plantilla antigua sin que nadie lo viera.
+// ⛔ LA MISMA PLANTILLA VIVE EN TRES FICHEROS: contable.html, facturacion.html y este. Es como
+//    esta montado el panel (cada app un HTML autocontenido). SI SE TOCA, SE TOCAN LOS TRES.
+var CABECERA_FACTURA_URL = 'https://joanserramiret.github.io/averias-jstech/cabecera_factura.png';
+
+function fmC(v){ return (parseFloat(v)||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
+function fdC(s){ if(!s)return '—'; var d=new Date(s); return isNaN(d)?s:d.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+//  PLANTILLA OFICIAL DE FACTURA — RÉPLICA EXACTA del PDF de Ágora (identidad de marca)
+//  Calibrada al milímetro contra F-7842.pdf y Ticket_A4_with_discounts.rdlc:
+//  Verdana 8pt (cabeceras tabla 9pt, título 12pt, letra legal 6pt, IBAN 9pt),
+//  cabecera = BITMAP REAL extraído del PDF de Ágora (cabecera_factura.png, este repo),
+//  zebra #eeeeee, cabeceras de tabla Gainsboro (#dcdcdc), A4 con márgenes de 1cm.
+//  ⚠ NO TOCAR medidas ni textos (incluida la errata original "Télefono:") sin
+//    contrastar contra un PDF real de Ágora. Es identidad de marca.
+// ═══════════════════════════════════════════════════════════════════════════════════
+var CABECERA_FACTURA_URL = 'https://joanserramiret.github.io/averias-jstech/cabecera_factura.png';
+
+function generarHTMLFactura(f) {
+  var c = f.Customer || {};
+  var lineas = [];
+  if (f.InvoiceItems) f.InvoiceItems.forEach(function(it){ lineas = lineas.concat(it.Lines||[]); });
+  else lineas = f.Lines || [];
+
+  var nQty = function(q){ q = parseFloat(q)||0; return q % 1 === 0 ? String(q) : q.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var ab = function(t, l, w, css, txt){ return '<div class="ab" style="top:'+t+'mm;left:'+l+'mm;width:'+w+'mm;'+(css||'')+'">'+(txt==null?'':txt)+'</div>'; };
+
+  // ── Datos de cabecera del documento ──
+  // Ágora a veces da estos campos como OBJETO {Id, Name} y a veces como texto → siempre el nombre
+  var nom = function(v){
+    if (v == null) return '';
+    if (typeof v === 'object') return v.Name || v.name || v.UserName || v.Description || '';
+    return String(v);
+  };
+  var nOp = nom(f.OperationNumber) || nom(f.TicketNumber) || nom(f.NumOperation) || nom(f.BasicNumber) || '';
+  var refDoc = (nOp ? nOp + '/' : '') + (f.Serie || '') + '-' + (f.Number != null ? f.Number : '');
+  var atendido = nom(f.UserName) || nom(f.User) || nom(f.Waiter) || nom(f.Employee) || '';
+  var mesa = nom(f.LocationName) || nom(f.Location) || nom(f.Table) || nom(f.PriceListName) || '';
+  var pdv = nom(f.PosName) || nom(f.Pos) || nom(f.SalePoint) || nom(f.Workplace) || nom(f.Terminal) || 'TPV 1';
+  var nombreCli = c.FiscalName || c.BusinessName || '';
+  var cifCli = c.Cif || c.Nif || '';
+  var dirCli = [ (c.Street || c.Address || ''),
+                 ((c.ZipCode || c.PostalCode || '') + (c.City ? ' ' + c.City : '')).trim(),
+                 (c.Region || c.Province || '') ].filter(Boolean).join(' - ');
+  var telCli = c.Phone || c.MobilePhone || c.Telephone || '';
+  var tipoDoc = (f.Serie || '').indexOf('FD') === 0 || (f.Totals && f.Totals.GrossAmount < 0) ? 'FACTURA ABONO' : 'FACTURA';
+
+  // ── Líneas e IVAs (agrupados por tipo, como Ágora) ──
+  var grupos = {};   // rate% → gross
   lineas.forEach(function(l){
-    var dto=parseFloat(l.DiscountRate||0);
-    if(dto>0)hayDescuento=true;
-    var precioUnit=parseFloat(l.UnitPrice||0);
-    var qty=parseFloat(l.Quantity||0);
-    var imp=parseFloat(l.TotalAmount||(qty*precioUnit));base+=imp;
-    if(l.VatRate)vatRate=l.VatRate;
-    var dtoCell='<td style="text-align:right;color:#e87e1a">'+(dto>0?Math.round(dto*100)+'%':'')+'</td>';
-    lineasHTML+='<tr><td>'+qty.toFixed(2)+'</td>'+
-      '<td>'+(l.ProductName||l.SaleFormatName||'&mdash;')+(l.Notes?'<div style="font-size:8.5px;color:#666;font-style:italic">'+l.Notes+'</div>':'')+'</td>'+
-      '<td style="text-align:right">'+fm(precioUnit)+'</td>'+
-      dtoCell+
-      '<td style="text-align:right">'+fm(imp)+'</td></tr>';
+    var r = parseFloat(l.VatRate != null ? l.VatRate : 0.21); if (r > 1.999) r = r/100;
+    var imp = parseFloat(l.TotalAmount != null ? l.TotalAmount : (parseFloat(l.Quantity||0)*parseFloat(l.UnitPrice||0)));
+    grupos[r] = (grupos[r]||0) + imp;
   });
-  var cuota=base*vatRate,total=base+cuota;
-  var pagos=doc.Payments||[],pagado=0,pagosHTML='';
-  pagos.forEach(function(p){pagado+=p.Amount||0;pagosHTML+='<tr><td>'+(p.MethodName||'&mdash;')+'</td><td style="text-align:right">'+fm(p.Amount)+'</td></tr>';});
-  var pend=Math.max(0,total-pagado);
-  var docRef=doc.Serie+'-'+doc.Number;
-  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>FACTURA '+docRef+'</title><style>'+
-    '*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Verdana,Arial,sans-serif;font-size:10px;color:#222;background:#fff;}'+
-    '.page{width:210mm;min-height:297mm;margin:0 auto;padding:10mm 12mm;background:#fff;}'+
-    '.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5mm;}'+
-    '.hdr-logos{display:flex;align-items:center;gap:6mm;}.logo-js{height:16mm;border-radius:3px;}.logo-ag{height:12mm;}'+
-    '.hdr-info{text-align:right;line-height:1.6;}.empresa{font-size:12px;font-weight:bold;color:#1a2e6e;}.sub{font-size:8.5px;color:#444;}'+
-    '.titulo{text-align:center;font-size:16px;font-weight:bold;letter-spacing:3px;padding:3mm 0;border-top:2px solid #1a2e6e;border-bottom:1px solid #bbb;margin-bottom:3mm;}'+
-    '.cab{border:1px solid #bbb;margin-bottom:3mm;}.cab table{width:100%;border-collapse:collapse;}'+
-    '.cab td{padding:2px 5px;border-right:1px solid #ddd;vertical-align:top;}.cab td:last-child{border-right:none;}'+
-    '.lbl{font-size:8.5px;color:#666;}.val{font-size:10px;font-weight:bold;}'+
-    '.cab tr{border-bottom:1px solid #ddd;}.cab tr:last-child{border-bottom:none;}'+
-    '.lineas{width:100%;border-collapse:collapse;margin-bottom:5mm;}'+
-    '.lineas thead tr{background:#1a2e6e;}.lineas thead th{color:#fff;padding:3px 5px;font-size:10px;font-weight:bold;text-align:left;}'+
-    '.lineas thead th.r{text-align:right;}.lineas tbody td{padding:3px 5px;border-bottom:1px solid #eee;font-size:10px;vertical-align:top;}'+
-    '.lineas tbody td.r{text-align:right;}.lineas tbody tr:nth-child(even){background:#f5f5f5;}'+
-    '.totales-area{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3mm;gap:5mm;}'+
-    '.iva-table{border-collapse:collapse;font-size:10px;}.iva-table th{background:#eee;border:1px solid #bbb;padding:2px 7px;font-weight:bold;}'+
-    '.iva-table td{border:1px solid #bbb;padding:2px 7px;}.iva-table td.r{text-align:right;}.iva-table tfoot td{font-weight:bold;background:#f5f5f5;}'+
-    '.totales-box{min-width:80mm;border:1px solid #bbb;}'+
-    '.totales-hdr{background:#1a2e6e;color:#fff;padding:3px 8px;font-size:9px;text-align:center;font-weight:bold;}'+
-    '.totales-box table{width:100%;border-collapse:collapse;}.totales-box td{padding:2px 7px;font-size:10px;border-bottom:1px solid #eee;}'+
-    '.totales-box td.r{text-align:right;font-weight:bold;}'+
-    '.tfinal td{font-size:12px;font-weight:bold;border-top:2px solid #1a2e6e;border-bottom:none;color:#1a2e6e;padding-top:3px;}'+
-    '.tpend td{color:#e87e1a;font-weight:bold;border-bottom:none;font-size:11px;}'+
-    '.obs{font-size:10px;margin-bottom:3mm;padding:2mm 4mm;background:#f9f9f9;border-left:3px solid #1a2e6e;}'+
-    '.iban-box{border:1px solid #1a2e6e;padding:3mm 5mm;text-align:center;margin-bottom:3mm;font-size:10px;background:#f0f4fb;}'+
-    '.iban-box strong{font-size:11px;color:#1a2e6e;letter-spacing:1px;}'+
-    '.pie{font-size:7.5px;color:#777;line-height:1.5;border-top:1px solid #bbb;padding-top:3mm;}'+
-    '</style></head><body><div class="page">'+
-    '<div class="hdr"><div class="hdr-logos">'+
-    '<img class="logo-js" src="'+LOGO_JS+'" alt="JS Technology"/>'+
-    '<img class="logo-ag" src="'+LOGO_AG+'" alt="agora"/>'+
-    '</div><div class="hdr-info">'+
-    '<div class="empresa">JS TECHNOLOGY MENORCA SL</div>'+
-    '<div class="sub">NIF: B57841140 &nbsp;&nbsp; TEL: 690868959</div>'+
-    '<div class="sub">C/SANT JORDI, 8C - ES CASTELL (MENORCA)</div>'+
-    '<div class="sub">DISTRIBUIDOR OFICIAL AGORA EN MENORCA</div>'+
-    '<div class="sub">Reparacion y venta de equipos informaticos y ofimaticas.</div>'+
-    '</div></div>'+
-    '<div class="titulo">FACTURA</div>'+
-    '<div class="cab"><table>'+
-    '<tr><td style="width:35%"><div class="lbl">N Dp.:</div><div class="val">'+docRef+'</div></td>'+
-    '<td style="width:35%"><div class="lbl">Atendido por:</div><div class="val">'+(doc.User?doc.User.Name:'&mdash;')+'</div></td>'+
-    '<td><div class="lbl">Punto de Venta:</div><div class="val">TPV 1</div></td></tr>'+
-    '<tr><td><div class="lbl">Fecha:</div><div class="val">'+fd(doc.Date)+'</div></td>'+
-    '<td><div class="lbl">Mesa:</div><div class="val">ProformasAPP / Tarifa</div></td>'+
-    '<td><div class="lbl">Pagina:</div><div class="val">1/1</div></td></tr>'+
-    '<tr><td colspan="3"><div class="lbl">Cliente:</div>'+
-    '<div class="val">'+(c.BusinessName||c.FiscalName||'&mdash;')+'</div>'+
-    '<div style="font-size:8.5px;color:#555">'+
-    (c.FiscalName&&c.BusinessName&&c.FiscalName!==c.BusinessName?c.FiscalName+' &nbsp; ':'')+
-    (c.Cif?'NIF/CIF: '+c.Cif+' &nbsp; ':'')+
-    (c.Telephone?'Tel: '+c.Telephone+' &nbsp; ':'')+
-    (c.Email?'Email: '+c.Email+' &nbsp; ':'')+
-    ((c.Street||c.City)?(c.Street||'')+' '+(c.ZipCode||'')+' '+(c.City||''):'')+
-    (c.ContactPerson?' &nbsp; Contacto: '+c.ContactPerson:'')+
-    '</div></td></tr></table></div>'+
-    '<table class="lineas"><thead><tr>'+
-    '<th style="width:11%">Cantidad</th><th>Producto</th>'+
-    '<th class="r" style="width:15%">Precio</th>'+
-    (hayDescuento?'<th class="r" style="width:10%">Dto%</th>':'<th style="width:10%"></th>')+
-    '<th class="r" style="width:15%">Importe</th>'+
-    '</tr></thead><tbody>'+lineasHTML+'</tbody></table>'+
-    '<div class="totales-area">'+
-    '<div><table class="iva-table">'+
-    '<thead><tr><th>Impuesto</th><th class="r">Base</th><th class="r">Cuota</th><th class="r">Total</th></tr></thead>'+
-    '<tbody><tr><td>'+Math.round(vatRate*100)+',00%</td><td class="r">'+fm(base)+'</td><td class="r">'+fm(cuota)+'</td><td class="r">'+fm(total)+'</td></tr></tbody>'+
-    '<tfoot><tr><td><strong>Total:</strong></td><td class="r">'+fm(base)+'</td><td class="r">'+fm(cuota)+'</td><td class="r">'+fm(total)+'</td></tr></tfoot>'+
-    '</table></div>'+
-    '<div><div class="totales-box">'+
-    '<div class="totales-hdr">Total (Impuestos Incl.) '+fm(total)+'  Pendiente: '+fm(pend)+'</div>'+
-    '<table><tbody>'+pagosHTML+'</tbody>'+
-    '<tr class="tfinal"><td>Total con IVA:</td><td class="r">'+fm(total)+'</td></tr>'+
-    '<tr class="tpend"><td>Pendiente:</td><td class="r">'+fm(pend)+'</td></tr>'+
-    '</table></div></div></div>'+
-    (obs?'<div class="obs"><strong>Observaciones: </strong>'+obs+'</div>':'')+
-    '<div class="iban-box">Puede realizar el pago mediante transferencia bancaria al siguiente numero de cuenta IBAN:<br>'+
-    '<strong>ES3500810232340001434454</strong></div>'+
-    '<div class="pie">De conformidad con la Ley Organica 15/1999, le informamos que sus datos se hallan incorporados a un fichero titularidad de JS Technology Menorca, SL.</div>'+
-    '</div></body></html>';
+  var totalG = f.Totals ? parseFloat(f.Totals.GrossAmount) : Object.keys(grupos).reduce(function(s,r){return s+grupos[r];},0);
+  var rates = Object.keys(grupos).sort();
+  var ivaRows = rates.map(function(r){
+    var g = grupos[r], rr = parseFloat(r);
+    var b = g/(1+rr), q = g-b;
+    return { pct: (rr*100).toLocaleString('es-ES',{minimumFractionDigits:3,maximumFractionDigits:3})+'%', base: b, cuota: q, total: g };
+  });
+  // con un solo tipo de IVA, mandan los totales OFICIALES de Ágora (cuadre al céntimo)
+  if (ivaRows.length === 1 && f.Totals) { ivaRows[0].base = parseFloat(f.Totals.NetAmount); ivaRows[0].cuota = parseFloat(f.Totals.VatAmount); ivaRows[0].total = totalG; }
+  var baseT = ivaRows.reduce(function(s,x){return s+x.base;},0), cuotaT = ivaRows.reduce(function(s,x){return s+x.cuota;},0);
+  var pagos = (f.Payments||[]).slice(0,5), entregado = pagos.reduce(function(s,p){return s+(parseFloat(p.Amount)||0);},0);
+  var cambio = Math.max(0, Math.round((entregado-totalG)*100)/100);
+
+  // ── Columnas (medidas reales — con o sin descuentos SIEMPRE las mismas 4: Ágora mete
+  //    el Dto. y las notas como SUBLÍNEAS dentro de la celda Producto, calibrado con F-7917) ──
+  var COLS = [ {x:9.9,w:24,a:'right',h:'Cantidad'}, {x:33.9,w:8.6,a:'right',h:''}, {x:42.5,w:103.4,a:'left',h:'Producto'},
+               {x:145.9,w:25.4,a:'right',h:'Precio'}, {x:171.3,w:28.6,a:'right',h:'Importe'} ];
+  var celda = function(col, txt){ return '<div style="position:absolute;left:'+(col.x-9.9)+'mm;width:'+col.w+'mm;top:0;padding:0 0.8mm;box-sizing:border-box;text-align:'+col.a+';overflow:hidden;white-space:nowrap">'+txt+'</div>'; };
+
+  // Cada línea de Ágora = un GRUPO visual: fila producto (4,84mm) + nota (interlínea 3,4mm,
+  // arranca en x43,2) + sublínea "Dto. 100,00% (7,25 €)" (arranca en x51,1) — zebra POR GRUPO
+  var FILA = 4.84, NOTA_LH = 3.4;
+  var gruposVis = lineas.map(function(l){
+    var imp = fmC(l.TotalAmount != null ? l.TotalAmount : (parseFloat(l.Quantity||0)*parseFloat(l.UnitPrice||0)));
+    var nota = String(l.Notes || l.AddinsDescription || '').trim();
+    var dr = parseFloat(l.DiscountRate || 0);
+    var notaLineas = nota ? Math.max(1, Math.ceil(nota.length / 62)) : 0;
+    var altura = FILA + (nota ? 1.2 + notaLineas*NOTA_LH : 0) + (dr > 0 ? FILA : 0);
+    var html = '<div style="position:relative;height:'+FILA+'mm;line-height:'+FILA+'mm">' +
+      celda(COLS[0], nQty(l.Quantity)) + celda(COLS[1], '') + celda(COLS[2], (l.ProductName||l.SaleFormatName||'')) +
+      celda(COLS[3], fmC(l.UnitPrice)) + celda(COLS[4], imp) + '</div>';
+    if (nota) html += '<div style="margin-left:33.3mm;width:101.8mm;padding:0.6mm 0.8mm;line-height:'+NOTA_LH+'mm;white-space:normal;box-sizing:border-box">'+nota+'</div>';
+    if (dr > 0) html += '<div style="margin-left:41.2mm;height:'+FILA+'mm;line-height:'+FILA+'mm">Dto. ' +
+      (dr*100).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}) + '% (' +
+      fmC(parseFloat(l.Quantity||0)*parseFloat(l.UnitPrice||0)*dr) + ')</div>';
+    return { html: html, altura: altura };
+  });
+
+  // ── Paginación por ALTURA disponible (94,8 → 175,6 = 80,8mm por página) ──
+  var PRESUP = 80.8;
+  var paginas = [[]];
+  var usadoPag = 0;
+  gruposVis.forEach(function(g){
+    if (usadoPag + g.altura > PRESUP && paginas[paginas.length-1].length) { paginas.push([]); usadoPag = 0; }
+    paginas[paginas.length-1].push(g);
+    usadoPag += g.altura;
+  });
+  var totPag = paginas.length;
+
+  // ── Bloques fijos (cabecera de página: imagen + caja FACTURA + cliente) ──
+  var cabPagina = function(numPag){
+    var h = '<img src="'+CABECERA_FACTURA_URL+'" style="position:absolute;top:11.2mm;left:11.5mm;width:191.6mm;height:39.4mm" alt=""/>';
+    h += '<div class="ab" style="top:52.8mm;left:9.9mm;width:190.2mm;height:31.7mm;border:0.3mm solid #000"></div>';
+    h += ab(53.6, 9.9, 190.2, 'text-align:center;font-size:12pt;font-weight:bold', tipoDoc);
+    h += ab(61.5, 11.6, 19, '', 'Nº Op.:') + ab(61.5, 31.6, 42, 'font-weight:bold', refDoc);
+    h += ab(61.5, 76.1, 21, '', 'Atendido por:') + ab(61.5, 99, 40, '', atendido);
+    h += ab(61.5, 141.6, 28, '', 'Punto de Venta:') + ab(61.5, 160, 39.4, 'text-align:right', pdv);
+    h += ab(66.4, 11.6, 19, '', 'Fecha:') + ab(66.4, 31.6, 42, 'font-weight:bold', fdC(f.Date));
+    h += ab(66.4, 76.1, 21, 'text-align:right', 'Mesa:') + ab(66.4, 99, 40, '', mesa);
+    h += ab(66.4, 160, 39.4, 'text-align:right', numPag + '/' + totPag);
+    h += ab(71, 11.6, 19, '', 'Cliente:') + ab(71, 31.6, 105, 'font-weight:bold', nombreCli);
+    h += ab(71, 141.6, 22, '', 'Télefono:') + ab(71, 165.6, 34, 'font-weight:bold', telCli);
+    h += ab(75.8, 31.6, 105, 'font-weight:bold', cifCli);
+    h += ab(80.6, 31.6, 168, '', dirCli);
+    // cabecera de la tabla de productos (Gainsboro, 9pt bold, recuadro negro)
+    h += '<div class="ab" style="top:87.8mm;left:9.9mm;width:190.2mm;height:7mm;background:#dcdcdc;border:0.3mm solid #000"></div>';
+    h += COLS.map(function(col){ return '<div class="ab" style="top:89.2mm;left:'+col.x+'mm;width:'+col.w+'mm;padding:0 0.8mm;box-sizing:border-box;text-align:'+col.a+';font-size:9pt;font-weight:bold">'+col.h+'</div>'; }).join('');
+    return h;
+  };
+
+  // ── Pie de la ÚLTIMA página: banda gris, impuestos, pagos, LOPD e IBAN ──
+  var pieFinal = function(){
+    var h = '<div class="ab" style="top:175.6mm;left:9.9mm;width:190.2mm;height:43.9mm;border:0.3mm solid #000"></div>';
+    h += '<div class="ab" style="top:177mm;left:10mm;width:190mm;height:7mm;background:#dcdcdc"></div>';
+    h += ab(179.1, 10, 187.6, 'text-align:right;font-weight:bold', 'Total (Impuestos Incl.) ' + fmC(totalG));
+    h += ab(188.9, 11.6, 19, 'font-weight:bold', 'Impuesto') + ab(188.9, 30, 20, 'text-align:right;font-weight:bold', 'Base') +
+         ab(188.9, 50.5, 18, 'text-align:right;font-weight:bold', 'Cuota') + ab(188.9, 99.5, 20, 'text-align:right;font-weight:bold', 'Total');
+    h += ab(188.9, 122.4, 22, 'font-weight:bold', 'Entregado:') + ab(188.9, 134, 24.7, 'text-align:right;font-weight:bold', fmC(entregado)) +
+         ab(188.9, 165.6, 16, 'font-weight:bold', 'Cambio:') + ab(188.9, 175, 24.4, 'text-align:right;font-weight:bold', fmC(cambio));
+    ivaRows.slice(0,5).forEach(function(x, i){
+      var y = 193.8 + i*4;
+      h += ab(y, 11.6, 19, '', x.pct) + ab(y, 30, 20, 'text-align:right', fmC(x.base)) +
+           ab(y, 50.5, 18, 'text-align:right', fmC(x.cuota)) + ab(y, 99.5, 20, 'text-align:right', fmC(x.total));
+    });
+    pagos.forEach(function(p, i){
+      var y = 193.8 + i*4;
+      h += ab(y, 122.5, 47, 'overflow:hidden;white-space:nowrap', String(p.MethodName||'').slice(0,28)) +
+           ab(y, 175, 24.4, 'text-align:right', fmC(p.Amount));
+    });
+    h += ab(214.6, 11.6, 19, 'font-weight:bold', 'Total:') + ab(214.6, 30, 20, 'text-align:right', fmC(baseT)) +
+         ab(214.6, 50.5, 18, 'text-align:right', fmC(cuotaT)) + ab(214.6, 99.5, 20, 'text-align:right', fmC(totalG));
+    // Letra legal (texto y partición de líneas EXACTOS del original)
+    var lopd = ['De conformidad con la Ley Orgánica 15/1999, le informamos que sus datos se hallan incorporados a un fichero titularidad de JS Technology Menorca, S.L con la finalidad de',
+      'prestar sus servicios profesionales. Igualmente informamos que podrá ejercer los derechos de acceso, rectificación, cancelación y oposición establecidos en dicha Ley a través',
+      'de la dirección: Av. Fort de L´Eau, 48 bajos 3 07702 – Maó - En caso de que el adquirente de los productos incluidos en la presente factura actúe como consumidor final, tiene',
+      'derecho a solicitar a la entidad gestora creada al efecto el reembolso del importe abonado en concepto de compensación por copia privada, siempre y cuando cumpla los',
+      'requisitos previstos en el artículo 25.8 del texto refundido de la Ley de Propiedad Intelectual'];
+    lopd.forEach(function(t, i){ h += ab(221.7 + i*2.55, 9.9, 190.2, 'font-size:6pt;white-space:nowrap;overflow:hidden', t); });
+    h += ab(236.7, 21.5, 178, 'font-size:9pt;font-weight:bold', 'Puede realizar el pago mediante transferencia bancaria al siguiente número de cuenta IBAN:');
+    h += ab(241.6, 22.1, 178, 'font-size:9pt;font-weight:bold', 'ES3500810232340001434454');
+    return h;
+  };
+
+  // ── Montaje de páginas (zebra continua entre páginas, como RowNumber en Ágora) ──
+  var idxGlobal = 0;
+  var cuerpo = paginas.map(function(chunk, p){
+    var filas = chunk.map(function(g){
+      var bg = (idxGlobal++ % 2) ? '#eeeeee' : '#ffffff';
+      return '<div style="background:' + bg + '">' + g.html + '</div>';
+    }).join('');
+    return '<div class="page">' + cabPagina(p+1) +
+      '<div class="ab" style="top:94.8mm;left:9.9mm;width:190.2mm">' + filas + '</div>' +
+      (p === totPag-1 ? pieFinal() : '') + '</div>';
+  }).join('');
+
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>'+tipoDoc+' '+(f.Serie||'')+'-'+(f.Number!=null?f.Number:'')+'</title><style>'+
+    '*{margin:0;padding:0;box-sizing:border-box}'+
+    'body{background:#fff;font-family:Verdana,Geneva,sans-serif;color:#000}'+
+    '.page{position:relative;width:210mm;height:297mm;margin:0 auto;background:#fff;overflow:hidden;page-break-after:always;font-size:8pt}'+
+    '.page:last-child{page-break-after:auto}'+
+    '.ab{position:absolute;line-height:1.25}'+
+    '@media print{body{margin:0}.no-print{display:none!important}}'+
+    '</style></head><body>'+cuerpo+'</body></html>';
 }
+async function generarPDFBlobC(f) {
+  if (!window.jspdf || !window.html2canvas) throw new Error('Librerias PDF no cargadas.');
+  const htmlDoc = generarHTMLFactura(f);
+  const styleMatch = htmlDoc.match(/<style>([\s\S]*?)<\/style>/);
+  const styleCss = styleMatch ? styleMatch[1] : '';
+  const bodyMatch = htmlDoc.match(/<body>([\s\S]*?)<\/body>/);
+  const bodyInner = bodyMatch ? bodyMatch[1] : htmlDoc;
+  const holder = document.createElement('div');
+  holder.style.position = 'fixed';
+  holder.style.left = '-10000px';
+  holder.style.top = '0';
+  holder.style.width = '210mm';   // exactamente una A4: la plantilla es .page{width:210mm}
+  holder.style.background = '#fff';
+  const styleEl = document.createElement('style');
+  styleEl.textContent = styleCss + ' body{max-width:none !important;}';
+  holder.appendChild(styleEl);
+  const content = document.createElement('div');
+  // ⛔ NI PADDING NI 794px [2026-09-05]. La plantilla NO es un documento que fluya: es
+  //    `.page{position:relative;width:210mm;height:297mm}` con todo dentro en `position:absolute`
+  //    y coordenadas en MILIMETROS. Una A4 son 210mm = 794px, asi que cualquier padding deja menos
+  //    hueco del que la pagina necesita: se salia 76px por la derecha (la columna Importe cortada)
+  //    y el alto se pasaba de A4, que es lo que anadia una segunda pagina en blanco.
+  //    El contenedor mide EXACTAMENTE una A4 y no mete espacio propio; los margenes ya los pone
+  //    la plantilla en mm.
+  content.style.width = '210mm';
+  content.style.padding = '0';
+  content.style.boxSizing = 'border-box';
+  content.style.background = '#fff';
+  content.innerHTML = bodyInner;
+  holder.appendChild(content);
+  document.body.appendChild(holder);
+  try {
+    const imgs = holder.querySelectorAll('img');
+    await Promise.all(Array.from(imgs).map(img => img.complete ? Promise.resolve() :
+      new Promise(res => { img.onload = res; img.onerror = res; })));
+    const canvas = await html2canvas(holder, { scale: 2, useCORS: true, backgroundColor: '#fff' });
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageW = 210, pageH = 297;
+    const imgH = canvas.height * pageW / canvas.width;
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    let heightLeft = imgH, position = 0;
+    pdf.addImage(imgData, 'JPEG', 0, position, pageW, imgH);
+    heightLeft -= pageH;
+    while (heightLeft > 2) {
+      position -= pageH;
+      pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', 0, position, pageW, imgH);
+      heightLeft -= pageH;
+    }
+    return pdf.output('blob');
+  } finally {
+    document.body.removeChild(holder);
+  }
+}
+
 
 async function htmlToPdfBlob(htmlStr){
   return new Promise(function(resolve,reject){
@@ -993,7 +1121,7 @@ async function descargarUna(idx,btn){
   var f=facturas[idx];
   if(btn){btn.disabled=true;btn.textContent='...';}
   try{
-    var blob=await htmlToPdfBlob(generarFacturaHTML(f));
+    var blob=await generarPDFBlobC(f);
     var url=URL.createObjectURL(blob);
     var a=document.createElement('a');a.href=url;a.download='Factura_'+f.Serie+'-'+f.Number+'.pdf';a.click();
     URL.revokeObjectURL(url);
@@ -1011,7 +1139,7 @@ async function descargarTodas(){ await descargarLote(facturas.map(function(_,i){
 async function descargarLote(idxs){
   if(idxs.length===1){
     showProgress(0,1,'Generando PDF...');
-    try{var blob=await htmlToPdfBlob(generarFacturaHTML(facturas[idxs[0]]));
+    try{var blob=await generarPDFBlobC(facturas[idxs[0]]);
     var url=URL.createObjectURL(blob);var a=document.createElement('a');
     a.href=url;a.download='Factura_'+facturas[idxs[0]].Serie+'-'+facturas[idxs[0]].Number+'.pdf';
     a.click();URL.revokeObjectURL(url);}catch(e){alert('Error: '+e.message);}
@@ -1022,7 +1150,7 @@ async function descargarLote(idxs){
   for(var i=0;i<idxs.length;i++){
     var f=facturas[idxs[i]];
     setProgress(i,idxs.length,'Generando '+f.Serie+'-'+f.Number+'...');
-    try{var blob=await htmlToPdfBlob(generarFacturaHTML(f));zip.file('Factura_'+f.Serie+'-'+f.Number+'.pdf',blob);}catch(e){}
+    try{var blob=await generarPDFBlobC(f);zip.file('Factura_'+f.Serie+'-'+f.Number+'.pdf',blob);}catch(e){}
   }
   setProgress(idxs.length,idxs.length,'Comprimiendo ZIP...');
   var zipBlob=await zip.generateAsync({type:'blob'});

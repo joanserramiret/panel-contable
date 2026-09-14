@@ -164,6 +164,23 @@
 <script>
 const API = 'https://panel.js-tech.es';
 const FORMAS = { 8:'Recibo (domiciliado)', 4:'Transferencia' };
+// AVISO DE COBRO DOBLE [2026-09-14] --------------------------------------------------------------
+// Caso LOMIDES F-8023 (423,35 EUR): la factura se emitio con forma de pago TRANSFERENCIA, pero el
+// cliente YA tenia mandato SEPA, asi que la remesa la giro igualmente -- y eso es correcto, se gira
+// porque hay SEPA. El problema es el PAPEL: /facturacion/factura_pdf imprime
+//     fp = "Recibo domiciliado" if forma_pago_id == 8 else "Transferencia bancaria"
+// o sea que en su PDF ponia "Transferencia bancaria". El cliente pago ademas por transferencia,
+// haciendo lo que le decia su factura. Cobrado dos veces, y a devolver.
+// Esto NO bloquea nada: a veces la transferencia es lo correcto. Solo lo pone delante, porque el
+// fallo es humano y ocurre al elegir en el desplegable.
+function avisoTransferencia(fp){
+  if(Number(fp)!==4) return '';
+  return '\n\n⚠️ FORMA DE PAGO: TRANSFERENCIA\n'
+       + 'En el PDF del cliente pondrá «Forma de pago: Transferencia bancaria».\n'
+       + 'Si este cliente tiene mandato SEPA, la remesa la girará igualmente y puede\n'
+       + 'acabar pagándote DOS VECES (pasó con LOMIDES, F-8023).\n'
+       + 'Si va por recibo, cancela y cámbialo antes de emitir.\n';
+}
 let CAT = [];          // catálogo de artículos de cuota
 let PROPS = [];        // propuestas (estado editable)
 let MESDEST = '';
@@ -448,7 +465,7 @@ function taylorForm(){
   }).join('');
   $('#mbox').innerHTML='<h3>🔁 F-'+esc(taylorFac.numero)+' → '+esc(taylorCli.nombre)+'</h3>'
     +'<div class="crow" style="margin:6px 0"><span class="muted">Incremento</span><input id="tcPct" type="number" value="10" style="width:64px;padding:6px;border:1px solid var(--line);border-radius:8px" onchange="taylorTot()"><span class="muted">%</span>'
-    +'<span class="muted" style="margin-left:auto">Pago:</span><select id="tcPago" style="padding:6px;border:1px solid var(--line);border-radius:8px"><option value="4">Transferencia</option><option value="8">Recibo</option></select></div>'
+    +'<span class="muted" style="margin-left:auto">Pago:</span><select id="tcPago" style="padding:6px;border:1px solid var(--line);border-radius:8px"><option value="8">Recibo (domiciliado)</option><option value="4">Transferencia</option></select></div>'
     +'<div class="ln" style="grid-template-columns:1fr 46px 74px 74px;font-weight:700;font-size:11px;color:var(--mut)"><div>Concepto</div><div class="num">Cant</div><div class="num">Tarifa</div><div class="num">+%→</div></div>'
     +lns
     +'<div class="row" style="border:0;font-weight:700;margin-top:8px"><span>TOTAL (con IVA)</span><span id="tcTot"></span></div>'
@@ -462,7 +479,9 @@ function taylorTot(){
   const t=$('#tcTot'); if(t) t.textContent=eur(tot*1.21);
 }
 async function taylorEmitir(){
-  if(!confirm('Emitir factura REAL a '+taylorCli.nombre+' replicando la de Andrew con +'+taylorPct+'%?')) return;
+  if(!confirm('Emitir factura REAL a '+taylorCli.nombre+' replicando la de Andrew con +'+taylorPct+'%?'
+      +'\n\nForma de pago: '+(FORMAS[Number($('#tcPago').value)]||'?')
+      +avisoTransferencia($('#tcPago').value))) return;
   const btn=$('#tcGo'); if(btn){ btn.disabled=true; btn.textContent='Emitiendo…'; }
   try{
     const body={confirmar:true, customer_id:taylorCli.id, cif:taylorCli.cif, cliente:taylorCli.nombre,
@@ -575,7 +594,7 @@ function presuForm(){
   $('#mbox').innerHTML='<h3>📄 Presup.'+(PRESU.ref?' '+esc(PRESU.ref):'')+' → '+esc(presuCli.nombre)+'</h3>'
     +'<div class="hsub" style="margin:-2px 0 6px">'+esc(presuCli.cif||'')+'</div>'
     +'<div class="crow" style="margin:6px 0"><span class="muted">Forma de pago:</span>'
-    +'<select id="prPago" style="padding:6px;border:1px solid var(--line);border-radius:8px"><option value="4">Transferencia</option><option value="8">Recibo (domiciliado)</option></select>'
+    +'<select id="prPago" style="padding:6px;border:1px solid var(--line);border-radius:8px"><option value="8">Recibo (domiciliado)</option><option value="4">Transferencia</option></select>'
     +'<span class="muted" style="margin-left:auto;font-size:11px">Precios NETOS · Ágora añade 21%</span></div>'
     +'<div class="ln" style="grid-template-columns:26px 1fr 46px 82px 78px;font-weight:700;font-size:11px;color:var(--mut)"><div>✓</div><div>Concepto</div><div class="num">Cant</div><div class="num">Neto</div><div class="num">c/IVA</div></div>'
     +html
@@ -622,7 +641,7 @@ async function presuEmitir(){
   const sel=PRESU.lineas.filter(l=>l.sel && (l.desc||'').trim());
   if(!sel.length){ alert('Marca al menos una línea con descripción para facturar.'); return; }
   const totIva=sel.reduce((s,l)=>s+(+l.precio||0)*(+l.cantidad||0),0)*1.21;
-  if(!confirm('Emitir factura REAL a '+presuCli.nombre+'\n\n'+sel.length+' líneas · total '+eur(totIva)+' · '+($('#prPago').value==='8'?'Recibo domiciliado':'Transferencia')+'\n\nEs una factura fiscal real. ¿Continuar?')) return;
+  if(!confirm('Emitir factura REAL a '+presuCli.nombre+'\n\n'+sel.length+' líneas · total '+eur(totIva)+' · '+($('#prPago').value==='8'?'Recibo domiciliado':'Transferencia')+avisoTransferencia($('#prPago').value)+'\n\nEs una factura fiscal real. ¿Continuar?')) return;
   const btn=$('#prGo'); if(btn){ btn.disabled=true; btn.textContent='Emitiendo…'; }
   try{
     const body={confirmar:true, customer_id:presuCli.id, cif:presuCli.cif, cliente:presuCli.nombre,
@@ -732,11 +751,14 @@ $('#bEmit').onclick = ()=>{
   const tot = sel.reduce((s,p)=>s+p.total,0);
   let rows = sel.map(p=>'<div class="row"><span>'+esc(p.cliente)+(p.centro?' · <small>'+esc(p.centro)+'</small>':'')
       +' <small>('+FORMAS[p.forma_pago_id]+')</small></span><span>'+eur(p.total)+'</span></div>').join('');
+  // ver avisoTransferencia(): en lote no hay confirm(), asi que el aviso va en el propio modal
+  const nTrf = sel.filter(p=>Number(p.forma_pago_id)===4).length;
   $('#mbox').innerHTML = '<h3>Emitir facturas</h3>'
     + '<div class="muted">'+sel.length+' facturas · serie F · '+nombreMes(MESDEST)+'</div>'
     + '<div style="margin-top:10px;max-height:42vh;overflow:auto">'+rows+'</div>'
     + '<div class="row" style="border:0;font-weight:700"><span>TOTAL</span><span>'+eur(tot)+'</span></div>'
     + '<div class="note">⚠️ Se emitirán facturas <b>fiscales reales</b> en Ágora, numeradas por Ágora. No se pueden borrar.</div>'
+    + (nTrf ? '<div class="note" style="border-left:3px solid #c0392b"><b>⚠️ '+nTrf+' de estas '+sel.length+' van por TRANSFERENCIA.</b> En el PDF del cliente pondrá «Transferencia bancaria». Si tiene mandato SEPA, la remesa la girará igualmente y puede pagarte dos veces (pasó con LOMIDES, F-8023). Revísalas antes de emitir.</div>' : '')
     + '<div class="toolbar" style="margin-top:14px;justify-content:flex-end">'
     +   '<button class="btn sec" onclick="cerrarModal()">Cancelar</button>'
     +   '<button class="btn pri" id="bEmitGo">Emitir '+sel.length+' · '+eur(tot)+'</button>'
@@ -985,7 +1007,7 @@ function albSetPago(id,v){ const a=ALB.find(x=>x._id===id); a.forma_pago_id=Numb
 async function emitirAlb(id){
   const a=ALB.find(x=>x._id===id); if(!a)return;
   if(!(a.lineas||[]).length){ alert('El albarán no tiene líneas.'); return; }
-  if(!confirm('Emitir FACTURA F real de '+a.ref+' a '+a.cliente+'\n\nTotal '+eur(albTotal(a))+' · '+(a.forma_pago_id==8?'Recibo domiciliado':'Transferencia')+'\n\nEs una factura fiscal real. ¿Continuar?')) return;
+  if(!confirm('Emitir FACTURA F real de '+a.ref+' a '+a.cliente+'\n\nTotal '+eur(albTotal(a))+' · '+(a.forma_pago_id==8?'Recibo domiciliado':'Transferencia')+avisoTransferencia(a.forma_pago_id)+'\n\nEs una factura fiscal real. ¿Continuar?')) return;
   const body={confirmar:true, ref:a.ref, customer_id:a.customer_id, cif:a.cif, cliente:a.cliente,
     forma_pago_id:a.forma_pago_id, lineas:a.lineas};
   try{

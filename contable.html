@@ -1120,6 +1120,16 @@
         </div>
         <div style="font-size:12px;color:var(--texto-suave);margin-top:6px">Cuando una factura sale de esa carpeta (recibidas → carpeta del proveedor; emitidas → fuera de «PENDENT CONTABILITZAR») se considera contabilizada y desaparece sola de aquí. Solo cuenta 2026 en adelante.</div>
       </div>
+      <!-- ⭐ PROVEEDORES MUDOS [2026-09-18]. Lo primero de la pestaña a propósito: una lista que no
+           crece se ve igual que una lista al día. GM CASH dejó de entrar el 12/08 y no se vio en cinco
+           semanas. Aquí se vigila la EDAD de la última factura de cada proveedor, no el contenido. -->
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>📡 ¿Alguien ha dejado de mandar facturas?</span>
+          <span id="pc-prov-tot" style="font-size:13px;font-weight:700;color:#0e7490"></span>
+        </div>
+        <div id="pc-prov"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px" id="pc-grid">
         <div class="card">
           <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
@@ -1133,6 +1143,16 @@
           </div>
           <div id="pc-rec"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div>
         </div>
+      </div>
+      <!-- ⭐ YA CONTABILIZADAS [2026-09-18, idea de Joan]: en verde y debajo, lo más reciente arriba.
+           No es decoración: es lo que deja ver el goteo. Sin esto, "no hay nada pendiente" y "no está
+           entrando nada" son la misma pantalla en blanco. -->
+      <div class="card" style="margin-top:14px">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span style="color:#166534">✅ Ya contabilizadas <span style="font-weight:400;font-size:12px;color:var(--texto-suave)">— el goteo que SÍ ha entrado, lo más reciente arriba</span></span>
+          <span id="pc-cont-tot" style="font-size:13px;font-weight:700;color:#166534"></span>
+        </div>
+        <div id="pc-cont"><div style="color:var(--texto-suave);font-size:13px">Cargando…</div></div>
       </div>
     </div>
 
@@ -5833,20 +5853,65 @@ function cargarPendCont(){
       emi.innerHTML = j.emitidas.raiz_existe
         ? '<div style="color:var(--texto-suave);font-size:13px;padding:6px 0">✓ Nada pendiente. Todas las ventas están contabilizadas.</div>'
         : '<div style="color:var(--texto-suave);font-size:12.5px;padding:6px 0;line-height:1.5">Aún no existe la carpeta de ventas. Cuando vuelques desde Ágora, crea:<br><code style="font-size:11px">'+j.emitidas.raiz+'\\'+anio+'\\&lt;mes&gt;\\&lt;día&gt;\\PENDENT CONTABILITZAR\\</code><br>y deja ahí los PDF (el Excel resumen, suelto en la carpeta del día).</div>';
-    } else { emi.innerHTML=j.emitidas.meses.map(m=>pcMes(m,'emi')).join(''); }
+    } else { emi.innerHTML=j.emitidas.meses.slice().reverse().map(m=>pcMes(m,'emi')).join(''); }
     // RECIBIDAS
-    rec.innerHTML = j.recibidas.n ? j.recibidas.meses.map(m=>pcMes(m,'rec')).join('')
+    rec.innerHTML = j.recibidas.n ? j.recibidas.meses.slice().reverse().map(m=>pcMes(m,'rec')).join('')
       : '<div style="color:var(--texto-suave);font-size:13px;padding:6px 0">✓ Nada pendiente. Raquel ya las ha contabilizado todas.</div>';
+    // ⭐ PROVEEDORES MUDOS y ⭐ YA CONTABILIZADAS [2026-09-18]
+    pcProv(j.proveedores||[]);
+    pcCont(j.contabilizadas||{n:0,total:0,facturas:[]});
   }).catch(()=>{ emi.innerHTML=rec.innerHTML='<div style="color:#c00;font-size:13px">No se pudo conectar.</div>'; });
 }
 function pcEnt(s){ // oculta el nombre de la carpeta genérica como si fuese el proveedor (aún sin clasificar)
   if(!s) return '—';
   return /contabiliz|pendent|\bpdte\b|\bpte\b|varios|sin\s*clasific/i.test(s) ? '—' : s;
 }
+// ⭐ LA TIRA DE PROVEEDORES MUDOS [2026-09-18]
+// Ordenada por días de silencio, el más mudo primero. Rojo >=45 días, ámbar 22-44, verde el resto.
+// ⚠️ Un proveedor en rojo NO es un error: hay quien factura una vez al trimestre. Es algo que MIRAR.
+// Lo que no puede volver a pasar es que algo deje de llegar y no se note (GM CASH, 12/08 → 18/09).
+function pcProv(lista){
+  const box=document.getElementById('pc-prov'); if(!box) return;
+  const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const eur=x=>(x==null?'—':new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(x||0)+' €');
+  if(!lista.length){ box.innerHTML='<div style="color:var(--texto-suave);font-size:13px;padding:6px 0">Sin datos de proveedores.</div>'; return; }
+  const mudos=lista.filter(p=>p.estado==='mudo').length;
+  const tot=document.getElementById('pc-prov-tot');
+  if(tot) tot.textContent = mudos ? (mudos+' sin mandar nada en 45+ d\u00edas') : 'todos al d\u00eda';
+  if(tot) tot.style.color = mudos ? '#b91c1c' : '#166534';
+  const col=e=>e==='mudo'?'#b91c1c':(e==='ojo'?'#b45309':'#166534');
+  const bg =e=>e==='mudo'?'#fef2f2':(e==='ojo'?'#fffbeb':'#f0fdf4');
+  box.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">'+lista.map(p=>
+    '<span title="'+esc(p.n+' facturas · '+eur(p.total))+'" style="font-size:11.5px;padding:4px 9px;border-radius:999px;background:'+bg(p.estado)+';color:'+col(p.estado)+';border:1px solid currentColor">'+
+    esc(p.entidad)+' · '+(p.dias==null?'sin fecha':(p.dias+' d'))+'</span>').join('')+'</div>'+
+    '<div style="font-size:11.5px;color:var(--texto-suave);margin-top:8px">Días desde su última factura. Rojo = 45 días o más. No siempre es un fallo (hay quien factura por trimestres), pero si un habitual se pone en rojo, algo ha dejado de entrar.</div>';
+}
+
+// ⭐ LAS YA CONTABILIZADAS, en verde y lo más reciente arriba [2026-09-18]
+function pcCont(c){
+  const box=document.getElementById('pc-cont'); if(!box) return;
+  const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const eur=x=>(x==null?'—':new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(x||0)+' €');
+  const tot=document.getElementById('pc-cont-tot');
+  if(tot) tot.textContent=(c.n||0)+' fac · '+eur(c.total);
+  const fs=(c.facturas||[]);
+  if(!fs.length){ box.innerHTML='<div style="color:var(--texto-suave);font-size:13px;padding:6px 0">Todavía no hay ninguna contabilizada este año.</div>'; return; }
+  box.innerHTML='<table style="width:100%;border-collapse:collapse;margin-top:4px">'+fs.map(f=>
+    '<tr style="border-bottom:1px solid #eee;background:#f0fdf4">'+
+    '<td style="padding:5px 6px;font-size:12px">'+esc(pcEnt(f.entidad))+'</td>'+
+    '<td style="padding:5px 6px;font-size:11px;color:#666">'+esc(f.nombre||'')+'</td>'+
+    '<td style="padding:5px 6px;font-size:11px;color:#666;white-space:nowrap">'+esc(f.fecha||'')+'</td>'+
+    '<td style="padding:5px 6px;text-align:right;font-size:12px;white-space:nowrap">'+eur(f.total)+'</td>'+
+    '<td style="padding:5px 6px;text-align:right"><button onclick="provVerDoc(\''+encodeURIComponent(f.ruta)+'\')" style="padding:3px 8px;border:none;border-radius:5px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁</button></td></tr>').join('')+
+    '</table>'+(c.n>fs.length?('<div style="font-size:11.5px;color:var(--texto-suave);padding:6px 2px">Se muestran las '+fs.length+' más recientes de '+c.n+'.</div>'):'');
+}
+
 function pcMes(m, tipo){
   const eur=x=>(x==null?'—':new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(x||0)+' €');
   const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  let filas=m.facturas.map(f=>{
+  // ⭐ lo más reciente arriba [Joan 2026-09-18]. El bridge las manda por fecha ascendente; aquí se
+  //    le da la vuelta sin tocar el servidor (slice() para no reordenar el array original).
+  let filas=m.facturas.slice().sort((a,b)=>(''+(b.fecha||'')).localeCompare(''+(a.fecha||''))).map(f=>{
     const ver = tipo==='emi'
       ? '<button onclick="pcVerEmi(\''+encodeURIComponent(f.ruta)+'\')" style="padding:3px 8px;border:none;border-radius:5px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁</button>'
       : '<button onclick="provVerDoc(\''+encodeURIComponent(f.ruta)+'\')" style="padding:3px 8px;border:none;border-radius:5px;background:#475569;color:#fff;cursor:pointer;font-size:11px">👁</button>';

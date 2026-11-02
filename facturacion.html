@@ -1188,11 +1188,16 @@ async function _mandarFactura(f, para){
   const ref=f.serie+'-'+f.numero;
   const doc=await docAgora(f.id);
   const blob=await generarPDFBlobC(doc);
+  // ⛔ [Joan 2026-11-02] Sin PDF no se envía: el 02/11 la remesa de noviembre llegó a los clientes SIN la factura
+  //    y no saltó ningún error. Ahora se comprueba el PDF antes de mandar y el adjunto después.
+  if(!blob || blob.size<1000) throw new Error('el PDF ha salido vacío ('+(blob?blob.size:0)+' bytes). NO se ha enviado.');
   const b64=await blobABase64C(blob);
+  if(!b64 || b64.length<1000) throw new Error('el PDF no se ha podido preparar para adjuntar. NO se ha enviado.');
   const r=await fetch(API+'/correo/enviar',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({de:'info@js-tech.es', para:para, asunto:'Factura '+ref+' · JS Technology Menorca',
       cuerpo:_cuerpoMail(ref), adjuntos:[{nombre:'Factura_'+ref+'.pdf', base64:b64}]})}).then(r=>r.json());
   if(!r.ok) throw new Error(r.error||'envío falló');
+  if(r.adjuntos!==1) throw new Error('el correo ha salido SIN el PDF (adjuntos='+r.adjuntos+'). Revisar antes de reenviar.');
   await fetch(API+'/facturacion/historico/marcar',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({id:f.id, campo:'email_enviado', valor:new Date().toISOString().slice(0,19)})});
   await fetch(API+'/facturacion/historico/marcar',{method:'POST',headers:{'Content-Type':'application/json'},

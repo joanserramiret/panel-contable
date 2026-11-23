@@ -595,6 +595,7 @@
       <div class="card" style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
           <div class="card-title" style="margin:0">🔗 Cuadrar facturas con pagos</div>
+          <a href="https://panel.js-tech.es/app/conciliador.html" target="_blank" title="[Joan 2026-11-23] El conciliador nuevo es ahora el sitio para conciliar: propuestas con confianza, reglas y casar a mano" style="padding:6px 12px;background:#0f7a4f;color:#fff;border-radius:8px;font-size:12px;font-weight:800;text-decoration:none">🧩 Abrir el conciliador nuevo</a>
           <button onclick="cuadrarCargar()" style="padding:6px 12px;background:#f0f4fb;border:1.5px solid #c0cbea;border-radius:8px;cursor:pointer;font-size:12px">⟳ Actualizar</button>
         </div>
         <div style="font-size:12px;color:var(--texto-suave);margin-top:6px">Empareja <b>factura ↔ pago</b> venga por banco, visa, remesa o transferencia (el método es solo una etiqueta). <b>⚖️ Conciliar</b> te abre los movimientos del banco con ese importe para enlazarlos.</div>
@@ -968,11 +969,11 @@
             </select>
             <input type="text" id="bk-buscar" oninput="bkRender()" placeholder="🔍 Buscar en todo: concepto, importe, cliente, factura..."
                    style="padding:6px 10px;border:1.5px solid #dde;border-radius:8px;font-size:12px;min-width:240px"/>
-            <a href="https://panel.js-tech.es/app/conciliador.html" target="_blank" title="Conciliador nuevo: una sola lista de lo pendiente, cada movimiento con su propuesta, la confianza y el motivo [Joan 2026-11-23]" style="padding:6px 12px;background:#1a2e6e;color:#fff;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;display:inline-block">🧩 Conciliador</a>
-            <button onclick="bkAutoconciliar()" id="bk-auto" title="NO escribe nada: genera SUGERENCIAS (regla: el nombre fiscal manda) y te las enseña en una pantalla de punteo — solo se concilia lo que tú marques" style="padding:6px 12px;background:#fff;border:2px dashed #7c3aed;color:#7c3aed;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">⚡ Sugerir conciliaciones</button>
+            <a href="https://panel.js-tech.es/app/conciliador.html" target="_blank" title="Conciliador nuevo: una sola lista de lo pendiente, cada movimiento con su propuesta, la confianza y el motivo [Joan 2026-11-23]" style="padding:8px 16px;background:#0f7a4f;color:#fff;border-radius:8px;font-size:13px;font-weight:800;text-decoration:none;display:inline-block">🧩 Conciliar</a>
             <details style="display:inline-block">
               <summary style="cursor:pointer;color:#6d28d9;font-weight:700;background:#ede9fe;border:1px solid #c4b5fd;border-radius:8px;padding:6px 10px;display:inline-block;font-size:12px">⚙ Más</summary>
               <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+                <button onclick="bkAutoconciliar()" id="bk-auto" title="NO escribe nada: genera SUGERENCIAS (regla: el nombre fiscal manda) y te las enseña en una pantalla de punteo — solo se concilia lo que tú marques" style="padding:6px 12px;background:#fff;border:2px dashed #7c3aed;color:#7c3aed;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">⚡ Sugerir conciliaciones</button>
                 <button onclick="bkCategorizar()" id="bk-cat" title="Clasificar nóminas, impuestos, comisiones, SS y aportaciones" style="padding:6px 12px;background:#0e7490;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🏷 Categorizar</button>
                 <button onclick="bkDuplicados()" title="Detectar y quitar movimientos repetidos (entraron por N43 y por el banco a la vez)" style="padding:6px 12px;background:#fde8e8;border:1px solid #e0b0b0;color:#c0392b;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700">🧹 Duplicados</button>
               </div>

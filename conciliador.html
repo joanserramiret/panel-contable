@@ -40,6 +40,13 @@ select{padding:6px;border:1px solid var(--line);border-radius:8px;font-size:12px
 .vacio{text-align:center;color:var(--mut);padding:30px}
 .just{margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
 .just summary{cursor:pointer;font-weight:700}
+.modal{position:fixed;inset:0;background:rgba(15,31,61,.55);display:none;align-items:flex-start;justify-content:center;z-index:8;padding:20px 10px;overflow:auto}
+.mbox{background:#fff;border-radius:14px;max-width:820px;width:100%;padding:14px 16px}
+.cand{display:flex;gap:10px;align-items:center;padding:7px 8px;border-bottom:1px solid var(--line);cursor:pointer}
+.cand:hover{background:#f6f8fc}.cand.hecha{opacity:.55}
+.cand .ct{flex:1;min-width:0}.cand .ct small{color:var(--mut);display:block}
+.cand input[type=number]{width:96px;padding:4px;border:1px solid var(--line);border-radius:6px;text-align:right}
+.suma{position:sticky;bottom:0;background:#fff;padding:10px 0 0;margin-top:8px;border-top:2px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#0f1f3d;color:#fff;padding:10px 16px;border-radius:10px;display:none;z-index:9}
 @media (max-width:600px){.f{min-width:auto}.c{min-width:100%}}
 </style>
@@ -58,6 +65,18 @@ select{padding:6px;border:1px solid var(--line);border-radius:8px;font-size:12px
   <details class="just" id="just"><summary>Justificados sin factura</summary><div id="justTxt" style="margin-top:8px;color:var(--mut)"></div></details>
 </main>
 <div class="msg" id="msg"></div>
+<div class="modal" id="cm"><div class="mbox">
+  <div style="display:flex;gap:8px;align-items:center"><b style="font-size:16px">🔗 Casar a mano</b><span style="margin-left:auto"></span><button class="btn x" onclick="cmCerrar()">✕</button></div>
+  <div id="cmMov" style="margin:8px 0;padding:8px;background:#f4f6fa;border-radius:8px"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <input id="cmQ" placeholder="Buscar: cliente, proveedor, nº, importe…" style="flex:1;min-width:220px;padding:8px;border:1px solid var(--line);border-radius:8px" oninput="cmPintar()">
+    <label style="font-size:12px;color:var(--mut)"><input type="checkbox" id="cmTodas" onchange="cmPintar()"> ver también las ya cobradas/pagadas</label>
+  </div>
+  <div id="cmLista" style="margin-top:8px;max-height:52vh;overflow:auto"></div>
+  <div class="suma"><span id="cmSuma"></span><span style="margin-left:auto"></span>
+    <button class="btn ok" id="cmGo" onclick="cmGuardar()">Casar</button></div>
+  <div style="font-size:11px;color:var(--mut);margin-top:6px">Casos raros (factura de un año cerrado, devolución de dinero a un cliente) → 🔗 del panel antiguo, pestaña Banco.</div>
+</div></div>
 <script>
 const API='https://panel.js-tech.es';
 const ANIO=(new URLSearchParams(location.search).get('anio'))||String(new Date().getFullYear());
@@ -104,7 +123,7 @@ function cajaProp(m,p,idx){
 }
 function fila(m){
   const P=(m.propuestas||[]).map((p,i)=>({p,i})).filter(x=>!OCULTAS[m.id+':'+x.i]);
-  const primera=P.length?cajaProp(m,P[0].p,P[0].i):'<div class="prop baja"><div class="pt"><b>Sin propuesta</b><small>No encuentro nada que case. Ponle categoría o concílialo a mano en el panel (🔗).</small></div></div>';
+  const primera=P.length?cajaProp(m,P[0].p,P[0].i):'<div class="prop baja"><div class="pt"><b>Sin propuesta</b><small>No encuentro nada que case. Ponle categoría o cásalo con «🔗 Casar a mano».</small></div></div>';
   const resto=P.slice(1);
   const otras=resto.length?'<span class="mas" onclick="this.nextElementSibling.style.display=\'block\';this.remove()">Ver '+resto.length+' propuesta(s) más</span><div style="display:none">'+resto.map(x=>cajaProp(m,x.p,x.i)).join('')+'</div>':'';
   const sel='<select onchange="if(this.value)categorizar('+m.id+',this.value)"><option value="">Poner categoría…</option>'
@@ -113,7 +132,7 @@ function fila(m){
   return '<div class="mov" id="m'+m.id+'"><div class="top"><span class="f">'+fdate(m.fecha)+' · '+esc(m.banco||'')+'</span>'
     +'<span class="c">'+esc(m.concepto)+(m.categoria?' <span class="cat">'+esc(m.categoria)+'</span>':'')+'</span>'
     +'<span class="i '+(m.importe<0?'neg':'pos')+'">'+eur(m.importe)+'</span></div>'
-    +primera+otras+'<div style="margin-top:6px">'+sel+'</div></div>';
+    +primera+otras+'<div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn sec" onclick="cmAbrir('+m.id+')">🔗 Casar a mano</button>'+sel+'</div></div>';
 }
 function ocultar(id,idx){ OCULTAS[id+':'+idx]=1; pintar(); }
 async function post(id,aplicar){
@@ -158,6 +177,75 @@ $('#bAltas').onclick=async ()=>{
   if(err.length) alert('No se han podido aplicar:\n\n'+err.join('\n'));
   await cargar();
 };
+// ═══ 🔗 CASAR A MANO (lo que hacía el 🔗 del panel antiguo) ═══
+let CM=null;   // {mov, tipo, cand, sel:{clave:importe}}
+const MOTIVOS_DESC=['Gastos de devolución repercutidos','Fallo en la transferencia del cliente','Cliente desaparecido / incobrable','Error de escritura (importe mal tecleado)','Redondeo / céntimos'];
+const nrm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+async function cmAbrir(id){
+  $('#cm').style.display='flex'; $('#cmLista').innerHTML='<div class="vacio">Buscando facturas…</div>'; $('#cmQ').value=''; $('#cmTodas').checked=false;
+  try{ const j=await fetch(API+'/banco/candidatos?id='+id+'&_='+Date.now()).then(r=>r.json()); if(!j.ok) throw new Error(j.error||'error');
+    CM={mov:j.mov,tipo:j.tipo,cand:j.candidatos||[],sel:{}};
+  }catch(e){ $('#cmLista').innerHTML='<div class="vacio">No he podido cargar las facturas: '+esc(e.message)+'</div>'; return; }
+  const m=CM.mov;
+  $('#cmMov').innerHTML='<b>'+fdate(m.fecha)+'</b> · '+esc(m.concepto)+' · <b class="i '+(m.importe<0?'neg':'pos')+'">'+eur(m.importe)+'</b><br><small style="color:var(--mut)">'
+    +({venta:'Abono → facturas de venta pendientes de cobro',devolucion:'Devolución de recibo → marca la factura de venta como DEVUELTA',proveedor:'Cargo → facturas de proveedor y nóminas pendientes de pago'}[CM.tipo]||'')+'</small>';
+  cmPintar(); setTimeout(()=>$('#cmQ').focus(),50);
+}
+function cmCerrar(){ $('#cm').style.display='none'; CM=null; }
+function cmVal(c){ return (c.queda!=null && Math.abs(c.queda)>=0.01) ? c.queda : c.total; }
+function cmPintar(){
+  if(!CM) return;
+  const q=nrm($('#cmQ').value).trim(), todas=$('#cmTodas').checked;
+  const qs=q.replace(',','.');
+  let L=CM.cand.filter(c=>CM.sel[c.clave]!=null || ((todas||!c.hecha) && (!q || nrm(c.titulo+' '+c.cliente+' '+c.fecha).includes(q) || String(c.total).includes(qs) || String(c.queda).includes(qs))));
+  const n=L.length; L=L.slice(0,120);
+  $('#cmLista').innerHTML=(L.length?L.map(c=>{ const on=CM.sel[c.clave]!=null;
+    return '<div class="cand'+(c.hecha?' hecha':'')+'" onclick="if(event.target.tagName!==\'INPUT\')cmToggle(\''+esc(c.clave).replace(/'/g,'')+'\')">'
+      +'<input type="checkbox" '+(on?'checked':'')+' onclick="cmToggle(\''+esc(c.clave).replace(/'/g,'')+'\')">'
+      +'<div class="ct"><b>'+esc(c.titulo)+'</b> · '+esc(c.cliente||'')+'<small>'+fdate(c.fecha)+' · total '+eur(c.total)
+      +(c.hecha?(c.externo?' · pagada fuera del banco':' · ya '+(CM.tipo==='proveedor'?'pagada':'cobrada')):(Math.abs(c.queda-c.total)>=0.01?' · le quedan '+eur(c.queda):''))+'</small></div>'
+      +(on?'<input type="number" step="0.01" value="'+CM.sel[c.clave]+'" title="Importe que se imputa de esta factura" oninput="cmImp(\''+esc(c.clave).replace(/'/g,'')+'\',this.value)">':'<b>'+eur(cmVal(c))+'</b>')
+      +'</div>'; }).join(''):'<div class="vacio">Nada con ese filtro.</div>')
+    +(n>L.length?'<div style="color:var(--mut);font-size:12px;padding:6px">… y '+(n-L.length)+' más: afina la búsqueda.</div>':'');
+  cmSuma();
+}
+function cmToggle(k){ const c=CM.cand.find(x=>x.clave===k); if(!c) return;
+  if(CM.sel[k]!=null) delete CM.sel[k]; else CM.sel[k]=Math.round(cmVal(c)*100)/100; cmPintar(); }
+function cmImp(k,v){ CM.sel[k]=Math.round((parseFloat(String(v).replace(',','.'))||0)*100)/100; cmSuma(); }
+function cmSuma(){
+  const obj=Math.abs(CM.mov.importe), suma=Object.values(CM.sel).reduce((a,b)=>a+b,0), dif=Math.round((obj-suma)*100)/100, n=Object.keys(CM.sel).length;
+  $('#cmSuma').innerHTML=n+' marcada(s) · suman <b>'+eur(suma)+'</b> de '+eur(obj)
+    +(n?(Math.abs(dif)<0.005?' · <b style="color:var(--alta)">✓ cuadra</b>':' · <b style="color:var(--media)">diferencia '+eur(dif)+'</b>'):'');
+  $('#cmGo').disabled=!n;
+}
+async function cmGuardar(){
+  if(!CM) return; const keys=Object.keys(CM.sel); if(!keys.length) return;
+  const obj=Math.abs(CM.mov.importe);
+  let lista=keys.map(k=>{ const c=CM.cand.find(x=>x.clave===k); return Object.assign({},c.entrada,{importe:CM.sel[k]}); });
+  let suma=lista.reduce((a,e)=>a+e.importe,0);
+  if(lista.length===1 && suma-obj>=0.01 && CM.tipo!=='devolucion'){
+    if(confirm('La factura ('+eur(suma)+') es MAYOR que el movimiento ('+eur(obj)+').\n\n¿Imputar solo '+eur(obj)+' como PAGO A CUENTA? Quedarán '+eur(suma-obj)+' pendientes para otro pago.')){
+      lista[0].importe=obj; lista[0].parcial=true; suma=obj; }
+  }
+  const dif=Math.round((obj-suma)*100)/100;
+  if(Math.abs(dif)>=0.005){
+    const op=prompt('No cuadra: diferencia de '+eur(dif)+'.\n\n¿Por qué? Escribe el número del motivo o el motivo con tus palabras:\n'
+      +MOTIVOS_DESC.map((t,i)=>(i+1)+') '+t).join('\n')+'\n\n(Deja vacío y Aceptar para casar SIN explicar; Cancelar para volver.)','');
+    if(op===null) return;
+    const t=op.trim(); const txt=/^[1-5]$/.test(t)?MOTIVOS_DESC[+t-1]:t;
+    if(txt) lista.push({serie:'DESCUADRE',numero:txt.slice(0,90),importe:dif,cliente:lista[0].cliente||''});
+  }
+  const b=$('#cmGo'); b.disabled=true; b.textContent='Guardando…';
+  try{
+    const r=await fetch(API+'/banco/conciliar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:CM.mov.id,facturas:lista})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.ok) throw new Error(j.error||('error '+r.status));
+    const id=CM.mov.id; cmCerrar(); quitar(id); D.resumen.conciliados++; aviso('✅ Casado'); pintar();
+  }catch(e){ alert('No se ha podido casar: '+e.message); }
+  finally{ b.disabled=false; b.textContent='Casar'; }
+}
+document.addEventListener('keydown',e=>{ if(e.key==='Escape' && CM) cmCerrar(); });
+
 async function cargarReglas(){
   try{ const j=await fetch(API+'/banco/reglas?_='+Date.now()).then(r=>r.json()); const R=j.reglas||[];
     $('#nReglas').textContent=R.length;

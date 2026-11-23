@@ -383,6 +383,57 @@ async function cargarClientes(refrescar){
   const j = await fetch(API+'/sepa/clientes'+(refrescar?'?refrescar=1':'')).then(r=>r.json());
   CLIENTES = j.clientes||[]; return CLIENTES;
 }
+// ⭐ [Joan 2026-11-23] La lista de clientes sale ENTERA al abrir (antes ponía «Escribe para buscar…» y no se veía nada)
+//    y se filtra por palabras sin tildes ni «S.L.». Si no hay ninguno, ofrece crearlo en Ágora.
+const _CLI_STOP=new Set(['S','L','SL','SLU','SA','SAU','SC','SCP','CB','U']);
+function _normCli(x){ return (x||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim(); }
+function clientesFiltrados(q){
+  const todos=(CLIENTES||[]).slice().sort((a,b)=>_normCli(a.nombre).localeCompare(_normCli(b.nombre)));
+  const pal=_normCli(q).split(' ').filter(w=>w && !_CLI_STOP.has(w));
+  if(!pal.length) return todos;
+  return todos.filter(c=>{ const h=' '+_normCli((c.nombre||'')+' '+(c.cif||'')+' '+(c.ciudad||''))+' '; return pal.every(w=>h.includes(w)); });
+}
+function htmlClientes(q, fn, conCiudad, fnCrear){
+  if(!CLIENTES) return '<div class="muted" style="padding:8px">Cargando clientes…</div>';
+  const res=clientesFiltrados(q);
+  const crear=fnCrear?'<button class="btn pri" style="margin:4px 0 8px" onclick="'+fnCrear+'()">➕ Crear cliente'+((q||'').trim()?' «'+esc(q.trim())+'»':' nuevo')+' en Ágora</button>':'';
+  if(!res.length) return '<div class="muted" style="padding:8px">Ningún cliente de Ágora coincide con «'+esc(q||'')+'».</div>'+crear;
+  return '<div class="muted" style="padding:2px 4px 6px;font-size:11px;display:flex;justify-content:space-between;align-items:center"><span>'+res.length+((q||'').trim()?' de '+CLIENTES.length:'')+' clientes</span>'
+    +(fnCrear?'<a href="#" onclick="'+fnCrear+'();return false" style="font-size:12px">➕ Cliente nuevo</a>':'')+'</div>'
+    +res.map(c=>'<div class="hcard" style="cursor:pointer;padding:8px 10px;margin-bottom:6px" onclick="'+fn+'('+c.id+')"><b>'+esc(c.nombre)+'</b><div class="hsub">'+esc(c.cif||'')+(conCiudad&&c.ciudad?' · '+esc(c.ciudad):'')+'</div></div>').join('');
+}
+// ➕ Alta de cliente en Ágora (desde Presupuesto→Factura o Añadir cuota). Al terminar, sigue con ese cliente.
+let _ccVolver=null, _ccSeguir=null;
+function crearClienteForm(nombre, volver, seguir){
+  _ccVolver=volver; _ccSeguir=seguir;
+  const f=(id,lab,val,ph)=>'<label style="display:block;font-size:12px;color:var(--mut);margin-top:8px">'+lab+'</label><input id="'+id+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box">';
+  $('#mbox').innerHTML='<h3>➕ Cliente nuevo en Ágora</h3>'
+    +'<div class="muted">Se crea la ficha en Ágora y se usa para esta factura. Si ya existe un cliente con ese CIF, se usa ese y no se duplica.</div>'
+    +f('ccNom','Nombre fiscal *',nombre,'Razón social')+f('ccCom','Nombre comercial','','(si es distinto)')
+    +f('ccCif','CIF / NIF *','','B12345678')+f('ccDir','Dirección','','Calle, número')
+    +'<div style="display:flex;gap:8px"><div style="flex:1">'+f('ccCp','CP','','07701')+'</div><div style="flex:2">'+f('ccCiu','Población','','Maó')+'</div></div>'
+    +f('ccPro','Provincia','BALEARES','')
+    +'<div style="display:flex;gap:8px"><div style="flex:1">'+f('ccTel','Teléfono','','')+'</div><div style="flex:2">'+f('ccEm','Email (para enviarle las facturas)','','')+'</div></div>'
+    +'<div id="ccMsg" style="margin-top:8px"></div>'
+    +'<div class="toolbar" style="margin-top:12px;justify-content:space-between"><button class="btn sec" onclick="_ccVolver&&_ccVolver()">← Volver</button><button class="btn pri" id="ccGo" onclick="crearClienteGo()">Crear en Ágora</button></div>';
+  $('#mbg').style.display='flex'; const c=$('#ccCif'); if(c) (nombre?c:$('#ccNom')).focus();
+}
+async function crearClienteGo(){
+  const v=id=>($('#'+id).value||'').trim();
+  const body={nombre:v('ccNom'), nombre_comercial:v('ccCom'), cif:v('ccCif'), direccion:v('ccDir'), cp:v('ccCp'), ciudad:v('ccCiu'), provincia:v('ccPro'), telefono:v('ccTel'), email:v('ccEm'), confirmar:true};
+  if(!body.nombre||!body.cif){ $('#ccMsg').innerHTML='<span style="color:#b91c1c">Faltan el nombre fiscal y el CIF/NIF.</span>'; return; }
+  if(!confirm('Crear el cliente en Ágora:\n\n'+body.nombre+'\n'+body.cif+'\n\n¿Continuar?')) return;
+  const b=$('#ccGo'); if(b){ b.disabled=true; b.textContent='Creando…'; }
+  try{
+    const r=await fetch(API+'/agora/cliente_crear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(!r.ok){ $('#ccMsg').innerHTML='<span style="color:#b91c1c">'+esc(r.error||'No se ha podido crear.')+'</span>'; if(b){ b.disabled=false; b.textContent='Crear en Ágora'; } return; }
+    await cargarClientes(true);
+    alert(r.existente ? ('Ya existía en Ágora: '+r.nombre+' ('+r.cif+'). Se usa ese.') : ('✅ Cliente creado en Ágora: '+r.nombre+' ('+r.cif+')'));
+    if(_ccSeguir) _ccSeguir(r.id);
+  }catch(e){ $('#ccMsg').innerHTML='<span style="color:#b91c1c">Error: '+esc(e.message)+'</span>'; if(b){ b.disabled=false; b.textContent='Crear en Ágora'; } }
+}
+function presuCrear(){ const q=($('#prCli')&&$('#prCli').value)||(PRESU&&PRESU.hint)||''; crearClienteForm(q, presuBuscarCliente, id=>presuCliente(id)); }
+function ncCrear(){ const q=($('#ncCli')&&$('#ncCli').value)||''; crearClienteForm(q, ()=>$('#bNueva').onclick(), id=>ncElegir(id)); }
 $('#bNueva').onclick = async ()=>{
   $('#mbox').innerHTML = '<h3>➕ Añadir cuota</h3><div class="muted">Busca el cliente en Ágora (nombre o CIF):</div>'
     + '<input id="ncCli" placeholder="Buscar cliente…" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;font-size:14px;margin-top:8px">'
@@ -392,12 +443,7 @@ $('#bNueva').onclick = async ()=>{
   await cargarClientes();
   const inp=$('#ncCli'); inp.oninput=()=>ncFiltrar(inp.value); ncFiltrar(''); inp.focus();
 };
-function ncFiltrar(q){
-  q=(q||'').toUpperCase().trim();
-  const res = !q? [] : (CLIENTES||[]).filter(c=>(c.nombre||'').toUpperCase().includes(q)||(c.cif||'').toUpperCase().includes(q)).slice(0,40);
-  $('#ncList').innerHTML = q ? (res.map(c=>'<div class="hcard" style="cursor:pointer;padding:8px 10px;margin-bottom:6px" onclick="ncElegir('+c.id+')"><b>'+esc(c.nombre)+'</b><div class="hsub">'+esc(c.cif||'')+(c.ciudad?' · '+esc(c.ciudad):'')+'</div></div>').join('') || '<div class="muted" style="padding:8px">Sin resultados.</div>')
-    : '<div class="muted" style="padding:8px">Escribe para buscar…</div>';
-}
+function ncFiltrar(q){ $('#ncList').innerHTML=htmlClientes(q,'ncElegir',true,'ncCrear'); }
 function ncElegir(id){
   const c = (CLIENTES||[]).find(x=>x.id===id); if(!c) return;
   const opts = CAT.map(a=>'<option value="'+a.pid+'">'+esc(a.nombre)+' ('+a.pid+')</option>').join('');
@@ -442,13 +488,9 @@ async function taylorElegir(i){
   $('#mbox').innerHTML='<h3>🔁 Replicar F-'+esc(taylorFac.numero)+'</h3><div class="muted">¿A qué cliente se la facturas?</div>'
     +'<input id="tcCli" placeholder="Buscar cliente…" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;margin-top:8px">'
     +'<div id="tcList" style="max-height:40vh;overflow:auto;margin-top:8px"></div>'+cerrarBtn();
-  const inp=$('#tcCli'); inp.oninput=()=>tcFiltrar(inp.value); inp.focus();
+  const inp=$('#tcCli'); inp.oninput=()=>tcFiltrar(inp.value); tcFiltrar(inp.value); inp.focus();
 }
-function tcFiltrar(q){
-  q=(q||'').toUpperCase().trim();
-  const res=!q?[]:(CLIENTES||[]).filter(c=>(c.nombre||'').toUpperCase().includes(q)||(c.cif||'').toUpperCase().includes(q)).slice(0,40);
-  $('#tcList').innerHTML=q?(res.map(c=>'<div class="hcard" style="cursor:pointer;padding:8px 10px;margin-bottom:6px" onclick="taylorCliente('+c.id+')"><b>'+esc(c.nombre)+'</b><div class="hsub">'+esc(c.cif||'')+'</div></div>').join('')||'<div class="muted" style="padding:8px">Sin resultados.</div>'):'<div class="muted" style="padding:8px">Escribe para buscar…</div>';
-}
+function tcFiltrar(q){ $('#tcList').innerHTML=htmlClientes(q,'taylorCliente',false); }
 function taylorCliente(id){ taylorCli=(CLIENTES||[]).find(x=>x.id===id); if(taylorCli) taylorForm(); }
 function taylorForm(){
   const inp='style="padding:6px 7px;border:1px solid var(--line);border-radius:8px;font-size:13px;width:100%;box-sizing:border-box"';
@@ -564,11 +606,7 @@ async function presuBuscarCliente(){
     +'<div id="prList" style="max-height:40vh;overflow:auto;margin-top:8px"></div>'+cerrarBtn();
   const inp=$('#prCli'); inp.oninput=()=>prFiltrar(inp.value); prFiltrar(inp.value); inp.focus(); inp.select();
 }
-function prFiltrar(q){
-  q=(q||'').toUpperCase().trim();
-  const res=!q?[]:(CLIENTES||[]).filter(c=>(c.nombre||'').toUpperCase().includes(q)||(c.cif||'').toUpperCase().includes(q)).slice(0,40);
-  $('#prList').innerHTML=q?(res.map(c=>'<div class="hcard" style="cursor:pointer;padding:8px 10px;margin-bottom:6px" onclick="presuCliente('+c.id+')"><b>'+esc(c.nombre)+'</b><div class="hsub">'+esc(c.cif||'')+(c.ciudad?' · '+esc(c.ciudad):'')+'</div></div>').join('')||'<div class="muted" style="padding:8px">Sin resultados.</div>'):'<div class="muted" style="padding:8px">Escribe para buscar…</div>';
-}
+function prFiltrar(q){ $('#prList').innerHTML=htmlClientes(q,'presuCliente',true,'presuCrear'); }
 function presuCliente(id){ presuCli=(CLIENTES||[]).find(x=>x.id===id); if(presuCli) presuForm(); }
 function presuForm(){
   const inp='style="padding:6px 7px;border:1px solid var(--line);border-radius:8px;font-size:13px;width:100%;box-sizing:border-box"';
@@ -681,13 +719,9 @@ async function ibcAddCliente(){
     +'<input id="ibcCli" placeholder="Buscar cliente…" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;margin-top:8px">'
     +'<div id="ibcList" style="max-height:40vh;overflow:auto;margin-top:8px"></div>'
     +'<div class="toolbar" style="justify-content:flex-end;margin-top:10px"><button class="btn sec" onclick="ibcAbrir()">← Volver</button></div>';
-  const inp=$('#ibcCli'); inp.oninput=()=>ibcFiltrar(inp.value); inp.focus();
+  const inp=$('#ibcCli'); inp.oninput=()=>ibcFiltrar(inp.value); ibcFiltrar(inp.value); inp.focus();
 }
-function ibcFiltrar(q){
-  q=(q||'').toUpperCase().trim();
-  const res=!q?[]:(CLIENTES||[]).filter(c=>(c.nombre||'').toUpperCase().includes(q)||(c.cif||'').toUpperCase().includes(q)).slice(0,40);
-  $('#ibcList').innerHTML=q?(res.map(c=>'<div class="hcard" style="cursor:pointer;padding:8px 10px;margin-bottom:6px" onclick="ibcClienteSel('+c.id+')"><b>'+esc(c.nombre)+'</b><div class="hsub">'+esc(c.cif||'')+'</div></div>').join('')||'<div class="muted" style="padding:8px">Sin resultados.</div>'):'<div class="muted" style="padding:8px">Escribe para buscar…</div>';
-}
+function ibcFiltrar(q){ $('#ibcList').innerHTML=htmlClientes(q,'ibcClienteSel',false); }
 function ibcClienteSel(id){
   const c=(CLIENTES||[]).find(x=>x.id===id); if(!c) return;
   const inp='style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box"';

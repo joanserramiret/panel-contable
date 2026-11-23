@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conciliador · JS-Tech</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--ink:#0f1f3d;--mut:#64748b;--line:#dde3ec;--pri:#1a2e6e;
+  --alta:#0f7a4f;--altabg:#e6f6ee;--media:#a15c00;--mediabg:#fff4e0;--baja:#8a8f98;--bajabg:#f1f3f6;--neg:#b42318;--pos:#0f7a4f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif}
+header{background:var(--pri);color:#fff;padding:14px 18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{font-size:18px;margin:0}
+header a{color:#cfe0ff;font-size:12px;margin-left:auto}
+main{max-width:1100px;margin:0 auto;padding:14px}
+.res{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.chip{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;user-select:none}
+.chip b{font-size:17px;display:block}
+.chip small{color:var(--mut)}
+.chip.on{outline:2px solid var(--pri)}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
+.btn{border:0;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;font-size:13px}
+.btn.pri{background:var(--pri);color:#fff}.btn.ok{background:var(--alta);color:#fff}
+.btn.sec{background:#e8edf5;color:var(--ink)}.btn.x{background:#fff;border:1px solid var(--line);color:var(--mut)}
+.btn:disabled{opacity:.5;cursor:default}
+.mov{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.f{color:var(--mut);font-size:12px;min-width:84px}
+.c{flex:1;min-width:200px;font-weight:600;word-break:break-word}
+.i{font-weight:800;font-variant-numeric:tabular-nums}
+.i.neg{color:var(--neg)}.i.pos{color:var(--pos)}
+.cat{font-size:11px;color:var(--mut);background:#eef2f7;border-radius:6px;padding:1px 6px}
+.prop{display:flex;gap:8px;align-items:center;margin-top:8px;padding:8px;border-radius:9px;flex-wrap:wrap}
+.prop.alta{background:var(--altabg)}.prop.media{background:var(--mediabg)}.prop.baja{background:var(--bajabg)}
+.badge{font-size:11px;font-weight:800;border-radius:6px;padding:2px 7px;color:#fff;text-transform:uppercase}
+.badge.alta{background:var(--alta)}.badge.media{background:var(--media)}.badge.baja{background:var(--baja)}
+.pt{flex:1;min-width:200px}.pt b{display:block}.pt small{color:#475569}
+.mas{font-size:12px;color:var(--pri);cursor:pointer;margin-top:6px;display:inline-block}
+select{padding:6px;border:1px solid var(--line);border-radius:8px;font-size:12px}
+.vacio{text-align:center;color:var(--mut);padding:30px}
+.just{margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.just summary{cursor:pointer;font-weight:700}
+.msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#0f1f3d;color:#fff;padding:10px 16px;border-radius:10px;display:none;z-index:9}
+@media (max-width:600px){.f{min-width:auto}.c{min-width:100%}}
+</style>
+</head>
+<body>
+<header><h1>🧩 Conciliador</h1><span id="anioTxt"></span><a href="https://contable.js-tech.es/">← Panel contable</a></header>
+<main>
+  <div class="res" id="res"><div class="chip">Cargando…</div></div>
+  <div class="bar">
+    <button class="btn ok" id="bAltas" disabled>✅ Aceptar todas las de confianza alta</button>
+    <button class="btn sec" id="bRec">🔄 Volver a mirar</button>
+    <span id="estado" style="color:var(--mut);font-size:12px"></span>
+  </div>
+  <div id="lista"></div>
+  <details class="just" id="just"><summary>Justificados sin factura</summary><div id="justTxt" style="margin-top:8px;color:var(--mut)"></div></details>
+</main>
+<div class="msg" id="msg"></div>
+<script>
+const API='https://panel.js-tech.es';
+const ANIO=(new URLSearchParams(location.search).get('anio'))||String(new Date().getFullYear());
+let D=null, FILTRO='todos';
+const OCULTAS={};   // ✗ = «no es esto»: se esconde esa propuesta (solo en esta pantalla)
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const eur=v=>new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0)+' €';
+const fdate=s=>(s||'').slice(0,10).split('-').reverse().join('/');
+function aviso(t){ const m=$('#msg'); m.textContent=t; m.style.display='block'; clearTimeout(aviso._t); aviso._t=setTimeout(()=>m.style.display='none',3500); }
+function props(m){ return (m.propuestas||[]).filter((p,i)=>!OCULTAS[m.id+':'+i]); }
+function mejor(m){ const p=props(m); return p.length?p[0]:null; }
+function nivel(m){ const p=mejor(m); return p&&p.aplicar?p.confianza:(p?'baja':'sin'); }
+
+async function cargar(){
+  $('#estado').textContent='Mirando el banco y las facturas…'; $('#bAltas').disabled=true;
+  try{
+    const r=await fetch(API+'/banco/propuestas?anio='+ANIO+'&_='+Date.now()); D=await r.json();
+    if(!D.ok) throw new Error(D.error||'error');
+  }catch(e){ $('#lista').innerHTML='<div class="vacio">No he podido cargar las propuestas: '+esc(e.message)+'</div>'; $('#estado').textContent=''; return; }
+  $('#anioTxt').textContent=D.anio; $('#estado').textContent='';
+  pintar();
+}
+function pintar(){
+  const L=D.pendientes||[];
+  const n={alta:0,media:0,baja:0,sin:0}; L.forEach(m=>n[nivel(m)]++);
+  const R=D.resumen||{};
+  const chip=(k,num,txt)=>'<div class="chip'+(FILTRO===k?' on':'')+'" onclick="FILTRO=\''+k+'\';pintar()"><b>'+num+'</b><small>'+txt+'</small></div>';
+  $('#res').innerHTML=chip('todos',L.length,'pendientes de '+(R.total||0)+' movimientos')
+    +chip('alta',n.alta,'confianza alta')+chip('media',n.media,'confianza media')+chip('baja',n.baja,'solo pista')+chip('sin',n.sin,'sin propuesta')
+    +'<div class="chip" style="cursor:default"><b>'+(R.conciliados||0)+'</b><small>conciliados</small></div>'
+    +'<div class="chip" style="cursor:default"><b>'+(R.justificados||0)+'</b><small>justificados sin factura</small></div>';
+  const b=$('#bAltas'); b.disabled=!n.alta; b.textContent='✅ Aceptar todas las de confianza alta ('+n.alta+')';
+  const vis=L.filter(m=>FILTRO==='todos'||nivel(m)===FILTRO);
+  $('#lista').innerHTML=vis.length?vis.map(fila).join(''):'<div class="vacio">'+(L.length?'Nada en este filtro.':'✅ No queda nada pendiente de conciliar en '+esc(D.anio)+'.')+'</div>';
+  $('#justTxt').innerHTML='Comisiones, impuestos, Seguridad Social, nóminas, seguros y traspasos no llevan factura: se dan por justificados con su categoría. '
+    +(R.justificados||0)+' movimientos en '+esc(D.anio)+'.';
+}
+function cajaProp(m,p,idx){
+  const ok=p.aplicar?'<button class="btn ok" onclick="aplicar('+m.id+','+idx+')">✓ Aceptar</button>':'';
+  return '<div class="prop '+p.confianza+'"><span class="badge '+p.confianza+'">'+p.confianza+'</span>'
+    +'<div class="pt"><b>'+esc(p.etiqueta||'')+'</b><small>'+esc(p.motivo||'')+'</small></div>'+ok
+    +'<button class="btn x" title="No es esto" onclick="ocultar('+m.id+','+idx+')">✗</button></div>';
+}
+function fila(m){
+  const P=(m.propuestas||[]).map((p,i)=>({p,i})).filter(x=>!OCULTAS[m.id+':'+x.i]);
+  const primera=P.length?cajaProp(m,P[0].p,P[0].i):'<div class="prop baja"><div class="pt"><b>Sin propuesta</b><small>No encuentro nada que case. Ponle categoría o concílialo a mano en el panel (🔗).</small></div></div>';
+  const resto=P.slice(1);
+  const otras=resto.length?'<span class="mas" onclick="this.nextElementSibling.style.display=\'block\';this.remove()">Ver '+resto.length+' propuesta(s) más</span><div style="display:none">'+resto.map(x=>cajaProp(m,x.p,x.i)).join('')+'</div>':'';
+  const sel='<select onchange="if(this.value)categorizar('+m.id+',this.value)"><option value="">Poner categoría…</option>'
+    +(D.categorias||[]).map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select>';
+  return '<div class="mov" id="m'+m.id+'"><div class="top"><span class="f">'+fdate(m.fecha)+' · '+esc(m.banco||'')+'</span>'
+    +'<span class="c">'+esc(m.concepto)+(m.categoria?' <span class="cat">'+esc(m.categoria)+'</span>':'')+'</span>'
+    +'<span class="i '+(m.importe<0?'neg':'pos')+'">'+eur(m.importe)+'</span></div>'
+    +primera+otras+'<div style="margin-top:6px">'+sel+'</div></div>';
+}
+function ocultar(id,idx){ OCULTAS[id+':'+idx]=1; pintar(); }
+async function post(id,aplicar){
+  const r=await fetch(API+'/banco/propuestas/aplicar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,aplicar})});
+  let j={}; try{ j=await r.json(); }catch(e){}
+  if(!r.ok||!j.ok) throw new Error(j.error||('error '+r.status));
+  return j;
+}
+function quitar(id){ D.pendientes=(D.pendientes||[]).filter(x=>x.id!==id); }
+async function aplicar(id,idx){
+  const m=(D.pendientes||[]).find(x=>x.id===id); const p=m&&m.propuestas[idx]; if(!p||!p.aplicar) return;
+  try{ await post(id,p.aplicar); quitar(id);
+    if(p.aplicar.tipo==='categoria' && !(D.exentas||[]).includes(p.aplicar.categoria)){ aviso('Categoría puesta. «'+p.aplicar.categoria+'» sigue necesitando su justificante.'); await cargar(); return; }
+    D.resumen.conciliados+=(p.aplicar.tipo==='categoria'?0:1); if(p.aplicar.tipo==='categoria') D.resumen.justificados++;
+    aviso('✅ Hecho'); pintar();
+  }catch(e){ alert('No se ha podido aplicar: '+e.message); }
+}
+async function categorizar(id,cat){
+  try{ await post(id,{tipo:'categoria',categoria:cat});
+    if((D.exentas||[]).includes(cat)){ quitar(id); D.resumen.justificados++; aviso('✅ Justificado como «'+cat+'»'); pintar(); }
+    else { aviso('Categoría «'+cat+'» puesta'); await cargar(); }
+  }catch(e){ alert('No se ha podido: '+e.message); }
+}
+$('#bAltas').onclick=async ()=>{
+  const L=(D.pendientes||[]).filter(m=>nivel(m)==='alta');
+  if(!L.length) return;
+  if(!confirm('Aceptar '+L.length+' propuesta(s) de confianza ALTA?\n\nEs reversible: se puede desconciliar en el panel.')) return;
+  const b=$('#bAltas'); b.disabled=true; let ok=0, err=[];
+  for(const m of L){ const p=mejor(m); b.textContent='Aplicando '+(ok+err.length+1)+'/'+L.length+'…';
+    try{ await post(m.id,p.aplicar); ok++; }catch(e){ err.push(fdate(m.fecha)+' '+eur(m.importe)+': '+e.message); } }
+  aviso('✅ '+ok+' aplicadas'+(err.length?' · '+err.length+' con error':''));
+  if(err.length) alert('No se han podido aplicar:\n\n'+err.join('\n'));
+  await cargar();
+};
+$('#bRec').onclick=cargar;
+cargar();
+</script>
+</body>
+</html>

@@ -54,6 +54,7 @@ select{padding:6px;border:1px solid var(--line);border-radius:8px;font-size:12px
     <span id="estado" style="color:var(--mut);font-size:12px"></span>
   </div>
   <div id="lista"></div>
+  <details class="just" id="reglas"><summary>📏 Tus reglas (<span id="nReglas">0</span>)</summary><div id="reglasTxt" style="margin-top:8px"></div></details>
   <details class="just" id="just"><summary>Justificados sin factura</summary><div id="justTxt" style="margin-top:8px;color:var(--mut)"></div></details>
 </main>
 <div class="msg" id="msg"></div>
@@ -92,7 +93,7 @@ function pintar(){
   const b=$('#bAltas'); b.disabled=!n.alta; b.textContent='✅ Aceptar todas las de confianza alta ('+n.alta+')';
   const vis=L.filter(m=>FILTRO==='todos'||nivel(m)===FILTRO);
   $('#lista').innerHTML=vis.length?vis.map(fila).join(''):'<div class="vacio">'+(L.length?'Nada en este filtro.':'✅ No queda nada pendiente de conciliar en '+esc(D.anio)+'.')+'</div>';
-  $('#justTxt').innerHTML='Comisiones, impuestos, Seguridad Social, nóminas, seguros y traspasos no llevan factura: se dan por justificados con su categoría. '
+  $('#justTxt').innerHTML='Comisiones, impuestos, Seguridad Social, nóminas, seguros, traspasos y aportaciones no llevan factura: se dan por justificados con su categoría. '
     +(R.justificados||0)+' movimientos en '+esc(D.anio)+'.';
 }
 function cajaProp(m,p,idx){
@@ -107,7 +108,8 @@ function fila(m){
   const resto=P.slice(1);
   const otras=resto.length?'<span class="mas" onclick="this.nextElementSibling.style.display=\'block\';this.remove()">Ver '+resto.length+' propuesta(s) más</span><div style="display:none">'+resto.map(x=>cajaProp(m,x.p,x.i)).join('')+'</div>':'';
   const sel='<select onchange="if(this.value)categorizar('+m.id+',this.value)"><option value="">Poner categoría…</option>'
-    +(D.categorias||[]).map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select>';
+    +(D.categorias||[]).map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select>'
+    +' <label style="font-size:12px;color:var(--mut);cursor:pointer" title="Crea una regla: los movimientos con este mismo concepto (otros meses, los que vengan) tendrán esta categoría"><input type="checkbox" id="rg'+m.id+'"> y siempre que venga este concepto</label>';
   return '<div class="mov" id="m'+m.id+'"><div class="top"><span class="f">'+fdate(m.fecha)+' · '+esc(m.banco||'')+'</span>'
     +'<span class="c">'+esc(m.concepto)+(m.categoria?' <span class="cat">'+esc(m.categoria)+'</span>':'')+'</span>'
     +'<span class="i '+(m.importe<0?'neg':'pos')+'">'+eur(m.importe)+'</span></div>'
@@ -130,6 +132,16 @@ async function aplicar(id,idx){
   }catch(e){ alert('No se ha podido aplicar: '+e.message); }
 }
 async function categorizar(id,cat){
+  const rg=document.getElementById('rg'+id);
+  if(rg&&rg.checked){
+    const m=(D.pendientes||[]).find(x=>x.id===id);
+    if(!confirm('Crear la regla:\n\n«'+(m?m.concepto:'')+'»\n→ siempre «'+cat+'»\n\nVale para este concepto en cualquier mes (sin mirar números ni fechas). Se puede borrar en «Tus reglas».')) return;
+    try{ const r=await fetch(API+'/banco/reglas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({concepto:m?m.concepto:'',categoria:cat})});
+      const j=await r.json(); if(!j.ok) throw new Error(j.error||'error'); }
+    catch(e){ alert('No se ha podido crear la regla: '+e.message); return; }
+    try{ await post(id,{tipo:'categoria',categoria:cat}); }catch(e){ alert('Regla creada, pero no he podido categorizar este: '+e.message); }
+    aviso('📏 Regla creada'); await cargar(); cargarReglas(); return;
+  }
   try{ await post(id,{tipo:'categoria',categoria:cat});
     if((D.exentas||[]).includes(cat)){ quitar(id); D.resumen.justificados++; aviso('✅ Justificado como «'+cat+'»'); pintar(); }
     else { aviso('Categoría «'+cat+'» puesta'); await cargar(); }
@@ -146,8 +158,23 @@ $('#bAltas').onclick=async ()=>{
   if(err.length) alert('No se han podido aplicar:\n\n'+err.join('\n'));
   await cargar();
 };
+async function cargarReglas(){
+  try{ const j=await fetch(API+'/banco/reglas?_='+Date.now()).then(r=>r.json()); const R=j.reglas||[];
+    $('#nReglas').textContent=R.length;
+    $('#reglasTxt').innerHTML=R.length?R.map(r=>'<div class="prop baja"><div class="pt"><b>«'+esc(r.patron)+'…» → '+esc(r.categoria)+'</b><small>'
+      +r.movimientos+' movimiento(s) con este concepto'+(r.ejemplo?' · ej.: '+esc(r.ejemplo):'')+'</small></div>'
+      +'<button class="btn x" onclick="borrarRegla(\''+esc(r.patron).replace(/\\/g,'')+'\')">🗑 Borrar</button></div>').join('')
+      :'<div style="color:var(--mut)">Aún no hay reglas. Para crear una: «Poner categoría…» con la casilla «y siempre que venga este concepto».</div>';
+  }catch(e){ $('#reglasTxt').textContent='No se han podido cargar las reglas.'; }
+}
+async function borrarRegla(pat){
+  if(!confirm('Borrar la regla «'+pat+'…»?\n\nLo ya categorizado se queda como está.')) return;
+  const r=await fetch(API+'/banco/reglas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patron:pat,borrar:true})});
+  const j=await r.json().catch(()=>({})); if(!j.ok){ alert('No se ha podido: '+(j.error||r.status)); return; }
+  aviso('Regla borrada'); cargarReglas(); cargar();
+}
 $('#bRec').onclick=cargar;
-cargar();
+cargar(); cargarReglas();
 </script>
 </body>
 </html>
